@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"

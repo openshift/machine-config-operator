@@ -422,14 +422,15 @@ github.com/coreos/go-systemd/v22/daemon
 github.com/coreos/go-systemd/v22/dbus
 github.com/coreos/go-systemd/v22/journal
 github.com/coreos/go-systemd/v22/unit
-# github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81
-## explicit; go 1.18
+# github.com/coreos/ign-converter v0.0.0-20260420141348-5351d3e16080
+## explicit; go 1.24.0
 github.com/coreos/ign-converter/translate/v23tov30
 github.com/coreos/ign-converter/translate/v32tov22
 github.com/coreos/ign-converter/translate/v32tov31
 github.com/coreos/ign-converter/translate/v33tov32
 github.com/coreos/ign-converter/translate/v34tov33
 github.com/coreos/ign-converter/translate/v35tov34
+github.com/coreos/ign-converter/translate/v36tov35
 github.com/coreos/ign-converter/util
 # github.com/coreos/ignition v0.35.0
 ## explicit
@@ -476,6 +477,9 @@ github.com/coreos/ignition/v2/config/v3_4/types
 github.com/coreos/ignition/v2/config/v3_5
 github.com/coreos/ignition/v2/config/v3_5/translate
 github.com/coreos/ignition/v2/config/v3_5/types
+github.com/coreos/ignition/v2/config/v3_6
+github.com/coreos/ignition/v2/config/v3_6/translate
+github.com/coreos/ignition/v2/config/v3_6/types
 github.com/coreos/ignition/v2/config/validate
 # github.com/coreos/rpmostree-client-go v0.0.0-20230914135003-fae0786302f7
 ## explicit; go 1.17
@@ -2128,7 +2132,7 @@ golang.org/x/mod/internal/lazyregexp
 golang.org/x/mod/modfile
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.57.0
+# golang.org/x/net v0.56.0
 ## explicit; go 1.25.0
 golang.org/x/net/html
 golang.org/x/net/html/atom
