@@ -2933,6 +2933,10 @@ ostree container image pull --ostree-digestfile="$digest" "$repo" "ostree-unveri
 func (dn *Daemon) createLayeredImportPolicy(target, tmpDir string) (string, error) {
 	policyOriginalContent, err := os.ReadFile(imagePolicyFilePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			klog.Warningf("No policy file found at %s. Skipping temporary layered import policy generation.", imagePolicyFilePath)
+			return "", nil
+		}
 		return "", fmt.Errorf("failed to read image policy %q for layered import: %w", imagePolicyFilePath, err)
 	}
 	return dn.createLayeredImportPolicyFromContent(target, tmpDir, policyOriginalContent)
@@ -2941,7 +2945,8 @@ func (dn *Daemon) createLayeredImportPolicy(target, tmpDir string) (string, erro
 func (dn *Daemon) createLayeredImportPolicyFromContent(target, tmpDir string, policyOriginalContent []byte) (string, error) {
 	policy, err := parseContainerStoragePolicy(policyOriginalContent)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse image policy %q for layered import: %w", imagePolicyFilePath, err)
+		klog.Warningf("Failed to parse image policy %q for layered import. Skipping temporary policy patch: %v", imagePolicyFilePath, err)
+		return "", nil
 	}
 	if !containerStoragePolicyRequiresPatch(policy) {
 		klog.Infof("Image policy allows containers-storage by default; using the host policy for layered import")

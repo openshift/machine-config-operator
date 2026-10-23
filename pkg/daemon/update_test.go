@@ -1014,6 +1014,17 @@ func TestCreateLayeredImportPolicy_TaggedOSImageWithRestrictivePolicy(t *testing
 	assert.NotContains(t, storageRules, "")
 }
 
+func TestCreateLayeredImportPolicyFromContent_InvalidPolicySkipsPatch(t *testing.T) {
+	daemon := &Daemon{}
+	policyPath, err := daemon.createLayeredImportPolicyFromContent(
+		"quay.io/openshift/os:stable",
+		t.TempDir(),
+		[]byte("not valid JSON"),
+	)
+	require.NoError(t, err)
+	assert.Empty(t, policyPath)
+}
+
 // Assisted by: Cursor
 func TestPodmanCopy_CreateContainerCall(t *testing.T) {
 	imgURL := "quay.io/openshift/test:latest"
