@@ -714,6 +714,10 @@ func (ctrl *Controller) syncGeneratedMachineConfig(ctx context.Context, pool *mc
 		return err
 	}
 
+	if err := ctrl.validateNoOSStreamDowngrade(pool); err != nil {
+		return err
+	}
+
 	generated, err := ctrl.getRenderedMachineConfig(pool, configs, cc, osImageStreamSet)
 	if err != nil {
 		return fmt.Errorf("could not generate rendered MachineConfig: %w", err)
@@ -1056,6 +1060,47 @@ func validateNoRuncOnRHEL10FromOSImageURL(ctx context.Context, pool *mcfgv1.Mach
 			"To unblock, migrate to crun by removing any ContainerRuntimeConfig that sets defaultRuntime to runc, "+
 			"and removing any MachineConfig that sets default_runtime = \"runc\" in CRI-O configuration under /etc/crio/crio.conf.d/",
 		pool.Name)
+}
+
+// validateNoOSStreamDowngrade returns an error if the pool is requesting a stream whose
+// major OS version is lower than the major version the pool is currently running.
+// Downgrading OS streams (e.g. rhel-10 → rhel-9) is unsupported.
+//
+// The current stream is resolved via this fallback chain:
+//  1. pool.Status.OSImageStream.Name — set by the node status controller when the pool
+//     is fully settled on a named stream.
+//  2. workerPool.Status.OSImageStream.Name — for custom pools whose own status is empty
+//     (inheriting the worker pool's running stream).
+//  3. imageStream.Status.DefaultStream — for new pools whose status (and worker status)
+//     has not yet been populated.
+//
+// If the current stream still cannot be determined the check is skipped.
+func (ctrl *Controller) validateNoOSStreamDowngrade(pool *mcfgv1.MachineConfigPool) error {
+	if !osimagestream.IsFeatureEnabled(ctrl.fgHandler) || ctrl.osImageStreamLister == nil {
+		return nil
+	}
+
+	requestedStream := ctrl.getOSImageStreamNameForPool(pool)
+	currentStream := pool.Status.OSImageStream.Name
+
+	if currentStream == "" && ctrlcommon.IsCustomPool(pool) {
+		if workerPool, err := ctrl.mcpLister.Get(ctrlcommon.MachineConfigPoolWorker); err == nil {
+			currentStream = workerPool.Status.OSImageStream.Name
+		}
+	}
+
+	if currentStream == "" {
+		if imageStream, err := ctrl.osImageStreamLister.Get(ctrlcommon.ClusterInstanceNameOSImageStream); err == nil {
+			currentStream = imageStream.Status.DefaultStream
+		}
+	}
+
+	if requestedStream == osimagestream.StreamNameRHEL9 && osimagestream.IsRHEL10Stream(currentStream) {
+		return fmt.Errorf("pool %s: changing OS stream from %q to %q is not supported; RHEL 10 nodes cannot be downgraded to RHEL 9",
+			pool.Name, currentStream, requestedStream)
+	}
+
+	return nil
 }
 
 // getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.
