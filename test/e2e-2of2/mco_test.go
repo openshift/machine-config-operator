@@ -178,7 +178,9 @@ func TestMetrics(t *testing.T) {
 		token, err := helpers.GetMonitoringToken(t, cs)
 		require.Nil(t, err)
 
-		out := helpers.ExecCmdOnNode(t, cs, node, []string{"curl", "-s", "-k", "-H", "Authorization: Bearer " + string(token), url}...)
+		// The bearer token must not reach the test log if the curl fails.
+		out := helpers.ExecCmdOnNodeRedacted(t, cs, node, []string{string(token)},
+			[]string{"curl", "-s", "-k", "-H", "Authorization: Bearer " + string(token), url}...)
 
 		// The /metrics output will contain the metric if it works
 		promMetric := fmt.Sprintf(`mco_unavailable_machine_count{pool="%s"} 1`, poolName)

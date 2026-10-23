@@ -803,24 +803,87 @@ func canonicalizeNodeFilePath(path string) string {
 	return path
 }
 
+// redactedPlaceholder is substituted for a secret before an argument list is
+// written to the test log.
+const redactedPlaceholder = "<redacted>"
+
+// redactArgs returns a copy of args in which every occurrence of each secret
+// has been replaced by redactedPlaceholder. Secrets are matched as substrings
+// so that a credential embedded in a larger argument -- e.g. the value of
+// "Authorization: Basic <base64>" -- is caught too. Empty secrets are ignored;
+// if nothing is left to redact, args is returned as-is.
+func redactArgs(args, secrets []string) []string {
+	replacements := make([]string, 0, len(secrets)*2)
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		replacements = append(replacements, secret, redactedPlaceholder)
+	}
+
+	if len(replacements) == 0 {
+		return args
+	}
+
+	replacer := strings.NewReplacer(replacements...)
+	redacted := make([]string, len(args))
+	for i, arg := range args {
+		redacted[i] = replacer.Replace(arg)
+	}
+
+	return redacted
+}
+
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	t.Helper()
 
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
-	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+	return ExecCmdOnNodeRedacted(t, cs, node, nil, subArgs...)
+}
+
+// ExecCmdOnNodeTimeout bounds a single ExecCmdOnNodeRedacted call. The budget
+// covers the initial attempt and the retry together, so a wedged `oc rsh`
+// cannot hang a test until the suite-level timeout kills the run without any
+// useful output. It is deliberately generous: every command routed through
+// this helper is a short one (cat, ls, stat, curl against a node-local port).
+const ExecCmdOnNodeTimeout = 10 * time.Minute
+
+// ExecCmdOnNodeRedacted behaves like ExecCmdOnNode, except that every string in
+// secrets is masked in the failure messages this helper produces. Use it
+// whenever an argument carries a credential: ExecCmdOnNode formats the whole
+// argument list into its assertion messages, so a command-preparation or
+// command failure would otherwise write the credential to the test log and from
+// there into the CI artifacts.
+//
+// The command itself still receives the unredacted arguments.
+func ExecCmdOnNodeRedacted(t *testing.T, cs *framework.ClientSet, node corev1.Node, secrets []string, subArgs ...string) string {
+	t.Helper()
+
+	// Only ever format safeArgs into a message; subArgs may hold credentials.
+	safeArgs := redactArgs(subArgs, secrets)
+
+	ctx, cancel := context.WithTimeout(context.Background(), ExecCmdOnNodeTimeout)
+	defer cancel()
+
+	cmd, err := execCmdOnNodeContext(ctx, cs, node, subArgs...)
+	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", safeArgs, node.Name, err)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
 	if err != nil {
 		// common err is that the mcd went down mid cmd. Re-try for good measure
-		cmd, err = execCmdOnNode(cs, node, subArgs...)
-		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+		cmd, err = execCmdOnNodeContext(ctx, cs, node, subArgs...)
+		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", safeArgs, node.Name, err)
 		out, err = cmd.Output()
 
 	}
-	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
+	// A blown deadline surfaces from Output() as "signal: killed", which is
+	// baffling on its own in a CI log. Name the real cause instead.
+	if err != nil && ctx.Err() != nil {
+		t.Fatalf("timed out after %s exec'ing cmd %v on node %s: %s", ExecCmdOnNodeTimeout, safeArgs, node.Name, err)
+	}
+	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", safeArgs, node.Name, string(out))
 	return string(out)
 }
 
@@ -916,6 +979,12 @@ func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs .
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
+	return execCmdOnNodeContext(context.Background(), cs, node, subArgs...)
+}
+
+// execCmdOnNodeContext is execCmdOnNode with the returned command bound to ctx,
+// so that cancelling ctx kills the underlying oc process.
+func execCmdOnNodeContext(ctx context.Context, cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
 	mcd, err := mcdForNode(cs, &node)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
@@ -929,13 +998,20 @@ func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string)
 		mcdName}
 	args = append(args, subArgs...)
 
-	return NewOcCommand(cs, args...)
+	return NewOcCommandContext(ctx, cs, args...)
 }
 
 // NewOcCommand() configures an exec.Cmd instance to pass the provided
 // arguments into the oc command. Returns an error if the oc command is missing
 // or the KUBECONFIG is also missing.
 func NewOcCommand(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
+	return NewOcCommandContext(context.Background(), cs, args...)
+}
+
+// NewOcCommandContext() performs the same as NewOcCommand, with the returned
+// command bound to ctx. The oc process is killed once ctx is done, which is how
+// callers put an upper bound on an `oc rsh` that never returns.
+func NewOcCommandContext(ctx context.Context, cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
 	// Check for an oc binary in $PATH.
 	path, err := exec.LookPath("oc")
 	if err != nil {
@@ -948,7 +1024,7 @@ func NewOcCommand(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("could not get kubeconfig: %w", err)
 	}
 
-	cmd := exec.Command(path, args...)
+	cmd := exec.CommandContext(ctx, path, args...)
 	// If one passes a path to a kubeconfig via NewClientSet instead of setting
 	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
 	// KUBECONFIG to the value held by the clientset.
