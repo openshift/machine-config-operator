@@ -28,13 +28,16 @@ type JobStatus struct {
 
 // Sets the provided job status on a given job under test. If successful, it will also insert the digestfile ConfigMap.
 func SetJobStatus(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, jobStatus JobStatus) {
-	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
-
 	if jobStatus.Succeeded == 1 {
+		// The real build writes its digest before the Job can report success.
+		// Preserve that ordering so the controller never observes a successful
+		// Job before the artifact required to complete the MOSB exists.
 		require.NoError(t, createDigestfileConfigMap(ctx, kubeclient, mosb))
 	} else {
 		require.NoError(t, deleteDigestfileConfigMap(ctx, kubeclient, mosb))
 	}
+
+	require.NoError(t, setJobStatusFields(ctx, kubeclient, mosb, jobStatus))
 }
 
 func SetJobDeletionTimestamp(ctx context.Context, t *testing.T, kubeclient clientset.Interface, mosb *mcfgv1.MachineOSBuild, timestamp *metav1.Time) {

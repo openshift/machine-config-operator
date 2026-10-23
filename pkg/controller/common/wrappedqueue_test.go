@@ -8,9 +8,61 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"sync/atomic"
 )
+
+func TestWrappedQueueWaitForWorkers(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	t.Cleanup(stopWorkers)
+	wq := NewWrappedQueueForTesting(t)
+
+	callbackStarted := make(chan struct{})
+	releaseCallback := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseCallback) })
+	}
+	t.Cleanup(release)
+
+	wq.Start(workerCtx, 3)
+	wq.EnqueueWithName("held callback", func() error {
+		close(callbackStarted)
+		<-releaseCallback
+		return nil
+	})
+
+	select {
+	case <-callbackStarted:
+	case <-ctx.Done():
+		require.NoError(t, ctx.Err(), "callback did not start")
+	}
+
+	wq.ShutDown()
+	stopWorkers()
+	workersDone := make(chan struct{})
+	go func() {
+		wq.WaitForWorkers()
+		close(workersDone)
+	}()
+	select {
+	case <-workersDone:
+		t.Fatal("workers reported completion while a callback was still running")
+	default:
+	}
+
+	release()
+	select {
+	case <-workersDone:
+	case <-ctx.Done():
+		require.NoError(t, ctx.Err(), "workers did not stop")
+	}
+}
 
 func TestWrappedQueue(t *testing.T) {
 	t.Parallel()
