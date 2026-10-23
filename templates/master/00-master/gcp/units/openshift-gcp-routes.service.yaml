@@ -12,6 +12,7 @@ contents: |
   ExecStart=/bin/bash /opt/libexec/openshift-gcp-routes.sh start
   ExecStopPost=/bin/bash /opt/libexec/openshift-gcp-routes.sh cleanup
   User=root
+  SyslogIdentifier=openshift-gcp-routes
   RestartSec=30
   Restart=always
 
