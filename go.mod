@@ -37,7 +37,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/imdario/mergo v0.3.16
 	github.com/josephburnett/jd v1.9.2
-	github.com/onsi/ginkgo/v2 v2.28.0
+	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.40.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260812190735-a8b44e9f9fed
@@ -69,6 +69,8 @@ require (
 	k8s.io/kubelet v0.37.1
 	k8s.io/kubernetes v1.37.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
+	sigs.k8s.io/cluster-api v1.13.4
+	sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
 	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240522175850-2e9781e9fc60
 )
@@ -146,7 +148,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golangci/go-printf-func-name v0.1.0 // indirect
 	github.com/golangci/modinfo v0.3.4 // indirect
-	github.com/golangci/plugin-module-register v0.1.1 // indirect
+	github.com/golangci/plugin-module-register v0.1.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cadvisor/lib v0.60.5 // indirect
 	github.com/google/cel-go v0.29.2 // indirect
@@ -177,7 +179,6 @@ require (
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/nunnatsa/ginkgolinter v0.18.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
-	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/opencontainers/cgroups v0.0.7 // indirect
 	github.com/opencontainers/selinux v1.15.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -277,7 +278,7 @@ require (
 	github.com/containers/libtrust v0.0.0-20230121012942-c1716e8a8d01 // indirect
 	github.com/containers/ocicrypt v1.2.1 // indirect
 	github.com/coreos/go-json v0.0.0-20230131223807-18775e0fb4fb // indirect
-	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
+	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 // indirect
 	github.com/curioswitch/go-reassign v0.3.0 // indirect
@@ -291,7 +292,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
-	github.com/fatih/color v1.18.0 // indirect
+	github.com/fatih/color v1.19.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/firefart/nonamedreturns v1.0.5 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
@@ -342,7 +343,7 @@ require (
 	github.com/leonklingele/grouper v1.1.2 // indirect
 	github.com/maratori/testpackage v1.1.1 // indirect
 	github.com/matoous/godox v0.0.0-20230222163458-006bad1f9d26 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mgechev/revive v1.5.1 // indirect
@@ -355,7 +356,7 @@ require (
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/olekukonko/tablewriter v0.0.5 // indirect
+	github.com/olekukonko/tablewriter v1.0.9 // indirect
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
@@ -404,17 +405,17 @@ require (
 	gitlab.com/bosi/decorder v0.4.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	go4.org v0.0.0-20200104003542-c7e774b10ea0 // indirect
+	go4.org v0.0.0-20201209231011-d4a079459e60 // indirect
 	golang.org/x/crypto v0.54.0
-	golang.org/x/exp v0.0.0-20260603202125-055de637280b
+	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743
 	golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f // indirect
-	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0
@@ -432,6 +433,10 @@ require (
 )
 
 replace (
+	// cluster-api requires tablewriter v1.x for its own CLI tools, but none of those packages
+	// are imported by MCO. Pin back to v0.0.5 to keep golangci-lint's revive formatter building.
+	github.com/olekukonko/tablewriter => github.com/olekukonko/tablewriter v0.0.5
+
 	github.com/onsi/ginkgo/v2 => github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20260424201627-4d4cc33d669d
 
 	k8s.io/api => github.com/openshift/kubernetes/staging/src/k8s.io/api v0.0.0-20261001225056-adecb44d9f88
