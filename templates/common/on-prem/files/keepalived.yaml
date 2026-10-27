@@ -39,6 +39,9 @@ contents:
       - name: nodeip-configuration
         hostPath:
           path: "/run/nodeip-configuration"
+      - name: tmp
+        empty-dir:
+          medium: Memory
       initContainers:
       - name: render-config-keepalived
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -169,13 +172,15 @@ contents:
         - name: nodeip-configuration
           mountPath: "/run/nodeip-configuration"
           mountPropagation: HostToContainer
+        - name: tmp
+          mountPath: "/tmp"
         livenessProbe:
           exec:
             command:
             - /bin/bash
             - -c
             - |
-              [ ! -s "/etc/keepalived/keepalived.conf" ] || (echo "" > /tmp/keepalived.data && kill -s SIGUSR1 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "VRRP Instance" /tmp/keepalived.data && exit 0 || sleep 1; done && exit 1)
+              [ ! -s "/etc/keepalived/keepalived.conf" ] || (echo "" > /tmp/keepalived.stats && kill -s SIGUSR2 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "VRRP Instance" /tmp/keepalived.stats && exit 0 || sleep 1; done && exit 1)
           initialDelaySeconds: 20
           timeoutSeconds: 5
         terminationMessagePolicy: FallbackToLogsOnError
