@@ -5,7 +5,8 @@ search_path="${LINT_TARGET:-.}"
 lint_files=$(find "$search_path" -type f -name "*.md" \
 	-not -path "./.git/*" \
 	-not -path "./vendor/*" \
-	-not -path "./_output/*")
+	-not -path "./_output/*" \
+	-not -path "*/formatter/test/fixtures/*")
 
 if [ -z "$lint_files" ]; then
 	echo "No markdown files found to lint."
