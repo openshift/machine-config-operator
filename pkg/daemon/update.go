@@ -1437,13 +1437,29 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users, newIgnConfig.Passwd.Users); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
 				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
 			}
 		}
 	}()
+
+	if diff.passwd {
+		if err := dn.SetPasswordHash(newIgnConfig.Passwd.Users, oldIgnConfig.Passwd.Users); err != nil {
+			return err
+		}
+
+		defer func() {
+			if retErr != nil {
+				if err := dn.SetPasswordHash(oldIgnConfig.Passwd.Users, newIgnConfig.Passwd.Users); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back password hash updates: %w", errs)
+					return
+				}
+			}
+		}()
+	}
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
