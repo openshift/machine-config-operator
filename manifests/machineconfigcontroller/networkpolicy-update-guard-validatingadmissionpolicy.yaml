@@ -20,5 +20,5 @@ spec:
     - name: "exclude-mco-service-account"
       expression: "request.userInfo.username != 'system:serviceaccount:openshift-machine-config-operator:machine-config-operator'"
   validations:
-    - expression: "!(object.metadata.name in ['default-deny', 'allow-all-egress', 'allow-machine-config-operator', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
+    - expression: "!(object.metadata.name in ['default-deny', 'allow-all-egress', 'allow-machine-config-controller', 'allow-machine-os-builder'])"
       message: "Modification of MCO-managed NetworkPolicy resources in the openshift-machine-config-operator namespace is not allowed"
