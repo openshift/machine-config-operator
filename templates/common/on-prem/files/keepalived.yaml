@@ -32,7 +32,7 @@ contents:
         hostPath:
           path: "/etc/keepalived"
       - name: run-dir
-        empty-dir: {}
+        emptyDir: {}
       - name: chroot-host
         hostPath:
           path: "/"
@@ -40,7 +40,7 @@ contents:
         hostPath:
           path: "/run/nodeip-configuration"
       - name: tmp
-        empty-dir:
+        emptyDir:
           medium: Memory
       initContainers:
       - name: render-config-keepalived
