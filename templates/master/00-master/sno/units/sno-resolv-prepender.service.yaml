@@ -1,6 +1,7 @@
 {{- if isSNOCoreDNSEnabled }}
 name: sno-resolv-prepender.service
-enabled: true
+# Started on demand by sno-resolv-prepender.path.
+enabled: false
 contents: |
   [Unit]
   Description=Reconcile host DNS with SNO CoreDNS
@@ -15,7 +16,4 @@ contents: |
   RestartSec=5s
   TimeoutStartSec=90s
   ExecStart=/usr/local/bin/sno-resolv-prepender.sh
-
-  [Install]
-  WantedBy=multi-user.target
 {{- end }}
