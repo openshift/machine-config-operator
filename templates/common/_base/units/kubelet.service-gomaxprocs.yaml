@@ -1,0 +1,6 @@
+name: kubelet.service
+dropins:
+  - name: 30-gomaxprocs.conf
+    contents: |
+      [Service]
+      EnvironmentFile=-/run/system-gomaxprocs.env

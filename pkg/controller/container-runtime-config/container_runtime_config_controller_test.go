@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/klog/v2"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +40,7 @@ import (
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -715,6 +718,20 @@ func (f *fixture) verifyCRIOCredentialProviderConfigContents(t *testing.T, mcNam
 // The patch bytes to expect when creating/updating a containerruntimeconfig
 var ctrcfgPatchBytes = []byte("{\"metadata\":{\"finalizers\":[\"99-master-generated-containerruntime\"]}}")
 
+// sortedMCPLister makes pool iteration deterministic in tests.
+type sortedMCPLister struct {
+	mcfglistersv1.MachineConfigPoolLister
+}
+
+func (s *sortedMCPLister) List(selector labels.Selector) ([]*mcfgv1.MachineConfigPool, error) {
+	pools, err := s.MachineConfigPoolLister.List(selector)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(pools, func(i, j int) bool { return pools[i].Name < pools[j].Name })
+	return pools, nil
+}
+
 // TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigCreate(t *testing.T) {
@@ -756,6 +773,50 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.run(getKey(ctrcfg1, t))
 		})
 	}
+}
+
+// TestSkipUpdateContinuesToNextPool verifies that an up-to-date pool does not prevent
+// reconciliation of later pools (OCPBUGS-84661).
+func TestSkipUpdateContinuesToNextPool(t *testing.T) {
+	f := newFixture(t)
+	f.skipActionsValidation = true
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, apicfgv1.AWSPlatformType)
+	const sharedLabel = "custom-container-runtime-label"
+	poolA := helpers.NewMachineConfigPool("pool-a", nil, helpers.MasterSelector, "v0")
+	poolA.Labels[sharedLabel] = ""
+	poolB := helpers.NewMachineConfigPool("pool-b", nil, helpers.WorkerSelector, "v0")
+	poolB.Labels[sharedLabel] = ""
+	cfg := newContainerRuntimeConfig("multi-pool-ctrcfg", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, sharedLabel, ""))
+	cfg.SetAnnotations(map[string]string{ctrlcommon.MCNameSuffixAnnotationKey: ""})
+	cfg.Status.ObservedGeneration = cfg.Generation
+	cfg.Status.Conditions = []mcfgv1.ContainerRuntimeConfigCondition{{Type: mcfgv1.ContainerRuntimeConfigSuccess}}
+
+	f.ccLister = append(f.ccLister, cc)
+	f.mcpLister = append(f.mcpLister, poolA, poolB)
+	f.mccrLister = append(f.mccrLister, cfg)
+	f.objects = append(f.objects, cfg)
+	ctrl := f.newController()
+
+	keyA, err := getManagedKeyCtrCfg(poolA, f.client, cfg)
+	require.NoError(t, err)
+	keyB, err := getManagedKeyCtrCfg(poolB, f.client, cfg)
+	require.NoError(t, err)
+	mcA := helpers.NewMachineConfig(keyA, map[string]string{"node-role/master": ""}, "dummy://", nil)
+	mcA.SetAnnotations(map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash})
+	mcB := helpers.NewMachineConfig(keyB, map[string]string{"node-role/worker": ""}, "dummy://", nil)
+	mcB.SetAnnotations(map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: "old-controller-version"})
+	_, err = f.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcA, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = f.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcB, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	ctrl.mcpLister = &sortedMCPLister{ctrl.mcpLister}
+	require.NoError(t, ctrl.syncHandler(getKey(cfg, t)))
+
+	updated, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), keyB, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, version.Hash, updated.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey])
 }
 
 // TestContainerRuntimeConfigUpdate ensures that an update happens when an existing containerruntime config is updated.

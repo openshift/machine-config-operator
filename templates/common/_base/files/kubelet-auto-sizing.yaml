@@ -134,14 +134,57 @@ contents:
     function create_version_file {
         echo "{\"version\": $1}" > $2
     }
+    function configure_system_gomaxprocs {
+        local behavior=$1
+        rm -f /run/system-gomaxprocs.env
+        if [ "$behavior" != "Autosize" ]; then
+            return
+        fi
+        local gomaxprocs
+        if ! gomaxprocs=$(awk -v cpu="$SYSTEM_RESERVED_CPU" 'BEGIN {
+            suffix = ""
+            if (match(cpu, /(Ki|Mi|Gi|Ti|Pi|Ei|n|u|m|k|M|G|T|P|E)$/)) {
+                suffix = substr(cpu, RSTART, RLENGTH)
+                cpu = substr(cpu, 1, RSTART - 1)
+            }
+            if (cpu !~ /^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/) exit 1
+            scale = 1
+            if (suffix == "n") scale = 1e-9
+            else if (suffix == "u") scale = 1e-6
+            else if (suffix == "m") scale = 1e-3
+            else if (suffix == "k") scale = 1e3
+            else if (suffix == "M") scale = 1e6
+            else if (suffix == "G") scale = 1e9
+            else if (suffix == "T") scale = 1e12
+            else if (suffix == "P") scale = 1e15
+            else if (suffix == "E") scale = 1e18
+            else if (suffix == "Ki") scale = 1024
+            else if (suffix == "Mi") scale = 1048576
+            else if (suffix == "Gi") scale = 1073741824
+            else if (suffix == "Ti") scale = 1099511627776
+            else if (suffix == "Pi") scale = 1125899906842624
+            else if (suffix == "Ei") scale = 1152921504606846976
+            val = (cpu + 0) * scale
+            if (val < 0) exit 1
+            ival = int(val)
+            if (val > ival) ival++
+            if (ival < 1) ival = 1
+            print ival
+        }'); then
+            echo "Invalid SYSTEM_RESERVED_CPU: $SYSTEM_RESERVED_CPU" >&2
+            return 1
+        fi
+        printf 'GOMAXPROCS=%s\n' "$gomaxprocs" > /run/system-gomaxprocs.env
+    }
     if ! [ -f $NODE_AUTO_SIZING_VERSION_FILE ]; then
         create_version_file $NODE_AUTO_SIZING_VERSION $NODE_AUTO_SIZING_VERSION_FILE
     fi
     new_version=$(jq .version $NODE_AUTO_SIZING_VERSION_FILE)
-    if [ $1 == "true" ]; then
+    if [ "$1" = "true" ]; then
         dynamic_node_sizing $new_version $4
-    elif [ $1 == "false" ]; then
-        static_node_sizing $2 $3 $4
     else
-        echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
+        static_node_sizing $2 $3 $4
     fi
+    # both dynamic_node_sizing and static_node_sizing set SYSTEM_RESERVED_CPU, so either way
+    # we will have something to set, if Autosize is enabled.
+    configure_system_gomaxprocs "${SYSTEM_GOMAXPROCS_BEHAVIOR:-}"
