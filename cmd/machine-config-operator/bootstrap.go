@@ -82,7 +82,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dockerRegistryImage, "docker-registry-image", "", "Image for docker-registry.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.CloudProviderCA, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.BGPVIPConfig, "bgp-vip-config-file", "/assets/manifests/bgp-vip-config.yaml", "File containing the bgp-vip-config ConfigMap manifest (optional).")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dependencyFiles.BGPVIPConfig, "bgp-vip-config-file", "/assets/manifests/cluster-bgp-vip-02-config.yml", "File containing the BGPVIPConfig manifest (optional); peer password Secret manifests are looked up in the same directory.")
 
 }
 
