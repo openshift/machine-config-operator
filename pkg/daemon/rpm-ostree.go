@@ -19,6 +19,22 @@ const imagePolicyFilePath = "/etc/containers/policy.json"
 const rpmOstreeTemporalDropinFile = "/run/systemd/system/rpm-ostreed.service.d/temporal-policy-binding.conf"
 const rpmOstreeTemporalPolicyFile = "/run/tmp-rpm-ostree-policy.json"
 
+type temporalPolicyFilePaths struct {
+	hostPolicyPath      string
+	temporaryPolicyPath string
+	dropinPath          string
+	systemdReload       func() error
+}
+
+func defaultTemporalPolicyFilePaths() temporalPolicyFilePaths {
+	return temporalPolicyFilePaths{
+		hostPolicyPath:      imagePolicyFilePath,
+		temporaryPolicyPath: rpmOstreeTemporalPolicyFile,
+		dropinPath:          rpmOstreeTemporalDropinFile,
+		systemdReload:       systemdRpmOstreeReload,
+	}
+}
+
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
 //
@@ -278,59 +294,54 @@ func (t *DeploymentVersion) IsEL10() bool {
 // policy file for the rpm-ostreed service. The drop-in and temporary policy file are cleaned
 // up after the rpm-ostree operation completes.
 func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *PodmanImageInfo) error {
-	url, err := r.generateTransportPolicyKeyForReference(podmanImageInfo)
-	if err != nil {
-		return err
-	}
-	_, err = os.Stat(imagePolicyFilePath)
+	return r.patchPoliciesForContainerStorageWithPaths(podmanImageInfo, defaultTemporalPolicyFilePaths())
+}
+
+// patchPoliciesForContainerStorageWithPaths is separated from the production
+// paths so the temporary policy lifecycle can be tested without touching host
+// policy or systemd files.
+func (r *RpmOstreeClient) patchPoliciesForContainerStorageWithPaths(podmanImageInfo *PodmanImageInfo, paths temporalPolicyFilePaths) error {
+	_, err := os.Stat(paths.hostPolicyPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			klog.Warningf("No policy file found at %s. Skipping temporal policy generation.", imagePolicyFilePath)
+			klog.Warningf("No policy file found at %s. Skipping temporal policy generation.", paths.hostPolicyPath)
 			return nil
 		}
 		return err
 	}
 
-	policyOriginalContent, err := os.ReadFile(imagePolicyFilePath)
+	policyOriginalContent, err := os.ReadFile(paths.hostPolicyPath)
 	if err != nil {
 		return err
 	}
 
-	policy, err := signature.NewPolicyFromBytes(policyOriginalContent)
+	policy, err := parseContainerStoragePolicy(policyOriginalContent)
 	if err != nil {
 		return err
 	}
 
-	_, containerStoragePoliciesPresent := policy.Transports[imagePolicyTransportContainerStorage]
-	if (reflect.DeepEqual(policy.Default[0], signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()}) && !containerStoragePoliciesPresent) {
-		// Temporary patching the policies.json file can be skipped, with warranties, and without re-implementing the
-		// logic that evaluates the policies or importing it under the following circumstances (must match all):
-		//  1. The default policy should be "insecureAcceptAnything"
-		//  2. Transport-specific policies for containers-storage shouldn't be in place.
+	if !containerStoragePolicyRequiresPatch(policy) {
+		// The policy accepts all images by default and does not contain any
+		// containers-storage-specific rules, so no temporary exception is needed.
 		return nil
 	}
 
-	// At this point there's no warranty the policy will allow rpm-ostree to fetch the image
-	// from local storage -> Add a specific rule to allow the image
-	if !containerStoragePoliciesPresent {
-		policy.Transports[imagePolicyTransportContainerStorage] = make(map[string]signature.PolicyRequirements)
-	}
-	policy.Transports[imagePolicyTransportContainerStorage][url] = signature.PolicyRequirements{
-		signature.NewPRInsecureAcceptAnything(),
+	url, err := r.generateTransportPolicyKeyForReference(podmanImageInfo.RepoDigest, podmanImageInfo)
+	if err != nil {
+		return err
 	}
 
-	// Prepare the json patched content
-	policyJSON, err := json.MarshalIndent(policy, "", "  ")
+	policyJSON, err := addContainerStoragePolicyException(policy, url)
 	if err != nil {
 		return err
 	}
 
 	// The temporal policy is written atomically
-	if err := writeFileAtomicallyWithDefaults(rpmOstreeTemporalPolicyFile, policyJSON); err != nil {
+	if err := writeFileAtomicallyWithDefaults(paths.temporaryPolicyPath, policyJSON); err != nil {
 		return err
 	}
 
-	if err := writeTemporalOstreePolicyFileDropin(); err != nil {
+	if err := writeTemporalOstreePolicyFileDropinWithPaths(paths); err != nil {
 		return err
 	}
 
@@ -338,21 +349,86 @@ func (r *RpmOstreeClient) patchPoliciesForContainerStorage(podmanImageInfo *Podm
 	return nil
 }
 
+// parseContainerStoragePolicy decodes the host image policy for reuse by the
+// local-storage rebase and layered-container import paths.
+func parseContainerStoragePolicy(policyContent []byte) (*signature.Policy, error) {
+	return signature.NewPolicyFromBytes(policyContent)
+}
+
+// containerStoragePolicyRequiresPatch reports whether a temporary
+// containers-storage exception should be created. The common policy (until 4.21.z) with a
+// sole insecureAcceptAnything default and no containers-storage rules is left
+// untouched. Restrictive defaults and policies with explicit containers-storage
+// rules conservatively receive an exact per-image exception.
+func containerStoragePolicyRequiresPatch(policy *signature.Policy) bool {
+	defaultAllowsAnything := reflect.DeepEqual(
+		policy.Default,
+		signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+	)
+	return !defaultAllowsAnything || len(policy.Transports[imagePolicyTransportContainerStorage]) > 0
+}
+
+// addContainerStoragePolicyException adds a temporary allow rule for exactly
+// one local image reference while preserving the rest of the policy.
+func addContainerStoragePolicyException(policy *signature.Policy, url string) ([]byte, error) {
+	if url == "" {
+		return nil, fmt.Errorf("containers-storage policy key must not be empty")
+	}
+
+	if policy.Transports == nil {
+		policy.Transports = make(map[string]signature.PolicyTransportScopes)
+	}
+	containerStoragePolicies := policy.Transports[imagePolicyTransportContainerStorage]
+	if containerStoragePolicies == nil {
+		containerStoragePolicies = make(signature.PolicyTransportScopes)
+	}
+	containerStoragePolicies[url] = signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()}
+	policy.Transports[imagePolicyTransportContainerStorage] = containerStoragePolicies
+
+	return json.MarshalIndent(policy, "", "  ")
+}
+
 // generateTransportPolicyKeyForReference creates the reference string used as a key in the
 // image policy file for the "containers-storage" transport.
 //
 // The format of this string is not officially documented and was determined by reverse-engineering
 // the policy evaluation logic. It is structured as follows:
-// "[<storage-driver>@<graph-root>]<repo-digest>@<image-id>"
+// "[<storage-driver>@<graph-root>]<image-reference>@<image-id>"
 //
 // The storage driver and graph root details are retrieved from the running Podman
 // instance at runtime.
-func (r *RpmOstreeClient) generateTransportPolicyKeyForReference(podmanImageInfo *PodmanImageInfo) (string, error) {
+func (r *RpmOstreeClient) generateTransportPolicyKeyForReference(imageReference string, podmanImageInfo *PodmanImageInfo) (string, error) {
+	if r.podmanInterface == nil {
+		return "", fmt.Errorf("podman interface is required to generate a containers-storage policy key")
+	}
 	podmanInfo, err := r.podmanInterface.GetPodmanInfo()
 	if err != nil {
 		return "", fmt.Errorf("failed to get podman info for storage configuration gathering: %w", err)
 	}
-	return fmt.Sprintf("[%s@%s]%s@%s", podmanInfo.Store.GraphDriverName, podmanInfo.Store.GraphRoot, podmanImageInfo.RepoDigest, podmanImageInfo.ID), nil
+	return buildTransportPolicyKey(podmanInfo, imageReference, podmanImageInfo)
+}
+
+func buildTransportPolicyKey(podmanInfo *PodmanInfo, imageReference string, podmanImageInfo *PodmanImageInfo) (string, error) {
+	if podmanImageInfo == nil {
+		return "", fmt.Errorf("podman image information is required to generate a containers-storage policy key")
+	}
+	if imageReference == "" {
+		return "", fmt.Errorf("image reference is required to generate a containers-storage policy key")
+	}
+	if podmanImageInfo.ID == "" {
+		return "", fmt.Errorf("podman image ID is required to generate a containers-storage policy key")
+	}
+	if podmanInfo == nil {
+		return "", fmt.Errorf("podman storage information is required to generate a containers-storage policy key")
+	}
+	if podmanInfo.Store.GraphDriverName == "" {
+		return "", fmt.Errorf("podman storage driver is required to generate a containers-storage policy key")
+	}
+	if podmanInfo.Store.GraphRoot == "" {
+		return "", fmt.Errorf("podman graph root is required to generate a containers-storage policy key")
+	}
+
+	return fmt.Sprintf("[%s@%s]%s@%s", podmanInfo.Store.GraphDriverName, podmanInfo.Store.GraphRoot, imageReference, podmanImageInfo.ID), nil
 }
 
 // writeTemporalOstreePolicyFileDropin creates a systemd drop-in configuration that
@@ -361,17 +437,21 @@ func (r *RpmOstreeClient) generateTransportPolicyKeyForReference(podmanImageInfo
 // policy file directly. After writing the drop-in, the function reloads systemd and
 // restarts rpm-ostreed to apply the changes.
 func writeTemporalOstreePolicyFileDropin() error {
+	return writeTemporalOstreePolicyFileDropinWithPaths(defaultTemporalPolicyFilePaths())
+}
+
+func writeTemporalOstreePolicyFileDropinWithPaths(paths temporalPolicyFilePaths) error {
 	// Create a temporal dropin to mount the temporal policy into rpm-ostreed process
 	if err := writeFileAtomicallyWithDefaults(
-		rpmOstreeTemporalDropinFile,
+		paths.dropinPath,
 		[]byte(
 			fmt.Sprintf(
-				"[Service]\nBindReadOnlyPaths=%s:%s", rpmOstreeTemporalPolicyFile, imagePolicyFilePath),
+				"[Service]\nBindReadOnlyPaths=%s:%s", paths.temporaryPolicyPath, paths.hostPolicyPath),
 		),
 	); err != nil {
 		return err
 	}
-	return systemdRpmOstreeReload()
+	return paths.systemdReload()
 }
 
 // cleanupTemporalOstreePolicyFiles removes the generated temporal files (systemd drop-in
@@ -379,18 +459,22 @@ func writeTemporalOstreePolicyFileDropin() error {
 // rpm-ostreed to use the original system policy file. After removing the files, the
 // function reloads systemd and restarts rpm-ostreed to apply the changes.
 func cleanupTemporalOstreePolicyFiles() error {
-	err := os.Remove(rpmOstreeTemporalDropinFile)
+	return cleanupTemporalOstreePolicyFilesWithPaths(defaultTemporalPolicyFilePaths())
+}
+
+func cleanupTemporalOstreePolicyFilesWithPaths(paths temporalPolicyFilePaths) error {
+	err := os.Remove(paths.dropinPath)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	} else if err == nil {
 		// The file existed: Reload
-		if err := systemdRpmOstreeReload(); err != nil {
+		if err := paths.systemdReload(); err != nil {
 			return err
 		}
 	}
 
 	// The drop-in is gone, remove the temporal file if it exists
-	if err := os.Remove(rpmOstreeTemporalPolicyFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(paths.temporaryPolicyPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
