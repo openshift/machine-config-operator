@@ -168,6 +168,17 @@ var defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
 				},
 			},
 		},
+		{
+			// The BGP VIP peers file only matters at early boot, before the
+			// frr-k8s static pod hands over to the FRRConfiguration CRs;
+			// day-2 peer edits must not disrupt nodes.
+			Path: "/etc/kubernetes/static-pod-resources/frr-k8s/frr-peers.json",
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.NoneStatusAction,
+				},
+			},
+		},
 	},
 	Units: []opv1.NodeDisruptionPolicyStatusUnit{
 		{
