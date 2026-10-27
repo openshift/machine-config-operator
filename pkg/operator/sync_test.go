@@ -1540,10 +1540,19 @@ func TestFRRConfTemplateTimersAndPort(t *testing.T) {
 	out = render(peer{PeerAddress: "192.168.111.1", PeerASN: "64513"})
 	assert.NotContains(t, out, " port ")
 
+	// Every neighbor carries disable-connected-check (frr-k8s parity): with
+	// the RA-assigned /128 on br-ex, FRR's eBGP connected check fails after
+	// a reboot and the IPv6 session never leaves Active.
+	for _, addr := range []string{"192.168.111.1", "fd2e:6f44:5dd8:c956::1"} {
+		out = render(peer{PeerAddress: addr, PeerASN: "64513"})
+		assert.Contains(t, out, " neighbor "+addr+" disable-connected-check\n")
+	}
+
 	// The day-2 MachineConfig template must stay in sync with the bootstrap
 	// asset for both constructs.
 	day2, err := os.ReadFile(filepath.Join("..", "..", "templates", "master", "00-master", "on-prem", "files", "frr-k8s-conf.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(day2), "{{`{{- if and .HoldTime .KeepaliveTime}}`}}")
 	assert.Contains(t, string(day2), "port {{`{{.Port}}`}}")
+	assert.Contains(t, string(day2), "disable-connected-check")
 }
