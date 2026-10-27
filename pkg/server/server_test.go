@@ -183,7 +183,7 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
-	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "", mc)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "", "https://api-int.test.example.com:22623", mc)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
-	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "", mc)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name, "", "https://api-int.test.example.com:22623", mc)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
