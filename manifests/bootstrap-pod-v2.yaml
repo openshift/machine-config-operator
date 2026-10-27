@@ -22,7 +22,7 @@ spec:
         memory: 200Mi
     securityContext:
       privileged: true
-      readOnlyRootFilesystem: false
+      readOnlyRootFilesystem: true
     terminationMessagePolicy: FallbackToLogsOnError
     {{if .ControllerConfig.Proxy}}
     env:
@@ -46,6 +46,8 @@ spec:
     - name: server-basedir
       mountPath: /etc/mcs/bootstrap
       mountPropagation: HostToContainer
+    - name: mcc-tmp
+      mountPath: /tmp
   containers:
   - name: machine-config-server
     image: {{.Images.MachineConfigOperator}}
@@ -66,7 +68,7 @@ spec:
       mountPropagation: HostToContainer
     securityContext:
       privileged: true
-      readOnlyRootFilesystem: false
+      readOnlyRootFilesystem: true
   hostNetwork: true
   tolerations:
     - key: node-role.kubernetes.io/master
@@ -86,6 +88,8 @@ spec:
   - name: server-basedir
     hostPath:
       path: /etc/mcs/bootstrap
+  - name: mcc-tmp
+    emptyDir: {}
   - name: bootstrap-manifests
     hostPath:
       path: /etc/mcc/bootstrap
