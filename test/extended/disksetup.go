@@ -506,7 +506,7 @@ func assertAzureDataDisk(expected azureExpectedDisk, setup diskSetup, dataDisksB
 //
 // They run only on a cluster installed with the layout in azureExpectedDisks and skip otherwise,
 // because other Azure jobs configure a different one.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/parallel][OCPFeatureGate:AzureMultiDisk][OCPFeatureGate:MultiDiskSetup] Azure machine pool disk setup",
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/parallel][OCPFeatureGate:AzureMultiDisk] Azure machine pool disk setup",
 	g.Label("Platform:azure"), func() {
 		defer g.GinkgoRecover()
 
