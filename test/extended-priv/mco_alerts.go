@@ -192,7 +192,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			mcc        = NewController(oc.AsAdmin())
 		)
 
-		numMasterNodes, err := mMcp.getMachineCount()
+		numMasterNodes, err := mMcp.GetMachineCountStatusAsInt()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Cannot get the machinecount field in % MCP", mMcp.GetName())
 
 		exutil.By("Add label as infra to the existing master node")
@@ -237,10 +237,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By(`Check that the master node remains in master pool and is moved to "infra" pool or simply removed from master pool`)
-		o.Consistently(mMcp.getMachineCount, "30s", "10s").Should(o.Equal(numMasterNodes),
+		o.Consistently(mMcp.GetMachineCountStatusAsInt, "30s", "10s").Should(o.Equal(numMasterNodes),
 			"The number of machines in the MCP has changed!\n%s", mMcp.PrettyString())
 
-		o.Consistently(iMcp.getMachineCount, "30s", "10s").Should(o.Equal(0),
+		o.Consistently(iMcp.GetMachineCountStatusAsInt, "30s", "10s").Should(o.Equal(0),
 			"No node should be added to the custom pool!\n%s", iMcp.PrettyString())
 		logger.Infof("OK!\n")
 

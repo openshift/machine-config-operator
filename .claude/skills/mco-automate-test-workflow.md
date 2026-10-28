@@ -121,7 +121,8 @@ g.It("[PolarionID:<id>][OTP] <description> [Disruptive]", g.Label("Platform:aws"
 - Defer cleanup immediately after resource creation
 - Resource names include test ID: `fmt.Sprintf("test-%s-mc", testID)`
 - Node verification: `NewRemoteFile(node, path)` with gomega matchers
-- Pool waiting after changes: `mcp.waitForComplete()`
+- Pool waiting after config changes: `mcp.waitForComplete()`
+- Pool waiting after scale operations: see **Scale Operations** section below
 - Platform labels: `g.Label("Platform:aws", "Platform:gce")` based on spec tags
 - Feature gate labels: `g.Label("OCPFeatureGate:XXX")` if the spec requires it
 - Skip functions for platform/architecture: `skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform)`, `architecture.SkipNonAmd64SingleArch(oc)`
@@ -161,6 +162,31 @@ After generating the test code, verify completeness:
 | Testdata/templates | `test/extended-priv/testdata/files/` |
 | Utility functions | `test/extended-priv/util/` |
 | Resource wrappers | `test/extended-priv/*.go` |
+
+## Scale Operations
+
+When a test scales nodes up or down, you must capture the initial node count and use `WaitForPoolToBeSettled` to verify that the pool has fully settled (all machine counts match and conditions are correct).
+
+1. **Capture the initial node count** before any scaling, in the `var` section when possible:
+   ```go
+   initialNodeCount := len(mcp.GetNodesOrFail())
+   ```
+
+2. **After scale-up**, wait for the pool to settle with the new expected count:
+   ```go
+   o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount + numNewNodes)).To(o.Succeed(),
+       "MCP counts did not settle after scale-up.\n%s", mcp.PrettyString())
+   ```
+
+3. **In defer cleanups** for scale-down, use `SafeCleanup` and wait for the pool to settle back to the initial count:
+   ```go
+   defer SafeCleanup(func() {
+       o.Expect(ms.ScaleTo(initialNumMsNodes)).NotTo(o.HaveOccurred(),
+           "Error scaling down MachineSet %s", ms.GetName())
+       o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+           "MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+   })
+   ```
 
 ## Build & Verify
 
