@@ -93,7 +93,7 @@ func TestSNOCoreDNSGate(t *testing.T) {
 
 				var assets []string
 				for _, file := range ignCfg.Storage.Files {
-					if strings.Contains(file.Path, "sno-coredns") || file.Path == "/usr/local/bin/sno-resolv-prepender.sh" {
+					if strings.Contains(file.Path, "sno-coredns") || file.Path == "/usr/local/bin/sno-resolv-prepender.sh" || file.Path == "/etc/NetworkManager/conf.d/99-sno-internal-dns.conf" {
 						assets = append(assets, file.Path)
 					}
 				}
@@ -113,6 +113,7 @@ func TestSNOCoreDNSGate(t *testing.T) {
 				wantAssets = map[string]bool{
 					"/etc/kubernetes/manifests/sno-coredns.yaml":                     true,
 					"/etc/kubernetes/static-pod-resources/sno-coredns/Corefile.tmpl": true,
+					"/etc/NetworkManager/conf.d/99-sno-internal-dns.conf":            true,
 					"/usr/local/bin/sno-resolv-prepender.sh":                         true,
 					"sno-resolv-prepender.service":                                   true,
 					"sno-resolv-prepender.path":                                      true,
@@ -167,22 +168,13 @@ func TestSNOCoreDNSResolverPlainFile(t *testing.T) {
 	testDir := t.TempDir()
 	paths := prepareResolverTest(t, testDir, script)
 
-	original := "nameserver 198.51.100.53\noptions timeout:2\n"
-	writeTestFile(t, paths.resolvConf, original, 0o644)
+	writeTestFile(t, paths.resolvConf, "nameserver 198.51.100.53\noptions timeout:2\n", 0o644)
 	writeTestFile(t, paths.nmResolv, "nameserver 203.0.113.53\nsearch example.net\noptions attempts:2\n", 0o644)
-	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 1\n")
-	if _, err := resolverCommand(paths).CombinedOutput(); err == nil {
-		t.Fatal("resolver did not wait for CoreDNS readiness")
-	}
-	if got := readTestFile(t, paths.resolvConf); got != original {
-		t.Fatalf("resolver changed before CoreDNS became ready: got %q, want %q", got, original)
-	}
-	if _, err := os.Stat(paths.nmDropin); !os.IsNotExist(err) {
-		t.Fatalf("resolver ownership changed before CoreDNS became ready: %v", err)
-	}
+	_, err := resolverCommand(paths).CombinedOutput()
+	require.Error(t, err, "resolver succeeded without node IPs")
+	require.Equal(t, "nameserver 203.0.113.53\noptions attempts:2\nsearch example.com example.net\n", readTestFile(t, paths.resolvConf), "upstreams must be usable before node IPs exist")
 
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
+	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
 	runResolver(t, paths)
 	configured := readTestFile(t, paths.resolvConf)
 	for _, want := range []string{"nameserver 192.0.2.10", "search example.com example.net", "options attempts:2"} {
@@ -217,9 +209,12 @@ func TestSNOCoreDNSResolverSystemdResolved(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestFile(t, paths.nmResolv, "nameserver 203.0.113.53\nsearch example.net\n", 0o644)
+	_, err := resolverCommand(paths).CombinedOutput()
+	require.Error(t, err, "resolver succeeded without node IPs")
+	require.NoFileExists(t, paths.resolvedDropin)
+
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv4"), "192.0.2.10\n", 0o644)
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv6"), "2001:db8::10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
 
 	runResolver(t, paths)
 	configured := readTestFile(t, paths.resolvedDropin)
@@ -231,9 +226,6 @@ func TestSNOCoreDNSResolverSystemdResolved(t *testing.T) {
 	}
 	if !strings.Contains(configured, "Domains=example.com example.net\n") || strings.Contains(configured, "~.") {
 		t.Fatalf("unexpected systemd-resolved domain routing: %s", configured)
-	}
-	if _, err := os.Stat(paths.nmDropin); !os.IsNotExist(err) {
-		t.Fatalf("resolved configuration changed NetworkManager ownership: %v", err)
 	}
 
 	runResolver(t, paths)
@@ -249,7 +241,6 @@ func TestSNOCoreDNSResolverWithoutNetworkManagerNameserver(t *testing.T) {
 			paths := prepareResolverTest(t, t.TempDir(), script)
 			writeTestFile(t, paths.nmResolv, "search example.net\noptions attempts:2\n", 0o644)
 			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
 
 			if resolved {
 				stubResolv := filepath.Join(paths.resolvedRuntimeDir, "stub-resolv.conf")
@@ -276,7 +267,6 @@ func TestSNOCoreDNSResolverRetriesSystemdResolvedRestart(t *testing.T) {
 	require.NoError(t, os.Symlink(stubResolv, paths.resolvConf))
 	writeTestFile(t, paths.nmResolv, "nameserver 203.0.113.53\n", 0o644)
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(paths.binDir, "systemctl"), `#!/bin/sh
 attempts_file="$(dirname "$0")/systemctl-attempts"
 attempts=0
@@ -310,14 +300,12 @@ func TestSNOCoreDNSResolverNetworkManagerSymlink(t *testing.T) {
 	paths := prepareResolverTest(t, t.TempDir(), renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh"))
 	require.NoError(t, os.Symlink(paths.nmResolv, paths.resolvConf))
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
 	for _, upstream := range []string{"198.51.100.53", "203.0.113.53"} {
 		nmConfig := "nameserver " + upstream + "\n"
 		writeTestFile(t, paths.nmResolv, nmConfig, 0o644)
 		runResolver(t, paths)
 		require.Equal(t, nmConfig, readTestFile(t, paths.nmResolv), "NetworkManager input must not be overwritten")
 		require.Equal(t, "nameserver 192.0.2.10\n"+nmConfig+"search example.com\n", readTestFile(t, paths.resolvConf))
-		require.Equal(t, "[main]\nrc-manager=unmanaged\n", readTestFile(t, paths.nmDropin))
 
 		before, err := os.Stat(paths.resolvConf)
 		require.NoError(t, err)
@@ -326,7 +314,6 @@ func TestSNOCoreDNSResolverNetworkManagerSymlink(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, os.SameFile(before, after), "unchanged resolver was replaced")
 	}
-	require.Equal(t, "reload\n", readTestFile(t, filepath.Join(paths.binDir, "nmcli-calls")), "NetworkManager reloaded although it was already unmanaged")
 }
 
 func TestSNOCoreDNSResolverDeduplicatesFallbacks(t *testing.T) {
@@ -336,7 +323,6 @@ func TestSNOCoreDNSResolverDeduplicatesFallbacks(t *testing.T) {
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "2001:db8::10\n", 0o644)
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv4"), "192.0.2.10\n", 0o644)
 	writeTestFile(t, filepath.Join(paths.nodeIPDir, "ipv6"), "2001:db8::10\n", 0o644)
-	writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
 	want := "nameserver 2001:db8::10\nnameserver 192.0.2.10\nnameserver 203.0.113.53\n# nameserver 203.0.113.54\noptions attempts:2\nsearch example.com example.net\n"
 	for range 2 {
 		runResolver(t, paths)
@@ -344,23 +330,17 @@ func TestSNOCoreDNSResolverDeduplicatesFallbacks(t *testing.T) {
 	}
 }
 
-func TestSNOCoreDNSResolverRejectsUnsafeTakeover(t *testing.T) {
+func TestSNOCoreDNSResolverPreservesResolverOnFailure(t *testing.T) {
 	script := renderSNODNSFile(t, "/usr/local/bin/sno-resolv-prepender.sh")
-	for _, reason := range []string{"ownership unchanged", "reload failure", "missing NetworkManager resolv.conf"} {
+	for _, reason := range []string{"missing NetworkManager resolv.conf", "no nameservers"} {
 		t.Run(reason, func(t *testing.T) {
 			paths := prepareResolverTest(t, t.TempDir(), script)
 			original := "nameserver 198.51.100.53\n"
 			writeTestFile(t, paths.resolvConf, original, 0o644)
-			if reason != "missing NetworkManager resolv.conf" {
-				writeTestFile(t, paths.nmResolv, original, 0o644)
-			}
-			writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
-			writeExecutable(t, filepath.Join(paths.binDir, "curl"), "#!/bin/sh\nexit 0\n")
-			switch reason {
-			case "ownership unchanged":
-				writeExecutable(t, filepath.Join(paths.binDir, "busctl"), "#!/bin/sh\necho 's \"file\"'\n")
-			case "reload failure":
-				writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nexit 1\n")
+			if reason == "no nameservers" {
+				writeTestFile(t, paths.nmResolv, "search example.net\n", 0o644)
+			} else {
+				writeTestFile(t, filepath.Join(paths.nodeIPDir, "primary-ip"), "192.0.2.10\n", 0o644)
 			}
 			_, err := resolverCommand(paths).CombinedOutput()
 			require.Error(t, err)
@@ -373,10 +353,6 @@ func TestSNOCoreDNSResolverRejectsUnsafeTakeover(t *testing.T) {
 				names = append(names, entry.Name())
 			}
 			require.Equal(t, []string{"resolv.conf"}, names, "resolver left temporary files")
-			if reason == "missing NetworkManager resolv.conf" {
-				require.NoFileExists(t, paths.nmDropin)
-				require.NoFileExists(t, filepath.Join(paths.binDir, "nmcli-calls"))
-			}
 		})
 	}
 }
@@ -388,7 +364,6 @@ type resolverTestPaths struct {
 	resolvedRestartPending string
 	resolvedRuntimeDir     string
 	nmResolv               string
-	nmDropin               string
 	resolvConf             string
 	nodeIPDir              string
 }
@@ -426,7 +401,6 @@ func prepareResolverTest(t *testing.T, testDir, script string) resolverTestPaths
 		resolvedRestartPending: filepath.Join(testDir, "run", "sno-resolv-prepender", "resolved-restart-pending"),
 		resolvedRuntimeDir:     filepath.Join(testDir, "run", "systemd", "resolve"),
 		nmResolv:               filepath.Join(testDir, "run", "NetworkManager", "resolv.conf"),
-		nmDropin:               filepath.Join(testDir, "run", "NetworkManager", "conf.d", "99-sno-internal-dns.conf"),
 		resolvConf:             filepath.Join(testDir, "etc", "resolv.conf"),
 		nodeIPDir:              filepath.Join(testDir, "run", "nodeip-configuration"),
 	}
@@ -437,14 +411,6 @@ func prepareResolverTest(t *testing.T, testDir, script string) resolverTestPaths
 	}
 	writeExecutable(t, paths.script, script)
 	writeExecutable(t, filepath.Join(paths.binDir, "systemctl"), "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(paths.binDir, "nmcli"), "#!/bin/sh\nprintf 'reload\\n' >> \"$(dirname \"$0\")/nmcli-calls\"\n")
-	writeExecutable(t, filepath.Join(paths.binDir, "busctl"), `#!/bin/sh
-if [ -f "$(dirname "$0")/nmcli-calls" ] && [ -f "$SNO_DNS_NM_DROPIN" ] && grep -q '^rc-manager=unmanaged$' "$SNO_DNS_NM_DROPIN"; then
-  echo 's "unmanaged"'
-else
-  echo 's "file"'
-fi
-`)
 	return paths
 }
 
@@ -463,7 +429,6 @@ func resolverCommand(paths resolverTestPaths) *exec.Cmd {
 		"SNO_DNS_RESOLVED_RESTART_PENDING="+paths.resolvedRestartPending,
 		"SNO_DNS_RESOLVED_RUNTIME_DIR="+paths.resolvedRuntimeDir,
 		"SNO_DNS_NM_RESOLV="+paths.nmResolv,
-		"SNO_DNS_NM_DROPIN="+paths.nmDropin,
 		"SNO_DNS_RESOLV_CONF="+paths.resolvConf,
 		"SNO_DNS_NODE_IP_DIR="+paths.nodeIPDir,
 	)
