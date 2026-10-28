@@ -5,8 +5,10 @@ enabled: false
 contents: |
   [Unit]
   Description=Reconcile host DNS with SNO CoreDNS
-  After=NetworkManager.service nodeip-configuration.service kubelet.service
-  Wants=NetworkManager.service nodeip-configuration.service kubelet.service
+  # NetworkManager does not own resolv.conf; image pulls by nodeip-configuration
+  # and kubelet depend on this service, so it must not wait for them.
+  After=NetworkManager.service
+  Wants=NetworkManager.service
   ConditionPathExists=/etc/kubernetes/manifests/sno-coredns.yaml
   StartLimitIntervalSec=0
 
