@@ -103,16 +103,22 @@ const (
 
 	// MachineAPINamespace is the MachineAPI namespace
 	MachineAPINamespace = "openshift-machine-api"
+	// ClusterAPINamespace is the Cluster API namespace
+	ClusterAPINamespace = "openshift-cluster-api"
 
 	// Machine phase Provisioning
 	MachinePhaseProvisioning = "Provisioning"
 	// Machine phase Deleting
 	MachinePhaseDeleting = "Deleting"
 	// We use full name to get machineset/machine xref: https://access.redhat.com/solutions/7040368
-	// MachineSetFullName is the machineset fully qualified name
+	// MachineSetFullName is the MAPI machineset fully qualified name
 	MachineSetFullName = "machineset.machine.openshift.io"
-	// MachineFullName is the machine fully qualified name
+	// MachineFullName is the MAPI machine fully qualified name
 	MachineFullName = "machine.machine.openshift.io"
+	// CAPIMachineSetFullName is the CAPI machineset fully qualified name
+	CAPIMachineSetFullName = "machineset.cluster.x-k8s.io"
+	// CAPIMachineFullName is the CAPI machine fully qualified name
+	CAPIMachineFullName = "machine.cluster.x-k8s.io"
 
 	// MachineSetResource is the resource name for machinesets
 	MachineSetResource = "machinesets"

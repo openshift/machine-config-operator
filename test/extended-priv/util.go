@@ -419,6 +419,31 @@ func GetClonedResourceJSONString(res ResourceInterface, newName, newNamespace st
 	return jsonRes, nil
 }
 
+// CreateResourceFromJSON creates a resource from a JSON string
+func CreateResourceFromJSON(oc *exutil.CLI, kind, name, namespace, jsonRes string) (*Resource, error) {
+	filename := "created-" + kind + "-" + name + "-" + uuid.NewString()
+	if namespace != "" {
+		filename += "-namespace"
+	}
+	filename += ".json"
+
+	tmpFile := generateTmpFile(oc, filename)
+
+	wErr := os.WriteFile(tmpFile, []byte(jsonRes), 0o644)
+	if wErr != nil {
+		return nil, wErr
+	}
+
+	logger.Infof("New resource created using definition file %s", tmpFile)
+
+	_, cErr := oc.AsAdmin().WithoutNamespace().Run("create").Args("-f", tmpFile).Output()
+	if cErr != nil {
+		return nil, cErr
+	}
+
+	return NewNamespacedResource(oc, kind, namespace, name), nil
+}
+
 // CloneResource will clone the given resource with the new name and the new namespace. If new namespace is an empty strng, it is ignored and the namespace will not be changed.
 // Sometimes we need to apply extra changes to the cloned resource before it is created, in order to do so we can provide an function using the extraModifications parameter
 func CloneResource(res ResourceInterface, newName, newNamespace string, extraModifications func(string) (string, error)) (*Resource, error) {
@@ -433,28 +458,7 @@ func CloneResource(res ResourceInterface, newName, newNamespace string, extraMod
 		newNamespace = res.GetNamespace()
 	}
 
-	filename := "cloned-" + res.GetKind() + "-" + newName + "-" + uuid.NewString()
-	if newNamespace != "" {
-		filename += "-namespace"
-	}
-	filename += ".json"
-
-	tmpFile := generateTmpFile(res.GetOC(), filename)
-
-	wErr := os.WriteFile(tmpFile, []byte(jsonRes), 0o644)
-	if wErr != nil {
-		return nil, wErr
-	}
-
-	logger.Infof("New resource created using definition file %s", tmpFile)
-
-	_, cErr := res.GetOC().AsAdmin().WithoutNamespace().Run("create").Args("-f", tmpFile).Output()
-
-	if cErr != nil {
-		return nil, cErr
-	}
-
-	return NewNamespacedResource(res.GetOC(), res.GetKind(), newNamespace, newName), nil
+	return CreateResourceFromJSON(res.GetOC(), res.GetKind(), newName, newNamespace, jsonRes)
 }
 
 // DEPRECATED, use generateTempFilePath instead
@@ -622,7 +626,7 @@ func QuoteIfNotJSON(s string) string {
 }
 
 // WorkersCanBeScaled returns true if worker nodes can be scaled using machinesets
-func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
+func WorkersCanBeScaled(oc *exutil.CLI, apiTypes ...MachineAPIType) (bool, error) {
 	platform := exutil.CheckPlatform(oc)
 	logger.Infof("Checking if in this cluster workers can be scaled using machinesets")
 
@@ -639,7 +643,7 @@ func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 	}
 
 	// Get all managed machine resources
-	allMs, err := GetAllManagedMachineResources(oc)
+	allMs, err := GetAllManagedMachineResources(oc, apiTypes...)
 	if err != nil {
 		logger.Errorf("Error getting a list of ManagedMachineResources")
 		return false, err
@@ -677,8 +681,8 @@ func WorkersCanBeScaled(oc *exutil.CLI) (bool, error) {
 }
 
 // SkipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
-func SkipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
-	canBeScaled, err := WorkersCanBeScaled(oc)
+func SkipTestIfWorkersCannotBeScaled(oc *exutil.CLI, apiTypes ...MachineAPIType) {
+	canBeScaled, err := WorkersCanBeScaled(oc, apiTypes...)
 	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error deciding if worker nodes can be scaled using machinesets")
 
 	if !canBeScaled {
