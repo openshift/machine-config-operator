@@ -938,17 +938,20 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	logger.Infof("OCL image: %s\n", oclImage)
 
 	isInternalRegistry := OrFail[bool](mosc.IsUsingInternalRegistry())
+	initialNodeCount := len(mcp.GetNodesOrFail())
 
 	exutil.By("Check able to scale the node from existing ManagedMachineResource")
 	existingMS := GetValidManagedMachineResource(oc.AsAdmin())
 
 	o.Expect(existingMS.AddToScale(1)).NotTo(o.HaveOccurred())
 
-	defer func() {
+	defer SafeCleanup(func() {
 		exutil.By("Scale down the node from existing Machineset")
-		existingMS.AddToScale(-1)
-		mcp.waitForComplete()
-	}()
+		o.Expect(existingMS.AddToScale(-1)).NotTo(o.HaveOccurred(),
+			"Error scaling down MachineSet %s", existingMS.GetName())
+		o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+			"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+	})
 
 	exutil.By("Create duplicate machineset and scale new node")
 	machineset := GetValidManagedMachineResource(oc.AsAdmin())
@@ -956,14 +959,14 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	duplicateMS, err := machineset.Duplicate(duplicateMSName)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	defer func() {
+	defer SafeCleanup(func() {
 		if duplicateMS.Exists() {
 			logger.Infof("Deleting duplicate machineset %s and scale down the node", duplicateMS.GetName())
 			o.Expect(duplicateMS.ScaleTo(0)).To(o.Succeed())
 			o.Expect(duplicateMS.WaitUntilReady("10m")).To(o.Succeed())
 			o.Expect(duplicateMS.Delete()).To(o.Succeed())
 		}
-	}()
+	})
 	o.Expect(duplicateMS.ScaleTo(1)).To(o.Succeed())
 
 	exutil.By("Wait for both existing new node added and for duplicate new node added to get ready")
@@ -972,6 +975,9 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 		gm.Expect(existingMS.GetIsReady()).To(o.BeTrue(), "MachineSet %s is not ready", existingMS.GetName())
 		gm.Expect(duplicateMS.GetIsReady()).To(o.BeTrue(), "MachineSet %s is not ready", duplicateMS.GetName())
 	}, "30m", "2m").Should(o.Succeed(), "MachineSets are not ready")
+
+	o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount+2)).To(o.Succeed(),
+		"MCP counts did not settle after scale-up.\n%s", mcp.PrettyString())
 
 	if isInternalRegistry {
 		logger.Infof("Internal registry detected, waiting for MCP to complete (requires 2 reboots)")

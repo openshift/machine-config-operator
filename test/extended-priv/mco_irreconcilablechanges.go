@@ -182,6 +182,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		SkipTestIfWorkersCannotBeScaled(oc)
 		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+		initialNodeCount := len(mcp.GetNodesOrFail())
 
 		defer func() {
 			logger.Infof("Restore initial MachineConfiguration spec")
@@ -208,7 +209,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				o.Expect(err).NotTo(o.HaveOccurred())
 				err = newMS.Delete()
 				o.Expect(err).NotTo(o.HaveOccurred())
-				mcp.waitForComplete()
+				o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+					"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
 			}
 		})
 

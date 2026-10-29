@@ -146,6 +146,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSName               = "cloned-tc-74240"
 			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
 			clonedOwnedMSName          = "cloned-tc-74240-owned"
+			initialNodeCount           = len(wMcp.GetNodesOrFail())
 		)
 
 		exutil.By("Prepare to restore the original Machinesets")
@@ -231,15 +232,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Scale up one of the fixed machinesets to make sure that they are working fine")
 		logger.Infof("Scaling up machineset %s", clonedMS.GetName())
-		defer wMcp.waitForComplete()
-		defer clonedMS.ScaleTo(0)
+		defer SafeCleanup(func() {
+			o.Expect(clonedMS.ScaleTo(0)).To(o.Succeed(),
+				"Error scaling down MachineSet %s", clonedMS.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(clonedMS.ScaleTo(1)).To(o.Succeed(),
 			"Error scaling up MachineSet %s", clonedMS.GetName())
 		logger.Infof("Waiting %s machineset for being ready", clonedMS)
 		o.Eventually(clonedMS.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMS.GetName())
 		// When the node is created it is still executing rpm-ostree commands before joining
 		// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
-		// Hence, we wait for ndoes to be updated before reverting to the initial state
+		// Hence, we wait for nodes to be updated before reverting to the initial state
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		o.Eventually(clonedMS.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
 		logger.Infof("OK!\n")
 	})
@@ -254,6 +261,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
 			labelName              = "test"
 			labelValue             = "update"
+			initialNodeCount       = len(wMcp.GetNodesOrFail())
 		)
 
 		exutil.By("Opt-in boot images update")
@@ -321,15 +329,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Scale up the fixed machinessetset to make sure that it is working fine")
 		logger.Infof("Scaling up machineset %s", clonedMSLabel.GetName())
-		defer wMcp.waitForComplete()
-		defer clonedMSLabel.ScaleTo(0)
+		defer SafeCleanup(func() {
+			o.Expect(clonedMSLabel.ScaleTo(0)).To(o.Succeed(),
+				"Error scaling down MachineSet %s", clonedMSLabel.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(clonedMSLabel.ScaleTo(1)).To(o.Succeed(),
 			"Error scaling up MachineSet %s", clonedMSLabel.GetName())
 		logger.Infof("Waiting %s machineset for being ready", clonedMSLabel)
 		o.Eventually(clonedMSLabel.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMSLabel.GetName())
 		// When the node is created it is still executing rpm-ostree commands before joining
 		// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
-		// Hence, we wait for ndoes to be updated before reverting to the initial state
+		// Hence, we wait for nodes to be updated before reverting to the initial state
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		o.Eventually(clonedMSLabel.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
 		logger.Infof("OK!\n")
 	})
@@ -525,6 +539,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
+			initialNodeCount     = len(wMcp.GetNodesOrFail())
 
 			userDataJSONVersionPath = `ignition.version`
 		)
@@ -581,15 +596,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Scale up the updated machineset to make sure that they are working fine")
 		logger.Infof("Scaling up machineset %s", clonedMS.GetName())
-		defer wMcp.waitForComplete()
-		defer clonedMS.ScaleTo(0)
+		defer SafeCleanup(func() {
+			o.Expect(clonedMS.ScaleTo(0)).To(o.Succeed(),
+				"Error scaling down MachineSet %s", clonedMS.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(clonedMS.ScaleTo(1)).To(o.Succeed(),
 			"Error scaling up MachineSet %s", clonedMS.GetName())
 		logger.Infof("Waiting %s machineset for being ready", clonedMS)
 		o.Eventually(clonedMS.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMS.GetName())
 		// When the node is created it is still executing rpm-ostree commands before joining
 		// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
-		// Hence, we wait for ndoes to be updated before reverting to the initial state
+		// Hence, we wait for nodes to be updated before reverting to the initial state
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		o.Eventually(clonedMS.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
 		logger.Infof("OK!\n")
 	})

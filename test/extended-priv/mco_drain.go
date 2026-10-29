@@ -63,7 +63,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Wait until node is cordoned")
 		o.Eventually(workerNode.Get, "20m", "1m").WithArguments(`{.spec.taints[?(@.effect=="NoSchedule")].effect}`).
-				Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
+			Should(o.Equal("NoSchedule"), fmt.Sprintf("Node %s was not cordoned", workerNode.name))
 
 		exutil.By("Check MCC logs to see the early sleep interval b/w failed drains")
 		var podLogs string
@@ -100,7 +100,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		lWaitErr := wait.PollUntilContextTimeout(context.TODO(), 1*time.Minute, 15*time.Minute, immediate, func(_ context.Context) (bool, error) {
 			logs, err := mcc.GetFilteredLogsAsList(workerNode.GetName() + ".*Drain has been failing for more than 10 minutes. Waiting 5 minutes")
 			if err != nil {
-			return false, fmt.Errorf("error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
+				return false, fmt.Errorf("error getting filtered logs for node %s from %v: %w", workerNode.GetName(), mcc, err)
 			}
 			if len(logs) > 1 {
 				// Get only 2 lines to avoid flooding the test logs, ignore the rest if any.
@@ -189,12 +189,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			platform := exutil.CheckPlatform(oc)
 			logger.Infof("Platform is %s", platform)
 			if platform != NonePlatform && platform != "" {
+				initialWorkerCount := len(mcp.GetNodesOrFail())
 				err := AddToAllMachineSets(oc, 1)
 				o.Expect(err).NotTo(o.HaveOccurred())
-				defer func() {
+				defer SafeCleanup(func() {
 					o.Expect(AddToAllMachineSets(oc, -1)).NotTo(o.HaveOccurred())
-					mcp.waitForComplete()
-				}()
+					o.Expect(mcp.WaitForPoolToBeSettled(initialWorkerCount)).To(o.Succeed(),
+						"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+				})
 			} else {
 				logger.Infof("Platform is %s, skipping the MachineSets replica configuration", platform)
 			}
@@ -254,12 +256,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			platform := exutil.CheckPlatform(oc)
 			logger.Infof("Platform is %s", platform)
 			if platform != NonePlatform && platform != "" {
+				initialWorkerCount := len(mcp.GetNodesOrFail())
 				err := AddToAllMachineSets(oc, 1)
 				o.Expect(err).NotTo(o.HaveOccurred())
-				defer func() {
+				defer SafeCleanup(func() {
 					o.Expect(AddToAllMachineSets(oc, -1)).NotTo(o.HaveOccurred())
-					mcp.waitForComplete()
-				}()
+					o.Expect(mcp.WaitForPoolToBeSettled(initialWorkerCount)).To(o.Succeed(),
+						"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+				})
 			} else {
 				logger.Infof("Platform is %s, skipping the MachineSets replica configuration", platform)
 			}

@@ -277,7 +277,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// wait update to complete
 		o.Eventually(workerNode.IsUpdating, "5m", "5s").Should(o.BeTrue(), "Node is not updating")
 		o.Eventually(workerNode.IsUpdated, "10m", "10s").Should(o.BeTrue(), "Node is not updated")
-		o.Eventually(workerMcp.getUpdatedMachineCount, "2m", "15s").Should(o.Equal(1), "The  MCP is not properly reporting the updated node")
+		o.Eventually(workerMcp.GetUpdatedMachineCountStatusAsInt, "2m", "15s").Should(o.Equal(1), "The  MCP is not properly reporting the updated node")
 		o.Eventually(NewRemoteFile(workerNode, filePath).Exists, "2m", "20s").Should(o.BeTrue(), "Cannot find expected file %s on node %s", filePath, workerNode.GetName())
 		logger.Infof("Node %s is updated to desired MC %s", workerNode.GetName(), desiredConfig)
 
@@ -394,7 +394,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Check that all nodes are updated but the manually cordoned one")
 		numNodes := len(nodes)
 		waitDuration := mcp.estimateWaitDuration().String()
-		o.Eventually(mcp.getUpdatedMachineCount, waitDuration, "15s").Should(o.Equal(numNodes-1),
+		o.Eventually(mcp.GetUpdatedMachineCountStatusAsInt, waitDuration, "15s").Should(o.Equal(numNodes-1),
 			"All nodes but one should be udated. %d total nodes, expecting %d to be updated", numNodes, numNodes-1)
 
 		// We check that the desired config for the manually cordoned node is the old config, and not the new one
@@ -467,9 +467,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			MoveNodeToAnotherCustomPool(canaryNode, customMCPName, canaryMCPName),
 		).To(o.Succeed(), "Error labeling node %s", canaryNode)
 
-		o.Eventually(canaryMcp.getMachineCount, "5m", "20s").Should(o.Equal(1),
+		o.Eventually(canaryMcp.GetMachineCountStatusAsInt, "5m", "20s").Should(o.Equal(1),
 			"A machine should be added to the canary MCP, but no machine was added: %s", canaryMcp.PrettyString())
-		o.Eventually(customMcp.getMachineCount, "5m", "20s").Should(o.Equal(1),
+		o.Eventually(customMcp.GetMachineCountStatusAsInt, "5m", "20s").Should(o.Equal(1),
 			"A machine should be removed from the custom MCP: %s", customMcp.PrettyString())
 		canaryMcp.waitForComplete()
 		logger.Infof("OK!\n")

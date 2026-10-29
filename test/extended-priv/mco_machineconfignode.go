@@ -230,6 +230,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			provisioningMachine ManagedMachine
 			deletingMachine     ManagedMachine
 			mcp                 = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+			initialNodeCount    = len(mcp.GetNodesOrFail())
 		)
 
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
@@ -241,13 +242,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		replica, cerr := strconv.Atoi(OrFail[string](ms.GetReplicaOfSpec()))
 		o.Expect(cerr).NotTo(o.HaveOccurred(), "Convert string to int error")
+		originalReplica := replica
 
-		defer func() {
-			if serr := ms.ScaleTo(replica); serr != nil {
-				logger.Errorf("Rollback replica for machineset %s failed: %v", ms.GetName(), serr)
-			}
-			mcp.waitForComplete()
-		}()
+		defer SafeCleanup(func() {
+			o.Expect(ms.ScaleTo(originalReplica)).NotTo(o.HaveOccurred(),
+				"Rollback replica for machineset %s failed", ms.GetName())
+			o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+		})
 
 		exutil.By("Scale up machineset to provision new node")
 		replica++

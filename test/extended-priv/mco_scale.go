@@ -101,8 +101,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			numNewNodes       = 1
 		)
 
-		defer wMcp.waitForComplete()
-
 		exutil.By("Scale up a machineset")
 		ms := GetValidManagedMachineResource(oc.AsAdmin())
 
@@ -112,7 +110,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		initialNumMsNodes := len(initialMsNodes)
 
 		logger.Infof("Scaling up machineset %s by 1", ms.GetName())
-		defer func() { _ = ms.ScaleTo(initialNumMsNodes) }()
+		defer SafeCleanup(func() {
+			o.Expect(ms.ScaleTo(initialNumMsNodes)).NotTo(o.HaveOccurred(),
+				"Error scaling down MachineSet %s", ms.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(ms.ScaleTo(initialNumMsNodes+numNewNodes)).NotTo(
 			o.HaveOccurred(),
 			"Error scaling up MachineSet %s", ms.GetName())
@@ -126,7 +129,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Check that worker pool is increased and updated")
 		o.Eventually(wMcp.GetNodesOrFail, "5m", "30s").Should(o.HaveLen(initialNumWorkers+numNewNodes),
 			"The worker pool has not added the new nodes created by the new Machineset.\n%s", wMcp.PrettyString())
-		wMcp.waitForComplete()
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers+numNewNodes)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		logger.Infof("OK!\n")
 
 		exutil.By("Check that the sshkey exists in all nodes")
@@ -153,8 +157,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		// skip the test if fips is not enabled
 		skipTestIfFIPSIsNotEnabled(oc)
-
-		defer wMcp.waitForComplete()
 
 		exutil.By("Rotate MCS certificate")
 		initialMCSPods, err := GetMCSPodNames(oc.AsAdmin())
@@ -216,7 +218,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		initialNumMsNodes := len(initialMsNodes)
 
 		logger.Infof("Scaling up machineset %s by 1", ms.GetName())
-		defer func() { _ = ms.ScaleTo(initialNumMsNodes) }()
+		defer SafeCleanup(func() {
+			o.Expect(ms.ScaleTo(initialNumMsNodes)).NotTo(o.HaveOccurred(),
+				"Error scaling down MachineSet %s", ms.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(ms.ScaleTo(initialNumMsNodes+numNewNodes)).NotTo(
 			o.HaveOccurred(),
 			"Error scaling up MachineSet %s", ms.GetName())
@@ -230,7 +237,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Check that worker pool is increased and updated")
 		o.Eventually(wMcp.GetNodesOrFail, "5m", "30s").Should(o.HaveLen(initialNumWorkers+numNewNodes),
 			"The worker pool has not added the new nodes created by the new Machineset.\n%s", wMcp.PrettyString())
-		wMcp.waitForComplete()
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers+numNewNodes)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		logger.Infof("All nodes are up and ready!")
 		logger.Infof("OK!\n")
 
@@ -268,10 +276,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		initialNumMsNodes := len(ms.GetNodesOrFail())
 
 		logger.Infof("Scaling up machineset %s by %d", ms.GetName(), numNewNodes)
-		defer func() {
-			_ = ms.ScaleTo(initialNumMsNodes)
-			wMcp.waitForComplete()
-		}()
+		defer SafeCleanup(func() {
+			o.Expect(ms.ScaleTo(initialNumMsNodes)).NotTo(o.HaveOccurred(),
+				"Error scaling down MachineSet %s", ms.GetName())
+			o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+		})
 		o.Expect(ms.ScaleTo(initialNumMsNodes+numNewNodes)).NotTo(
 			o.HaveOccurred(),
 			"Error scaling up MachineSet %s", ms.GetName())
@@ -280,7 +290,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Check that worker pool is increased and updated")
 		o.Eventually(wMcp.GetNodesOrFail, "15m", "30s").Should(o.HaveLen(initialNumWorkers+numNewNodes),
 			"The worker pool has not added the new nodes created by the new Machineset.\n%s", wMcp.PrettyString())
-		wMcp.waitForComplete()
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNumWorkers+numNewNodes)).To(o.Succeed(),
+			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
 		logger.Infof("All nodes are up and ready!")
 		logger.Infof("OK!\n")
 
@@ -391,12 +402,14 @@ func removeClonedMachineSet(ms ManagedMachineResource, mcp *MachineConfigPool, e
 			"Error deleting MachineSet %s", ms.GetName())
 
 		if expectedNumWorkers >= 0 {
-			exutil.By("Check that worker pool is increased and updated")
+			exutil.By("Check that worker pool has the right number of ready nodes after scale-down")
 			// Before calling mcp.GetNodes we wait for the MachineCount number to settle, to avoid a panic due to nodes disappearing while we calculate the number of nodes
-			o.Eventually(mcp.getMachineCount, "5m", "30s").Should(o.Equal(expectedNumWorkers),
+			o.Eventually(mcp.GetMachineCountStatusAsInt, "5m", "30s").Should(o.Equal(expectedNumWorkers),
 				"The MachineCount has not the expected value in pool:\n%s", mcp.PrettyString())
 			o.Eventually(mcp.GetNodes, "5m", "30s").Should(o.HaveLen(expectedNumWorkers),
 				"The number of nodes is not the expected one in pool:\n%s", mcp.PrettyString())
+			o.Expect(mcp.WaitForPoolToBeSettled(expectedNumWorkers)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
 		}
 	}
 
@@ -504,7 +517,8 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 	exutil.By("Check that worker pool is increased and updated")
 	o.Eventually(mcp.GetNodesOrFail, "5m", "30s").Should(o.HaveLen(initialNumWorkers+numNewNodes),
 		"The worker pool has not added the new nodes created by the new Machineset.\n%s", mcp.PrettyString())
-	mcp.waitForComplete()
+	o.Expect(mcp.WaitForPoolToBeSettled(initialNumWorkers+numNewNodes)).To(o.Succeed(),
+		"MCP counts did not settle after scale-up.\n%s", mcp.PrettyString())
 	logger.Infof("OK!\n")
 
 	exutil.By("Scale down and remove the cloned Machineset")

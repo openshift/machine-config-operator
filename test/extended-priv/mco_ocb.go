@@ -436,7 +436,7 @@ func ValidateSuccessfulMOSC(mosc *MachineOSConfig, checkers []Checker) {
 		"The MOSC resource was not updated with the MOSB's digestedImagePullSpec.\n%s", mosc.PrettyString())
 	logger.Infof("OK!\n")
 
-	numNodes, err := mcp.getMachineCount()
+	numNodes, err := mcp.GetMachineCountStatusAsInt()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting MachineCount from %s", mcp)
 	if numNodes > 0 {
 		exutil.By("Wait for the new image to be applied")

@@ -890,6 +890,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			masterUserDataSecret        = NewSecret(oc.AsAdmin(), MachineAPINamespace, "master-user-data")
 			workerUserDataManagedSecret = NewSecret(oc.AsAdmin(), MachineAPINamespace, "worker-user-data-managed")
 			masterUserDataManagedSecret = NewSecret(oc.AsAdmin(), MachineAPINamespace, "worker-user-data-managed")
+			initialNodeCount            = len(mcp.GetNodesOrFail())
 		)
 
 		exutil.By("To verify the MCS-CA and MCS-TLS secret present with required annotation")
@@ -917,11 +918,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		o.Expect(ms.AddToScale(1)).NotTo(o.HaveOccurred())
 
-		defer func() {
-			exutil.By("Scale to orignal no. of worker node")
-			ms.AddToScale(-1)
-			mcp.waitForComplete()
-		}()
+		defer SafeCleanup(func() {
+			exutil.By("Scale to original no. of nodes")
+			o.Expect(ms.AddToScale(-1)).NotTo(o.HaveOccurred(),
+				"Error scaling down MachineSet %s", ms.GetName())
+			o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+				"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+		})
 
 		o.Eventually(ms.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", ms.GetName())
 

@@ -99,7 +99,7 @@ func (mcp *MachineConfigPool) IsEmpty() bool {
 	)
 
 	o.Eventually(func() (err error) {
-		numNodes, err = mcp.getMachineCount()
+		numNodes, err = mcp.GetMachineCountStatusAsInt()
 		return err
 	}, "2m", "10s").Should(o.Succeed(),
 		"It was not possible to get the status.machineCount value for MPC %s", mcp.GetName())
@@ -182,7 +182,7 @@ func (mcp *MachineConfigPool) getConfigNameOfStatusOrFail() string {
 	return config
 }
 
-func (mcp *MachineConfigPool) getMachineCount() (int, error) {
+func (mcp *MachineConfigPool) GetMachineCountStatusAsInt() (int, error) {
 	machineCountStr, ocErr := mcp.Get(`{.status.machineCount}`)
 	if ocErr != nil {
 		logger.Infof("Error getting machineCount: %s", ocErr)
@@ -220,7 +220,7 @@ func (mcp *MachineConfigPool) getDegradedMachineCount() (int, error) {
 }
 
 // getDegradedMachineCount returns the number of updated machines in the pool
-func (mcp *MachineConfigPool) getUpdatedMachineCount() (int, error) {
+func (mcp *MachineConfigPool) GetUpdatedMachineCountStatusAsInt() (int, error) {
 	umachineCountStr, ocErr := mcp.Get(`{.status.updatedMachineCount}`)
 	if ocErr != nil {
 		logger.Errorf("Error getting updatedMachineCount: %s", ocErr)
@@ -246,9 +246,114 @@ func (mcp *MachineConfigPool) GetReadyMachineCountStatus() (string, error) {
 	return mcp.Get(`{.status.readyMachineCount}`)
 }
 
+func (mcp *MachineConfigPool) GetReadyMachineCountStatusAsInt() (int, error) {
+	readyMachineCountStr, ocErr := mcp.GetReadyMachineCountStatus()
+	if ocErr != nil {
+		return -1, ocErr
+	}
+
+	if readyMachineCountStr == "" {
+		return -1, fmt.Errorf(".status.readyMachineCount value is not already set in MCP %s", mcp.GetName())
+	}
+
+	readyMachineCount, convErr := strconv.Atoi(readyMachineCountStr)
+	if convErr != nil {
+		return -1, convErr
+	}
+
+	return readyMachineCount, nil
+}
+
 // GetDegradedMachineCountStatus returns the value of 'degradedMachineCount' in the MCP status as a string
 func (mcp *MachineConfigPool) GetDegradedMachineCountStatus() (string, error) {
 	return mcp.Get(`{.status.degradedMachineCount}`)
+}
+
+func (mcp *MachineConfigPool) GetDegradedMachineCountStatusAsInt() (int, error) {
+	degradedMachineCountStr, ocErr := mcp.GetDegradedMachineCountStatus()
+	if ocErr != nil {
+		return -1, ocErr
+	}
+
+	if degradedMachineCountStr == "" {
+		return -1, fmt.Errorf(".status.degradedMachineCount value is not already set in MCP %s", mcp.GetName())
+	}
+
+	degradedMachineCount, convErr := strconv.Atoi(degradedMachineCountStr)
+	if convErr != nil {
+		return -1, convErr
+	}
+
+	return degradedMachineCount, nil
+}
+
+func (mcp *MachineConfigPool) WaitForPoolToBeSettled(expectedCount int) error {
+	timeout := mcp.estimateWaitDuration()
+	if timeout < 15*time.Minute {
+		timeout = 15 * time.Minute
+	}
+	logger.Infof("Waiting %s for MCP %s to be settled with %d nodes", timeout, mcp.GetName(), expectedCount)
+	var lastReadErr error
+	pollErr := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, timeout, true, func(_ context.Context) (bool, error) {
+		machineCount, err := mcp.GetMachineCountStatusAsInt()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting machineCount: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+		readyMachineCount, err := mcp.GetReadyMachineCountStatusAsInt()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting readyMachineCount: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+		updatedMachineCount, err := mcp.GetUpdatedMachineCountStatusAsInt()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting updatedMachineCount: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+		degradedMachineCount, err := mcp.GetDegradedMachineCountStatusAsInt()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting degradedMachineCount: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+
+		updatedStatus, err := mcp.GetUpdatedStatus()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting Updated condition: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+		updatingStatus, err := mcp.GetUpdatingStatus()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting Updating condition: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+		degradedStatus, err := mcp.GetDegradedStatus()
+		if err != nil {
+			lastReadErr = fmt.Errorf("getting Degraded condition: %w", err)
+			logger.Infof("MCP %s: %s", mcp.GetName(), lastReadErr)
+			return false, nil
+		}
+
+		lastReadErr = nil
+		countsMatch := machineCount == expectedCount && readyMachineCount == expectedCount && updatedMachineCount == expectedCount && degradedMachineCount == 0
+		conditionsMatch := updatedStatus == "True" && updatingStatus == "False" && degradedStatus == "False"
+
+		if !countsMatch || !conditionsMatch {
+			logger.Infof("MCP %s not settled: machineCount=%d readyMachineCount=%d updatedMachineCount=%d degradedMachineCount=%d expected=%d Updated=%s Updating=%s Degraded=%s",
+				mcp.GetName(), machineCount, readyMachineCount, updatedMachineCount, degradedMachineCount, expectedCount, updatedStatus, updatingStatus, degradedStatus)
+			return false, nil
+		}
+		return true, nil
+	})
+	if pollErr != nil && lastReadErr != nil {
+		return fmt.Errorf("%w; last status-read error: %v", pollErr, lastReadErr)
+	}
+	return pollErr
 }
 
 // GetDegradedStatus returns the value of the 'Degraded' condition in the MCP
@@ -278,7 +383,7 @@ func (mcp *MachineConfigPool) estimateWaitDuration() time.Duration {
 
 	err := Retry(5, 3*time.Second, func() error {
 		var err error
-		totalNodes, err = mcp.getMachineCount()
+		totalNodes, err = mcp.GetMachineCountStatusAsInt()
 		return err
 	})
 
@@ -741,7 +846,7 @@ func (mcp MachineConfigPool) WaitForMachineCount(expectedMachineCount int, timeT
 	logger.Infof("Waiting %s for MCP %s to report %d machine count.", timeToWait, mcp.GetName(), expectedMachineCount)
 
 	err := wait.PollUntilContextTimeout(context.TODO(), 30*time.Second, timeToWait, true, func(_ context.Context) (bool, error) {
-		mCount, err := mcp.getMachineCount()
+		mCount, err := mcp.GetMachineCountStatusAsInt()
 		if err != nil {
 			logger.Errorf("the err:%v, and try next round", err)
 			return false, nil
