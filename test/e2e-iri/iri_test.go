@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -369,18 +368,28 @@ func getBaseDomain(t *testing.T, cs *framework.ClientSet) string {
 	return cconfig.Spec.DNS.Spec.BaseDomain
 }
 
-// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via
-// ExecCmdOnNode, which executes inside the MCD pod on the given master node.
-// The MCD pod runs on the host network and can reach api-int:22625, making
-// this approach work in CI where the port is not reachable from the test runner.
-// Returns the HTTP status code string (e.g. "200", "401").
-func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain string, extraArgs ...string) string {
+// curlIRIRegistry runs curl against the IRI registry /v2/ endpoint via the MCD
+// pod on the given master node. The MCD pod runs on the host network and can
+// reach api-int:22625, making this approach work in CI where the port is not
+// reachable from the test runner.
+//
+// A non-empty password is sent to curl as a config file on stdin rather than as
+// an `-u` or `-H` argument, because argv ends up in the kube-apiserver audit
+// log that CI archives -- see helpers.ExecCmdOnNodeWithStdin. Returns the HTTP
+// status code string (e.g. "200", "401").
+func curlIRIRegistry(t *testing.T, cs *framework.ClientSet, node corev1.Node, baseDomain, password string) string {
 	t.Helper()
 	url := fmt.Sprintf("https://api-int.%s:%d/v2/", baseDomain, ctrlcommon.IRIRegistryPort)
 	args := []string{"curl", "-s", "--cacert", iriRootCAPath, "-o", "/dev/null", "-w", "%{http_code}"}
-	args = append(args, extraArgs...)
+
+	stdin := ""
+	if password != "" {
+		stdin = helpers.CurlConfigUser(ctrlcommon.IRIRegistryUsername, password)
+		args = append(args, "--config", "-")
+	}
+
 	args = append(args, url)
-	return strings.TrimSpace(helpers.ExecCmdOnNode(t, cs, node, args...))
+	return strings.TrimSpace(helpers.ExecCmdOnNodeWithStdin(t, cs, node, stdin, args...))
 }
 
 func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
@@ -396,7 +405,7 @@ func TestIRIAuth_UnauthenticatedRequestReturns401(t *testing.T) {
 	baseDomain := getBaseDomain(t, cs)
 	node := helpers.GetRandomNode(t, cs, "master")
 
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain)
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "")
 	require.Equal(t, "401", statusCode, "unauthenticated request should return 401")
 }
 
@@ -415,9 +424,8 @@ func TestIRIAuth_AuthenticatedRequestSucceeds(t *testing.T) {
 
 	baseDomain := getBaseDomain(t, cs)
 	node := helpers.GetRandomNode(t, cs, "master")
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
 
-	statusCode := curlIRIRegistry(t, cs, node, baseDomain, "-H", "Authorization: "+authHeader)
+	statusCode := curlIRIRegistry(t, cs, node, baseDomain, password)
 	require.Equal(t, "200", statusCode, "authenticated request should succeed")
 }
 
@@ -446,7 +454,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	authSecret, err := cs.Secrets(ctrlcommon.MCONamespace).Get(ctx, ctrlcommon.InternalReleaseImageAuthSecretName, v1.GetOptions{})
 	require.NoError(t, err)
 	password := string(authSecret.Data["password"])
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(ctrlcommon.IRIRegistryUsername+":"+password))
+	require.NotEmpty(t, password)
 
 	// Find a master node to exec commands on.
 	masterNodes, err := cs.CoreV1Interface.Nodes().List(ctx, v1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
@@ -460,7 +468,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 
 	// Registered before the first change so the cluster is restored even if a wait
 	// below times out partway through a control plane roll.
-	t.Cleanup(func() { setIRITLSProfile(t, cs, node, authHeader, originalProfile) })
+	t.Cleanup(func() { setIRITLSProfile(t, cs, node, password, originalProfile) })
 
 	// Normalize to Intermediate rather than assuming the cluster starts on the default
 	// profile: a cluster that already sets Modern would otherwise fail the TLS 1.2
@@ -470,7 +478,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	//
 	// The matching sub-struct has to be set alongside Type: the APIServer CRD rejects
 	// a profile that names a type without it.
-	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+	setIRITLSProfile(t, cs, node, password, &configv1.TLSSecurityProfile{
 		Type:         configv1.TLSProfileIntermediateType,
 		Intermediate: &configv1.IntermediateTLSProfile{},
 	})
@@ -479,21 +487,21 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 	// it. Without this the post-change assertion cannot distinguish "the registry now
 	// refuses TLS 1.2" from "this client never offered TLS 1.2".
 	t.Run("TLS 1.2 is accepted before the profile changes", func(t *testing.T) {
-		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"))
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, password, "1.2"))
 	})
 
-	setIRITLSProfile(t, cs, node, authHeader, &configv1.TLSSecurityProfile{
+	setIRITLSProfile(t, cs, node, password, &configv1.TLSSecurityProfile{
 		Type:   configv1.TLSProfileModernType,
 		Modern: &configv1.ModernTLSProfile{},
 	})
 
 	t.Run("TLS 1.3 is accepted with the Modern profile", func(t *testing.T) {
-		require.True(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3"),
+		require.True(t, iriRegistryAcceptsTLS(t, cs, node, password, "1.3"),
 			"registry should accept TLS 1.3 under the Modern profile")
 	})
 
 	t.Run("TLS 1.2 is rejected with the Modern profile", func(t *testing.T) {
-		require.False(t, iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2"),
+		require.False(t, iriRegistryAcceptsTLS(t, cs, node, password, "1.2"),
 			"registry should reject TLS 1.2 under the Modern profile, which sets a minimum of TLS 1.3")
 	})
 }
@@ -512,7 +520,7 @@ func TestIRIController_VerifyTLSProfileEnforced(t *testing.T) {
 // still rebooting. Returning there leaves the control plane mid-roll, and the next
 // test to run -- TestIRIController_IRIDelete, in its own binary right after this one
 // -- then finds no ready master node and fails.
-func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader string, profile *configv1.TLSSecurityProfile) {
+func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, password string, profile *configv1.TLSSecurityProfile) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -521,12 +529,12 @@ func setIRITLSProfile(t *testing.T, cs *framework.ClientSet, node corev1.Node, a
 	// tls1.2 is a floor rather than a pin, so waiting only for TLS 1.3 would return on
 	// the first poll -- before the Modern config had been applied -- and hand the
 	// caller a registry that still accepts TLS 1.2.
-	settled := func() bool { return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2") }
+	settled := func() bool { return iriRegistryAcceptsTLS(t, cs, node, password, "1.2") }
 	wanted := "accept TLS 1.2"
 	if profile != nil && profile.Type == configv1.TLSProfileModernType {
 		settled = func() bool {
-			return iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.3") &&
-				!iriRegistryAcceptsTLS(t, cs, node, authHeader, "1.2")
+			return iriRegistryAcceptsTLS(t, cs, node, password, "1.3") &&
+				!iriRegistryAcceptsTLS(t, cs, node, password, "1.2")
 		}
 		wanted = "accept TLS 1.3 and refuse TLS 1.2"
 	}
@@ -573,11 +581,17 @@ func masterPoolIsSettled(ctx context.Context, t *testing.T, cs *framework.Client
 
 // iriRegistryAcceptsTLS reports whether the IRI registry on the node completes a
 // request pinned to exactly the given TLS version.
-func iriRegistryAcceptsTLS(t *testing.T, cs *framework.ClientSet, node corev1.Node, authHeader, version string) bool {
+//
+// The registry credential goes in on stdin as a curl config file: `oc rsh`
+// encodes argv into the exec request URI, which the kube-apiserver audit log
+// records and CI archives. Keep it out of the argument list.
+func iriRegistryAcceptsTLS(t *testing.T, cs *framework.ClientSet, node corev1.Node, password, version string) bool {
 	t.Helper()
 
-	out, err := helpers.ExecCmdOnNodeWithError(cs, node, "curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
-		"-H", "Authorization: "+authHeader,
+	out, err := helpers.ExecCmdOnNodeWithStdinAndError(cs, node,
+		helpers.CurlConfigUser(ctrlcommon.IRIRegistryUsername, password),
+		"curl", "-s", "-k", "-o", "/dev/null", "-w", "%{http_code}",
+		"--config", "-",
 		"--tlsv"+version, "--tls-max", version,
 		"https://localhost:22625/v2/")
 	if err != nil {

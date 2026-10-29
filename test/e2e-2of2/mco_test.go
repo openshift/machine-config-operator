@@ -178,7 +178,12 @@ func TestMetrics(t *testing.T) {
 		token, err := helpers.GetMonitoringToken(t, cs)
 		require.Nil(t, err)
 
-		out := helpers.ExecCmdOnNode(t, cs, node, []string{"curl", "-s", "-k", "-H", "Authorization: Bearer " + string(token), url}...)
+		// The bearer token goes in on stdin as a curl config file rather than
+		// as an argument: `oc rsh` encodes argv into the exec request URI,
+		// which the kube-apiserver audit log records and CI archives.
+		out := helpers.ExecCmdOnNodeWithStdin(t, cs, node,
+			helpers.CurlConfigHeader("Authorization: Bearer "+string(token)),
+			"curl", "-s", "-k", "--config", "-", url)
 
 		// The /metrics output will contain the metric if it works
 		promMetric := fmt.Sprintf(`mco_unavailable_machine_count{pool="%s"} 1`, poolName)
