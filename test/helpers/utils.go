@@ -803,11 +803,34 @@ func canonicalizeNodeFilePath(path string) string {
 	return path
 }
 
-// ExecCmdOnNodeTimeout bounds a single ExecCmdOnNode call. The budget covers
-// the initial attempt and the retry together, so a wedged `oc rsh` cannot hang
-// a test until the suite-level timeout kills the run without any useful
-// output. It is deliberately generous: every command routed through this
-// helper is a short one (cat, ls, stat, curl against a node-local port).
+// CurlConfigUser renders a curl config file -- the input to `curl --config -`
+// -- carrying HTTP credentials. Hand the result to ExecCmdOnNodeWithStdin so
+// that the credential travels on standard input instead of in argv; see
+// ExecCmdOnNodeWithStdin for why argv is not a safe place for it.
+func CurlConfigUser(username, password string) string {
+	return fmt.Sprintf("user = %s\n", quoteCurlConfigValue(username+":"+password))
+}
+
+// CurlConfigHeader renders a curl config file -- the input to
+// `curl --config -` -- carrying a single request header, e.g.
+// "Authorization: Bearer <token>". Hand the result to ExecCmdOnNodeWithStdin
+// so that the credential travels on standard input instead of in argv.
+func CurlConfigHeader(header string) string {
+	return fmt.Sprintf("header = %s\n", quoteCurlConfigValue(header))
+}
+
+// quoteCurlConfigValue wraps a curl config parameter value in the double quotes
+// that let it hold spaces and colons. Backslashes and double quotes have to be
+// escaped because curl interprets both inside a quoted value.
+func quoteCurlConfigValue(value string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"`
+}
+
+// ExecCmdOnNodeTimeout bounds a single ExecCmdOnNodeWithStdin call. The budget
+// covers the initial attempt and the retry together, so a wedged `oc rsh`
+// cannot hang a test until the suite-level timeout kills the run without any
+// useful output. It is deliberately generous: every command routed through
+// this helper is a short one (cat, ls, stat, curl against a node-local port).
 const ExecCmdOnNodeTimeout = 10 * time.Minute
 
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
@@ -815,17 +838,35 @@ const ExecCmdOnNodeTimeout = 10 * time.Minute
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	t.Helper()
 
+	return ExecCmdOnNodeWithStdin(t, cs, node, "", subArgs...)
+}
+
+// ExecCmdOnNodeWithStdin behaves like ExecCmdOnNode, except that stdin is piped
+// into the command. Use it whenever the command needs a credential: `oc rsh` is
+// `oc exec`, which encodes the command as repeated ?command= query parameters,
+// and the kube-apiserver records that request URI in its audit log. CI collects
+// those audit logs, so anything placed in argv -- an `-H "Authorization: ..."`
+// or a `-u user:password` -- reaches the artifacts no matter how carefully the
+// test redacts its own output. The exec stdin stream is not audited, so a
+// credential handed over on stdin (`curl --config -`, `podman login
+// --password-stdin`) stays out of them.
+//
+// An empty stdin is passed through as an immediately-closed stream, which is
+// what every caller that has nothing to send wants.
+func ExecCmdOnNodeWithStdin(t *testing.T, cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) string {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(context.Background(), ExecCmdOnNodeTimeout)
 	defer cancel()
 
-	cmd, err := execCmdOnNodeContext(ctx, cs, node, subArgs...)
+	cmd, err := execCmdOnNodeContext(ctx, cs, node, stdin, subArgs...)
 	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
 	if err != nil {
 		// common err is that the mcd went down mid cmd. Re-try for good measure
-		cmd, err = execCmdOnNodeContext(ctx, cs, node, subArgs...)
+		cmd, err = execCmdOnNodeContext(ctx, cs, node, stdin, subArgs...)
 		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 		out, err = cmd.Output()
 
@@ -849,7 +890,7 @@ func GetRPMOStreeStatusForNode(t *testing.T, cs *framework.ClientSet, node corev
 
 // Internal-only version of GetRPMOStreeStatusForNode()
 func getRPMOStreeStatusForNode(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Status, error) {
-	cmd, err := execCmdOnNode(cs, node, "chroot", "/rootfs", "rpm-ostree", "status", "--json")
+	cmd, err := execCmdOnNode(cs, node, "", "chroot", "/rootfs", "rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("could not construct command: %w", err)
 	}
@@ -919,7 +960,14 @@ func AssertNodeNotBootedIntoImage(t *testing.T, cs *framework.ClientSet, node co
 // any errors are returned to the caller for inspection. This allows one to
 // execute a command that is expected to fail; e.g., stat /nonexistant/file.
 func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
+	return ExecCmdOnNodeWithStdinAndError(cs, node, "", subArgs...)
+}
+
+// ExecCmdOnNodeWithStdinAndError behaves like ExecCmdOnNodeWithError, except
+// that stdin is piped into the command. See ExecCmdOnNodeWithStdin for why a
+// credential belongs on stdin rather than in argv.
+func ExecCmdOnNodeWithStdinAndError(cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (string, error) {
+	cmd, err := execCmdOnNode(cs, node, stdin, subArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -930,13 +978,13 @@ func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs .
 
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
-func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
-	return execCmdOnNodeContext(context.Background(), cs, node, subArgs...)
+func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (*exec.Cmd, error) {
+	return execCmdOnNodeContext(context.Background(), cs, node, stdin, subArgs...)
 }
 
 // execCmdOnNodeContext is execCmdOnNode with the returned command bound to ctx,
 // so that cancelling ctx kills the underlying oc process.
-func execCmdOnNodeContext(ctx context.Context, cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
+func execCmdOnNodeContext(ctx context.Context, cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (*exec.Cmd, error) {
 	mcd, err := mcdForNodeContext(ctx, cs, &node)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
@@ -944,13 +992,25 @@ func execCmdOnNodeContext(ctx context.Context, cs *framework.ClientSet, node cor
 
 	mcdName := mcd.ObjectMeta.Name
 
-	args := []string{"rsh",
+	// -T keeps `oc rsh` from trying to allocate a pseudo-terminal. Tests never
+	// run against one, and a TTY would echo whatever is written to stdin back
+	// into the command's output.
+	args := []string{"rsh", "-T",
 		"-n", "openshift-machine-config-operator",
 		"-c", "machine-config-daemon",
 		mcdName}
 	args = append(args, subArgs...)
 
-	return NewOcCommandContext(ctx, cs, args...)
+	cmd, err := NewOcCommandContext(ctx, cs, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	// A fresh reader per command: callers retry by rebuilding the command, and
+	// a shared reader would already be drained on the second attempt.
+	cmd.Stdin = strings.NewReader(stdin)
+
+	return cmd, nil
 }
 
 // NewOcCommand() configures an exec.Cmd instance to pass the provided
