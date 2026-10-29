@@ -11,6 +11,7 @@ import (
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -82,6 +83,11 @@ func (cb *Builder) MachineClientOrDie(name string) mapiclientset.Interface {
 // AROClientOrDie returns the ARO client interface for ARO-specific objects.
 func (cb *Builder) AROClientOrDie(name string) aroclientset.Interface {
 	return aroclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// DynamicClientOrDie returns a dynamic client for unstructured resource access.
+func (cb *Builder) DynamicClientOrDie(name string) dynamic.Interface {
+	return dynamic.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // GetBuilderConfig returns a copy of the builders *rest.Config
