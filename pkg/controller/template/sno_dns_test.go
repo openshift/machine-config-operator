@@ -130,11 +130,13 @@ func TestSNOCoreDNSCorefile(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		addresses []struct{ Address, RecordType string }
+		upstreams []string
 		want      []string
 		notWant   []string
 	}{
-		{"ipv4", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}}, []string{"IN A 192.0.2.10"}, []string{"IN AAAA"}},
-		{"dual-stack", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}, {"2001:db8::10", "AAAA"}}, []string{"IN A 192.0.2.10", "IN AAAA 2001:db8::10"}, nil},
+		{"ipv4", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}}, []string{"192.0.2.53"}, []string{"IN A 192.0.2.10", "forward . 192.0.2.53 {"}, []string{"IN AAAA"}},
+		{"dual-stack", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}, {"2001:db8::10", "AAAA"}}, []string{"192.0.2.53"}, []string{"IN A 192.0.2.10", "IN AAAA 2001:db8::10"}, nil},
+		{"no upstreams", []struct{ Address, RecordType string }{{"192.0.2.10", "A"}}, nil, []string{"IN A 192.0.2.10", "}\n    cache 30"}, []string{"forward", "policy sequential"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := struct {
@@ -142,7 +144,7 @@ func TestSNOCoreDNSCorefile(t *testing.T) {
 				DNSUpstreams []string
 			}{
 				DNSAddresses: tc.addresses,
-				DNSUpstreams: []string{"192.0.2.53"},
+				DNSUpstreams: tc.upstreams,
 			}
 			var rendered bytes.Buffer
 			require.NoError(t, runtimeTemplate.Execute(&rendered, data))
@@ -158,7 +160,9 @@ func TestSNOCoreDNSCorefile(t *testing.T) {
 			// CoreDNS uses the first matching template, so address answers must precede the empty catch-all.
 			catchAll := strings.Index(out, "template IN ANY example.com")
 			require.Less(t, strings.LastIndex(out, "answer "), catchAll, "address answers must precede the empty catch-all")
-			require.Less(t, catchAll, strings.Index(out, "forward ."), "empty catch-all must precede forward")
+			if len(tc.upstreams) > 0 {
+				require.Less(t, catchAll, strings.Index(out, "forward ."), "empty catch-all must precede forward")
+			}
 		})
 	}
 }
