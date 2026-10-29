@@ -80,6 +80,8 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        securityContext:
+          readOnlyRootFilesystem: true
         volumeMounts:
         - mountPath: /etc/tls/private
           name: proxy-tls

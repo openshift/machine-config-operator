@@ -47,6 +47,7 @@ contents:
           done
         securityContext:
           privileged: true
+          readOnlyRootFilesystem: true
         resources:
           requests:
             memory: 50Mi
@@ -56,6 +57,7 @@ contents:
         image: {{.Images.kubeRbacProxyImage}}
         securityContext:
           privileged: true
+          readOnlyRootFilesystem: true
         ports:
         - containerPort: 9637
         args:
