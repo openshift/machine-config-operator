@@ -32,9 +32,11 @@ contents:
             match ^.+[.]apps[.]{{ .DNS.Spec.BaseDomain }}[.]?$
             fallthrough
         }
+        {{`{{- if .DNSUpstreams }}`}}
         forward . {{`{{- range .DNSUpstreams }} {{ . }}{{- end }}`}} {
             policy sequential
         }
+        {{`{{- end }}`}}
         cache 30
         reload
     }
