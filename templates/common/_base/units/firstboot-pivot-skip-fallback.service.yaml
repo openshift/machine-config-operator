@@ -1,0 +1,9 @@
+name: firstboot-pivot-skip-fallback.service
+enabled: false
+contents: |
+  [Unit]
+  Description=Firstboot Pivot Skip - Fallback to Normal Boot
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/bin/systemctl --no-block isolate multi-user.target
