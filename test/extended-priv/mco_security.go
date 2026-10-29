@@ -1265,7 +1265,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		masterNode := mMcp.GetNodesOrFail()[0]
 		cipherOutput, cipherErr := masterNode.DebugNodeWithOptions([]string{"--image=" + TestSSLImage, "-n", MachineConfigNamespace}, "testssl.sh", "--color", "0", "localhost:9001")
 		logger.Infof("test ssh script output:\n %s", cipherOutput)
-		o.Expect(cipherErr).NotTo(o.HaveOccurred())
+		// testssl.sh exits non-zero because the service-serving cert has a self-signed CA and
+		// the hostname (localhost) doesn't match the cert's CN/SAN. Ignore the exit code.
+		o.Expect(cipherOutput).NotTo(o.BeEmpty(), "testssl.sh produced no output, err: %v", cipherErr)
 		o.Expect(cipherOutput).Should(o.MatchRegexp(`Obsoleted CBC ciphers \(AES, ARIA etc.\) +not offered`))
 
 		for _, weakSuite := range weakSuites {
