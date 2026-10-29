@@ -443,7 +443,13 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, TLSMinVersion: tlsMinVersion, TLSCipherSuites: tlsCipherSuites}
+	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer)
+	rc := &mtmpl.RenderConfig{
+		ControllerConfigSpec: &cc.Spec,
+		TLSMinVersion:        tlsMinVersion,
+		TLSCipherSuites:      tlsCipherSuites,
+		TLSCurvePreferences:  tlsCurvePreferences,
+	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
@@ -668,6 +674,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(cfg.Spec.TLSSecurityProfile)
 			originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
+			// The profile replaces the cluster-wide one as a whole: a profile without
+			// groups clears any curves inherited from the APIServer CR.
+			originalKubeConfig.TLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(cfg.Spec.TLSSecurityProfile)
 		}
 
 		var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType

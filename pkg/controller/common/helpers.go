@@ -1287,6 +1287,15 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
 // If profile is nil, returns config defined by the Intermediate TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	profileSpec := getTLSProfileSpec(profile)
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// getTLSProfileSpec resolves a TLSSecurityProfile to the effective TLSProfileSpec,
+// falling back to the Intermediate profile when nothing usable is configured.
+func getTLSProfileSpec(profile *configv1.TLSSecurityProfile) *configv1.TLSProfileSpec {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
 		profileType = configv1.TLSProfileIntermediateType
@@ -1308,8 +1317,73 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 	}
 
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return profileSpec
+}
+
+// tlsGroupToCurveID maps the OpenShift TLSGroup names to the numeric IANA
+// "TLS Supported Groups" codepoints consumed by the kubelet's
+// tlsCurvePreferences field and by Go's tls.Config.CurvePreferences.
+//
+// Groups that the Go version we build against does not know about must be
+// absent from this map: the kubelet hard-errors on an unrecognised curve ID,
+// which would keep it from starting.
+var tlsGroupToCurveID = map[configv1.TLSGroup]int32{
+	configv1.TLSGroupSecP256r1:          int32(tls.CurveP256),          // 23
+	configv1.TLSGroupSecP384r1:          int32(tls.CurveP384),          // 24
+	configv1.TLSGroupSecP521r1:          int32(tls.CurveP521),          // 25
+	configv1.TLSGroupX25519:             int32(tls.X25519),             // 29
+	configv1.TLSGroupSecP256r1MLKEM768:  int32(tls.SecP256r1MLKEM768),  // 4587
+	configv1.TLSGroupX25519MLKEM768:     int32(tls.X25519MLKEM768),     // 4588
+	configv1.TLSGroupSecP384r1MLKEM1024: int32(tls.SecP384r1MLKEM1024), // 4589
+}
+
+// GetSecurityProfileGroups extracts the TLS supported groups from a
+// TLSSecurityProfile and converts them to the numeric curve IDs understood by
+// the kubelet's tlsCurvePreferences field.
+//
+// Only a Custom profile is honored: the groups carried by the predefined
+// (Old/Intermediate/Modern) profiles are not applied, so that clusters which
+// never opted into configuring groups keep the component defaults and do not
+// get a gratuitous MachineConfig change. Returns nil when no groups apply, in
+// which case the caller must not emit tlsCurvePreferences at all.
+//
+// Unknown groups are dropped rather than returned as an error: the API
+// contract explicitly allows operators to remove entries their operands do not
+// support. Non-FIPS-approved groups are not filtered here -- the ControllerConfig
+// carries no FIPS flag, and a FIPS-mode Go runtime simply refuses to negotiate
+// them, so listing them is harmless.
+func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile) []int32 {
+	if profile == nil || profile.Type != configv1.TLSProfileCustomType || profile.Custom == nil {
+		return nil
+	}
+	groups := profile.Custom.Groups
+	if len(groups) == 0 {
+		return nil
+	}
+
+	curveIDs := make([]int32, 0, len(groups))
+	for _, group := range groups {
+		id, ok := tlsGroupToCurveID[group]
+		if !ok {
+			klog.Warningf("Dropping TLS group %q: not supported by the Go version in use", group)
+			continue
+		}
+		curveIDs = append(curveIDs, id)
+	}
+	if len(curveIDs) == 0 {
+		klog.Warningf("All configured TLS groups were filtered out, falling back to platform defaults")
+		return nil
+	}
+	return curveIDs
+}
+
+// GetSecurityProfileGroupsFromAPIServer extracts the TLS supported groups from
+// an apiServer object. If no apiServer object exists, the defaults apply.
+func GetSecurityProfileGroupsFromAPIServer(apiServer *configv1.APIServer) []int32 {
+	if apiServer == nil {
+		return nil
+	}
+	return GetSecurityProfileGroups(apiServer.Spec.TLSSecurityProfile)
 }
 
 // Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used

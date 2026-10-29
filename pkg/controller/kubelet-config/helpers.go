@@ -376,6 +376,9 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	// (ie: not recover after a reboot).
 	// Therefore, if the KubeletConfig CR instance contains a non-zero or non-empty value
 	// for one of the following fields, the MCC will not apply the CR and error out instead.
+	if len(kcDecoded.TLSCurvePreferences) > 0 {
+		return fmt.Errorf("KubeletConfiguration: tlsCurvePreferences is not allowed to be set, use spec.tlsSecurityProfile.custom.groups instead, but contains: %v", kcDecoded.TLSCurvePreferences)
+	}
 	if kcDecoded.CgroupDriver != "" {
 		return fmt.Errorf("KubeletConfiguration: cgroupDriver is not allowed to be set, but contains: %s", kcDecoded.CgroupDriver)
 	}
