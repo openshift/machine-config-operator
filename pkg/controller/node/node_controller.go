@@ -324,8 +324,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	syncers := []cache.InformerSynced{
 		ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced,
-		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced, ctrl.mcopListerSynced,
-		ctrl.infraListerSynced,
+		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.mcnListerSynced, ctrl.schedulerListerSynced,
+		ctrl.mcopListerSynced, ctrl.infraListerSynced,
 	}
 	// Only wait for the OSImageStream informer to sync if the feature is enabled
 	if ctrl.osStreamsFgEnabled {
