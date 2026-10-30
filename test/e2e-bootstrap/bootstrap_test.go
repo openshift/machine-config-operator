@@ -567,6 +567,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
