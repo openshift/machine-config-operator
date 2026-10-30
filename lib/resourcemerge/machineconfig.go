@@ -94,6 +94,10 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	resourcemerge.SetStringIfSet(modified, &existing.BaseOSContainerImage, required.BaseOSContainerImage)
 	resourcemerge.SetStringIfSet(modified, &existing.BaseOSExtensionsContainerImage, required.BaseOSExtensionsContainerImage)
 	resourcemerge.SetStringIfSet(modified, &existing.NetworkType, required.NetworkType)
+	// SetStringIfSet deliberately ignores an empty required value: when the
+	// source of the peers payload goes missing the operator degrades and
+	// holds the last good payload instead of blanking it fleet-wide.
+	resourcemerge.SetStringIfSet(modified, &existing.BGPVIPPeersJSON, required.BGPVIPPeersJSON)
 
 	setBytesIfSet(modified, &existing.InternalRegistryPullSecret, required.InternalRegistryPullSecret)
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)

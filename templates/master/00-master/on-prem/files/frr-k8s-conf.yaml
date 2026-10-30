@@ -13,6 +13,7 @@ contents:
      !
     {{`{{- range .Peers}}`}}
      neighbor {{`{{.PeerAddress}}`}} remote-as {{`{{.PeerASN}}`}}
+     neighbor {{`{{.PeerAddress}}`}} disable-connected-check
     {{`{{- if .Password}}`}}
      neighbor {{`{{.PeerAddress}}`}} password {{`{{.Password}}`}}
     {{`{{- end}}`}}
