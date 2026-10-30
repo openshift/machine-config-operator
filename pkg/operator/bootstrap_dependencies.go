@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	mcfgscheme "github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -192,6 +195,12 @@ func readCoreCR[T runtime.Object](path string) (T, error) {
 	return readCR[T](path, scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion))
 }
 
+// readMcfgCR reads and decodes a machineconfiguration.openshift.io custom
+// resource from a file.
+func readMcfgCR[T runtime.Object](path string) (T, error) {
+	return readCR[T](path, mcfgscheme.Codecs.UniversalDecoder(mcfgv1alpha1.GroupVersion))
+}
+
 // readString reads the entire contents of a file and returns it as a string.
 func readString(path string) (string, error) {
 	content, err := os.ReadFile(path)
@@ -283,8 +292,9 @@ func (b *BootstrapDependencies) fillClusterConfig() error {
 	return nil
 }
 
-// fillBGPVIPConfig loads the optional bgp-vip-config ConfigMap manifest and
-// extracts its config.json payload for frr-peers.json rendering.
+// fillBGPVIPConfig loads the optional BGPVIPConfig CR manifest and serializes
+// it to the peers JSON payload for frr-peers.json rendering. The VIPs come
+// from the Infrastructure manifest, which fillCRs loads earlier.
 func (b *BootstrapDependencies) fillBGPVIPConfig(path string) error {
 	if path == "" {
 		return nil
@@ -292,20 +302,62 @@ func (b *BootstrapDependencies) fillBGPVIPConfig(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil // optional: only present when BGP VIP management is enabled
 	}
-	cm, err := readCoreCR[*corev1.ConfigMap](path)
+	cr, err := readMcfgCR[*mcfgv1alpha1.BGPVIPConfig](path)
 	if err != nil {
-		return fmt.Errorf("failed to read bgp-vip-config ConfigMap: %w", err)
+		return fmt.Errorf("failed to read the BGPVIPConfig manifest: %w", err)
 	}
-	// Mirror the day-2 sync: a present ConfigMap without a config.json
-	// payload is a hard error, not an empty peers file.
-	raw := cm.Data["config.json"]
-	if raw == "" {
-		return fmt.Errorf("bgp-vip-config ConfigMap has no config.json payload")
-	}
-	peersJSON, err := compactBGPVIPPeersJSON(raw)
+	peersJSON, err := bgpVIPPeersJSONFromCR(cr, b.Infrastructure, bgpVIPFilePasswordResolver(filepath.Dir(path)))
 	if err != nil {
 		return err
 	}
 	b.BGPVIPPeersJSON = peersJSON
 	return nil
+}
+
+// bgpVIPFilePasswordResolver returns the bootstrap-time password resolver:
+// a passwordSecret reference is resolved from the installer-generated Secret
+// manifest (openshift-config/<name>) found among the YAML manifests in dir —
+// the directory holding the BGPVIPConfig manifest. The manifests are matched
+// by kind, namespace and name rather than by file name, so the installer is
+// free to name its files. A referenced Secret that is not there is an error.
+func bgpVIPFilePasswordResolver(dir string) bgpVIPPasswordResolver {
+	return func(name string) (string, error) {
+		secret, err := findBGPVIPPasswordSecretManifest(dir, name)
+		if err != nil {
+			return "", err
+		}
+		// The stringData->data merge is API-server behavior; a manifest read
+		// straight from disk needs it done by hand.
+		for key, value := range secret.StringData {
+			if secret.Data == nil {
+				secret.Data = map[string][]byte{}
+			}
+			secret.Data[key] = []byte(value)
+		}
+		return bgpVIPPasswordFromSecret(secret)
+	}
+}
+
+// findBGPVIPPasswordSecretManifest scans the YAML manifests in dir for the
+// Secret openshift-config/<name>. Files that are not a core Secret are
+// skipped; the directory holds every installer manifest.
+func findBGPVIPPasswordSecretManifest(dir, name string) (*corev1.Secret, error) {
+	var paths []string
+	for _, pattern := range []string{"*.yaml", "*.yml"} {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list manifests in %s: %w", dir, err)
+		}
+		paths = append(paths, matches...)
+	}
+	for _, path := range paths {
+		secret, err := readCoreCR[*corev1.Secret](path)
+		if err != nil {
+			continue
+		}
+		if secret.Namespace == "openshift-config" && secret.Name == name {
+			return secret, nil
+		}
+	}
+	return nil, fmt.Errorf("no manifest for the BGP VIP password Secret openshift-config/%s found in %s", name, dir)
 }
