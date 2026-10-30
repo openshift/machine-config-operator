@@ -2296,6 +2296,26 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
 	}
 
+	// Write Updated=False before triggering the update, mirroring the non-booting syncNode
+	// path (daemon.go syncNode else-branch). Without this, if the MCD restarts while an
+	// update is already pending, the Updated condition is never set to False, and the
+	// post-reboot isParentConditionChanged guard short-circuits before correcting
+	// status.configVersion.current (upgrade_monitor.go).
+	if pool, poolErr := helpers.GetPrimaryPoolNameForMCN(dn.mcpLister, dn.node); poolErr != nil {
+		klog.Errorf("Error getting pool for MCN Updated=False on boot resync: %v", poolErr)
+	} else if mcnErr := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdated, Reason: string(mcfgv1.MachineConfigNodeUpdated), Message: fmt.Sprintf("Node %s needs an update", dn.node.GetName())},
+		nil,
+		metav1.ConditionFalse,
+		metav1.ConditionFalse,
+		dn.node,
+		dn.mcfgClient,
+		dn.fgHandler,
+		pool,
+	); mcnErr != nil {
+		klog.Errorf("Error writing MCN Updated=False on boot resync for node %s: %v", dn.node.Name, mcnErr)
+	}
+
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
 	err = dn.triggerUpdate(state.currentConfig, state.desiredConfig, state.currentImage, state.desiredImage)

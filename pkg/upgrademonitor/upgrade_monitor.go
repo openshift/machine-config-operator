@@ -230,7 +230,9 @@ func generateAndApplyMachineConfigNodes(
 
 			case condition.Type == newParentCondition.Type:
 				foundParent = true
-				if !isParentConditionChanged(condition, newParentCondition) && !isSingletonCondition(singletonConditionTypes, condition.Type) {
+				currentAnnotation := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+				configVersionStale := currentAnnotation != "" && (mcNode.Status.ConfigVersion == nil || mcNode.Status.ConfigVersion.Current != currentAnnotation)
+				if !isParentConditionChanged(condition, newParentCondition) && !isSingletonCondition(singletonConditionTypes, condition.Type) && !configVersionStale {
 					// there is nothing to update. Return.
 					// this allows us to put the conditions in more general places but if we are already in phases like "updated"
 					// then nothing happens
