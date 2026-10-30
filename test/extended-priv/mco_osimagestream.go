@@ -38,7 +38,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			emptyStreamName      = ""
 			expectedInvalidError = "The specified osImageStream name must reference a valid stream from the cluster OSImageStream resource"
 			expectedEmptyError   = "spec.osImageStream.name in body should be at least 1 chars long"
-			defaultStream        = GetDefaultOSImageStream(oc.AsAdmin())
+			defaultStream        = exutil.OrFail[string](GetDefaultOSImageStream(oc.AsAdmin()))
 		)
 
 		defer mcp.SetSpec(mcp.GetSpecOrFail())
@@ -334,16 +334,33 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	// AI-assisted: Test case to verify boot image controller logs for CPMS osstream reconciliation
 })
 
-// GetDefaultOSImageStream returns the default OS image stream based on the cluster version.
-// OCP 4.x clusters default to "rhel-9", OCP 5+ default to "rhel-10".
-func GetDefaultOSImageStream(oc *exutil.CLI) string {
-	clusterVersion, _, err := exutil.GetClusterVersion(oc)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting cluster version")
-
-	if clusterVersion[:1] == "4" {
-		return OSImageStreamRHEL9
+// GetDefaultOSImageStream returns the default OS image stream for the cluster.
+// If the OSImageStream resource exists, its status.defaultStream is authoritative.
+// If it does not exist, OCP 4.x defaults to rhel-9. On OCP 5+ the resource must exist.
+func GetDefaultOSImageStream(oc *exutil.CLI) (string, error) {
+	osis := NewOSImageStream(oc.AsAdmin())
+	if osis.Exists() {
+		defaultStream, err := osis.GetDefaultStream()
+		if err != nil {
+			return "", fmt.Errorf("error getting default stream from OSImageStream resource: %w", err)
+		}
+		if defaultStream == "" {
+			return "", fmt.Errorf("OSImageStream defaultStream is empty")
+		}
+		logger.Infof("Default OS image stream from OSImageStream resource: %s", defaultStream)
+		return defaultStream, nil
 	}
-	return OSImageStreamRHEL10
+
+	clusterVersion, _, err := exutil.GetClusterVersion(oc)
+	if err != nil {
+		return "", fmt.Errorf("error getting cluster version: %w", err)
+	}
+
+	if clusterVersion[:1] != "4" {
+		return "", fmt.Errorf("OSImageStream resource does not exist on OCP 5+ cluster (version %s), cannot determine default stream", clusterVersion)
+	}
+	logger.Infof("OSImageStream resource does not exist, OCP 4.x defaults to %s", OSImageStreamRHEL9)
+	return OSImageStreamRHEL9, nil
 }
 
 // GetOSImageStreamMajorVersion extracts the major version from a stream name (e.g. "rhel-9" -> "9", "rhel-10" -> "10").
@@ -353,7 +370,9 @@ func GetOSImageStreamMajorVersion(stream string) string {
 
 // SkipIfDefaultOSImageStream skips the test if the cluster's default OS image stream matches the given stream.
 func SkipIfDefaultOSImageStream(oc *exutil.CLI, stream string) {
-	if GetDefaultOSImageStream(oc) == stream {
+	defaultStream, err := GetDefaultOSImageStream(oc)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting default OS image stream")
+	if defaultStream == stream {
 		g.Skip(fmt.Sprintf("Skipping test: default OS image stream is '%s'", stream))
 	}
 }
@@ -366,7 +385,10 @@ func GetEffectiveOsImageStream(mcp *MachineConfigPool) (string, error) {
 	)
 
 	if !osis.Exists() {
-		expectedDefault := GetDefaultOSImageStream(mcp.GetOC().AsAdmin())
+		expectedDefault, err := GetDefaultOSImageStream(mcp.GetOC().AsAdmin())
+		if err != nil {
+			return "", err
+		}
 		logger.Infof("OSImageStream resource does not exist. Likely, no tech preview, by default we use osstream: %s", expectedDefault)
 		return expectedDefault, nil
 	}
@@ -375,6 +397,7 @@ func GetEffectiveOsImageStream(mcp *MachineConfigPool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	logger.Infof("Initial osImageStream configured: '%s'", streamName)
 
 	// If no stream is configured, use the default stream
