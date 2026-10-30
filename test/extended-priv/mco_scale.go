@@ -80,10 +80,30 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	// Removed tests: PolarionID:63894 (4.1), PolarionID:77051 (4.3), PolarionID:76471 (4.12), PolarionID:52822 (4.5)
 
 	// 4.13 is the oldest boot image supported. Starting in 4.22 we will no longer fix any bootimage related bugs from bootimages earlier than 4.13
+	// OCPBUGS-112619: 4.13 boot images lack composefs support and fail to join rhel-10 clusters
+	// (ostree-prepare-root fails to mount composefs after the first-boot update). Only run on rhel-9.
 	g.It("[PolarionID:89097][OTP] Scaleup using 4.13 cloud image", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere"), func() {
 		var (
 			imageVersion = "4.13"
 			numNewNodes  = 1 // the number of nodes scaled up in the new Machineset
+		)
+
+		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, VspherePlatform)
+
+		effectiveStream := exutil.OrFail[string](GetEffectiveOsImageStream(wMcp))
+		if effectiveStream == OSImageStreamRHEL10 {
+			g.Skip(fmt.Sprintf("Skipping: 4.13 boot images are incompatible with %s (OCPBUGS-112619)", effectiveStream))
+		}
+
+		SimpleScaleUPTest(oc, wMcp, imageVersion, getUserDataIgnitionVersionFromOCPVersion(imageVersion), numNewNodes)
+	})
+
+	// OCPBUGS-112619: 4.16 is the first boot image version with composefs support,
+	// making it the oldest version that can join both rhel-9 and rhel-10 clusters.
+	g.It("[PolarionID:90923][OTP] Scaleup using 4.16 cloud image", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere"), func() {
+		var (
+			imageVersion = "4.16"
+			numNewNodes  = 1
 		)
 
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform, GCPPlatform, VspherePlatform)

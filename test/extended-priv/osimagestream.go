@@ -98,7 +98,7 @@ func (osis *OSImageStream) LogStreamInfo() {
 // - targetStream: alternate stream (rhel-10 in 4.23, rhel-9 in 5.0)
 // This ensures tests always trigger a stream change and work consistently across versions.
 func GetInitialAndTargetStreams(oc *exutil.CLI) (initialStream, targetStream string) {
-	defaultStream := GetDefaultOSImageStream(oc)
+	defaultStream := exutil.OrFail[string](GetDefaultOSImageStream(oc))
 
 	if defaultStream == OSImageStreamRHEL10 {
 		// 5.0 cluster: default is rhel-10, alternate is rhel-9
