@@ -230,6 +230,31 @@ func TestBootstrapServer(t *testing.T) {
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
+	// Verify bootstrap server does not write the MCS connection info file
+	var foundAnnotations, foundMCSConnInfo bool
+	for _, file := range resCfg.Storage.Files {
+		if file.Path == daemonconsts.FirstbootMCSConnectionInfoFilePath {
+			foundMCSConnInfo = true
+		}
+		if file.Path == daemonconsts.InitialNodeAnnotationsFilePath {
+			foundAnnotations = true
+		}
+	}
+	assert.True(t, foundAnnotations, "node annotations file should be present")
+	assert.False(t, foundMCSConnInfo, "bootstrap server should not write the MCS connection info file")
+
+	// Verify bootstrap server does not write the MCS root CA bundle either. It
+	// is only useful alongside the connection info asserted above, so on its
+	// own it would be a cert no code path can read.
+	var foundMCSCA bool
+	for _, f := range resCfg.Storage.Files {
+		if f.Path == daemonconsts.FirstbootMCSRootCABundlePath {
+			foundMCSCA = true
+			break
+		}
+	}
+	assert.False(t, foundMCSCA, "bootstrap server should not write the MCS root CA bundle")
+
 	// verify bootstrap cannot serve ignition to other pool than master
 	res, err = bs.GetConfig(poolRequest{
 		machineConfigPool: testPool,
@@ -358,6 +383,8 @@ func TestClusterServer(t *testing.T) {
 		kubeconfigFunc: func() ([]byte, []byte, error) {
 			return getKubeConfigContent()
 		},
+		mcsURL:           "https://api-int.test.example.com:22623",
+		mcsTLSMinVersion: "VersionTLS13",
 	}
 
 	mc := new(mcfgv1.MachineConfig)
@@ -405,6 +432,42 @@ func TestClusterServer(t *testing.T) {
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
+	// Verify cluster server writes the MCS connection info to a file rather than a node annotation
+	var foundAnnotations, foundMCSConnInfo bool
+	for _, file := range resCfg.Storage.Files {
+		switch file.Path {
+		case daemonconsts.InitialNodeAnnotationsFilePath:
+			foundAnnotations = true
+
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			require.NoError(t, err)
+
+			var annotations map[string]string
+			err = json.Unmarshal([]byte(contents), &annotations)
+			require.NoError(t, err)
+
+			// The MCS URL must not leak onto the in-cluster Node object
+			for k := range annotations {
+				assert.NotContains(t, k, "machineConfigServerURL", "MCS URL should not be a node annotation")
+			}
+		case daemonconsts.FirstbootMCSConnectionInfoFilePath:
+			foundMCSConnInfo = true
+
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+			require.NoError(t, err)
+
+			var connInfo ctrlcommon.MCSConnectionInfo
+			err = json.Unmarshal([]byte(contents), &connInfo)
+			require.NoError(t, err)
+			assert.Equal(t, "https://api-int.test.example.com:22623", connInfo.URL)
+			// The cluster's security profile floor must reach the node, so a
+			// reporting client does not negotiate below what the MCS enforces
+			assert.Equal(t, "VersionTLS13", connInfo.TLSMinVersion)
+		}
+	}
+	assert.True(t, foundAnnotations, "node annotations file should be present")
+	assert.True(t, foundMCSConnInfo, "cluster server should write the MCS connection info file")
+
 	foundEncapsulated := false
 	for _, f := range resCfg.Storage.Files {
 		if f.Path != daemonconsts.MachineConfigEncapsulatedPath {
@@ -422,6 +485,19 @@ func TestClusterServer(t *testing.T) {
 	if !foundEncapsulated {
 		t.Errorf("missing %s", daemonconsts.MachineConfigEncapsulatedPath)
 	}
+
+	// Verify MCS root CA bundle is present in ignition config
+	var foundMCSCA bool
+	for _, f := range resCfg.Storage.Files {
+		if f.Path == daemonconsts.FirstbootMCSRootCABundlePath {
+			foundMCSCA = true
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+			require.NoError(t, err)
+			assert.Equal(t, []byte("MCS-Root-CA-Testdata"), contents)
+			break
+		}
+	}
+	assert.True(t, foundMCSCA, "MCS root CA bundle should be present in ignition config")
 }
 
 func getKubeConfigContent() ([]byte, []byte, error) {
@@ -497,6 +573,7 @@ func getTestControllerConfig() *mcfgv1.ControllerConfig {
 		ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "machine-config-controller"},
 		Spec: mcfgv1.ControllerConfigSpec{
 			KubeAPIServerServingCAData: []byte("Testdata"),
+			RootCAData:                 []byte("MCS-Root-CA-Testdata"),
 		},
 	}
 }
@@ -1334,7 +1411,7 @@ func TestGetConfigDoesNotMutateInformerCache(t *testing.T) {
 			MachineConfig:   mcfgv1.MachineConfigReference{Name: "rendered-worker-new"},
 		},
 		Status: mcfgv1.MachineOSBuildStatus{
-			Conditions: []metav1.Condition{{Type: "Succeeded", Status: metav1.ConditionTrue}},
+			Conditions:            []metav1.Condition{{Type: "Succeeded", Status: metav1.ConditionTrue}},
 			DigestedImagePushSpec: mcfgv1.ImageDigestFormat("quay.io/openshift/custom-layered-image@sha256:abc123"),
 		},
 	}

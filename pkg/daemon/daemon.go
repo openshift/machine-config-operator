@@ -1281,6 +1281,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	if !newEnough || !skopeoSupportsMultiArchSigstore(mc.Spec.OSImageURL) || !dn.NodeUpdaterClient.SupportsContainerStorageRebase() {
 		logSystem("rpm-ostree or skopeo is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
 		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
+			sendMCSFirstbootFailureReport(&mc, mc.Spec.OSImageURL, err)
 			return err
 		}
 		rebootCmd := rebootCommand("extra reboot for in-place update", dn.os.IsCoreOSVariant())
@@ -1335,8 +1336,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig(machineConfigFile string) er
 	// This "false" is a compatibility for IBM's use case, where they are using the MCD to write the full configuration instead of just
 	// the encapsulated config. This shouldn't affect normal OCP operations, but will allow anyone using this code to write configs to
 	// still get the kubelet cert
+
 	err = dn.update(oldConfig, &mc, false, true)
 	if err != nil {
+		// Best-effort: tell MCS we failed so the cluster can surface an alert
+		// before this node has kubelet or API access.
+		sendMCSFirstbootFailureReport(&mc, mc.Spec.OSImageURL, err)
 		return err
 	}
 
@@ -2029,10 +2034,20 @@ func upgradeHackFor44AndBelow() error {
 
 // Remove artifacts used by ignition, that the MCO should no longer
 // use since the machine is up.
-// Currently removes the systemd preset file written by Ignition.
+// Removes the systemd preset file written by Ignition, along with the MCS
+// connection details used to report firstboot pivot failures. The latter are
+// only consulted before the node joins the cluster, so reaching this point
+// means they are spent; leaving them behind would strand a copy of the MCS
+// root CA that nothing ever refreshes.
 func removeIgnitionArtifacts() error {
-	if err := os.Remove(constants.IgnitionSystemdPresetFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove Ignition-written systemd preset file: %w", err)
+	for _, path := range []string{
+		constants.IgnitionSystemdPresetFile,
+		constants.FirstbootMCSConnectionInfoFilePath,
+		constants.FirstbootMCSRootCABundlePath,
+	} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove Ignition-written file %s: %w", path, err)
+		}
 	}
 	return nil
 }
