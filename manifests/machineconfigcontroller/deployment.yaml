@@ -30,7 +30,7 @@ spec:
         resources:
           requests:
             cpu: 20m
-            memory: 50Mi
+            memory: 250Mi
         volumeMounts:
         - mountPath: /var/cache/mcc
           name: image-inspection-cache
