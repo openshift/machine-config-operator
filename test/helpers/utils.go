@@ -803,22 +803,78 @@ func canonicalizeNodeFilePath(path string) string {
 	return path
 }
 
+// CurlConfigUser renders a curl config file -- the input to `curl --config -`
+// -- carrying HTTP credentials. Hand the result to ExecCmdOnNodeWithStdin so
+// that the credential travels on standard input instead of in argv; see
+// ExecCmdOnNodeWithStdin for why argv is not a safe place for it.
+func CurlConfigUser(username, password string) string {
+	return fmt.Sprintf("user = %s\n", quoteCurlConfigValue(username+":"+password))
+}
+
+// CurlConfigHeader renders a curl config file -- the input to
+// `curl --config -` -- carrying a single request header, e.g.
+// "Authorization: Bearer <token>". Hand the result to ExecCmdOnNodeWithStdin
+// so that the credential travels on standard input instead of in argv.
+func CurlConfigHeader(header string) string {
+	return fmt.Sprintf("header = %s\n", quoteCurlConfigValue(header))
+}
+
+// quoteCurlConfigValue wraps a curl config parameter value in the double quotes
+// that let it hold spaces and colons. Backslashes and double quotes have to be
+// escaped because curl interprets both inside a quoted value.
+func quoteCurlConfigValue(value string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"`
+}
+
+// ExecCmdOnNodeTimeout bounds a single ExecCmdOnNodeWithStdin call. The budget
+// covers the initial attempt and the retry together, so a wedged `oc rsh`
+// cannot hang a test until the suite-level timeout kills the run without any
+// useful output. It is deliberately generous: every command routed through
+// this helper is a short one (cat, ls, stat, curl against a node-local port).
+const ExecCmdOnNodeTimeout = 10 * time.Minute
+
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	t.Helper()
 
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
+	return ExecCmdOnNodeWithStdin(t, cs, node, "", subArgs...)
+}
+
+// ExecCmdOnNodeWithStdin behaves like ExecCmdOnNode, except that stdin is piped
+// into the command. Use it whenever the command needs a credential: `oc rsh` is
+// `oc exec`, which encodes the command as repeated ?command= query parameters,
+// and the kube-apiserver records that request URI in its audit log. CI collects
+// those audit logs, so anything placed in argv -- an `-H "Authorization: ..."`
+// or a `-u user:password` -- reaches the artifacts no matter how carefully the
+// test redacts its own output. The exec stdin stream is not audited, so a
+// credential handed over on stdin (`curl --config -`, `podman login
+// --password-stdin`) stays out of them.
+//
+// An empty stdin is passed through as an immediately-closed stream, which is
+// what every caller that has nothing to send wants.
+func ExecCmdOnNodeWithStdin(t *testing.T, cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ExecCmdOnNodeTimeout)
+	defer cancel()
+
+	cmd, err := execCmdOnNodeContext(ctx, cs, node, stdin, subArgs...)
 	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
 	if err != nil {
 		// common err is that the mcd went down mid cmd. Re-try for good measure
-		cmd, err = execCmdOnNode(cs, node, subArgs...)
+		cmd, err = execCmdOnNodeContext(ctx, cs, node, stdin, subArgs...)
 		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 		out, err = cmd.Output()
 
+	}
+	// A blown deadline surfaces from Output() as "signal: killed", which is
+	// baffling on its own in a CI log. Name the real cause instead.
+	if err != nil && ctx.Err() != nil {
+		t.Fatalf("timed out after %s exec'ing cmd %v on node %s: %s", ExecCmdOnNodeTimeout, subArgs, node.Name, err)
 	}
 	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
 	return string(out)
@@ -834,7 +890,7 @@ func GetRPMOStreeStatusForNode(t *testing.T, cs *framework.ClientSet, node corev
 
 // Internal-only version of GetRPMOStreeStatusForNode()
 func getRPMOStreeStatusForNode(cs *framework.ClientSet, node corev1.Node) (*rpmostreeclient.Status, error) {
-	cmd, err := execCmdOnNode(cs, node, "chroot", "/rootfs", "rpm-ostree", "status", "--json")
+	cmd, err := execCmdOnNode(cs, node, "", "chroot", "/rootfs", "rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("could not construct command: %w", err)
 	}
@@ -904,7 +960,14 @@ func AssertNodeNotBootedIntoImage(t *testing.T, cs *framework.ClientSet, node co
 // any errors are returned to the caller for inspection. This allows one to
 // execute a command that is expected to fail; e.g., stat /nonexistant/file.
 func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (string, error) {
-	cmd, err := execCmdOnNode(cs, node, subArgs...)
+	return ExecCmdOnNodeWithStdinAndError(cs, node, "", subArgs...)
+}
+
+// ExecCmdOnNodeWithStdinAndError behaves like ExecCmdOnNodeWithError, except
+// that stdin is piped into the command. See ExecCmdOnNodeWithStdin for why a
+// credential belongs on stdin rather than in argv.
+func ExecCmdOnNodeWithStdinAndError(cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (string, error) {
+	cmd, err := execCmdOnNode(cs, node, stdin, subArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -915,27 +978,52 @@ func ExecCmdOnNodeWithError(cs *framework.ClientSet, node corev1.Node, subArgs .
 
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
-func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, subArgs ...string) (*exec.Cmd, error) {
-	mcd, err := mcdForNode(cs, &node)
+func execCmdOnNode(cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (*exec.Cmd, error) {
+	return execCmdOnNodeContext(context.Background(), cs, node, stdin, subArgs...)
+}
+
+// execCmdOnNodeContext is execCmdOnNode with the returned command bound to ctx,
+// so that cancelling ctx kills the underlying oc process.
+func execCmdOnNodeContext(ctx context.Context, cs *framework.ClientSet, node corev1.Node, stdin string, subArgs ...string) (*exec.Cmd, error) {
+	mcd, err := mcdForNodeContext(ctx, cs, &node)
 	if err != nil {
 		return nil, fmt.Errorf("could not get MCD for node %s: %w", node.Name, err)
 	}
 
 	mcdName := mcd.ObjectMeta.Name
 
-	args := []string{"rsh",
+	// -T keeps `oc rsh` from trying to allocate a pseudo-terminal. Tests never
+	// run against one, and a TTY would echo whatever is written to stdin back
+	// into the command's output.
+	args := []string{"rsh", "-T",
 		"-n", "openshift-machine-config-operator",
 		"-c", "machine-config-daemon",
 		mcdName}
 	args = append(args, subArgs...)
 
-	return NewOcCommand(cs, args...)
+	cmd, err := NewOcCommandContext(ctx, cs, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	// A fresh reader per command: callers retry by rebuilding the command, and
+	// a shared reader would already be drained on the second attempt.
+	cmd.Stdin = strings.NewReader(stdin)
+
+	return cmd, nil
 }
 
 // NewOcCommand() configures an exec.Cmd instance to pass the provided
 // arguments into the oc command. Returns an error if the oc command is missing
 // or the KUBECONFIG is also missing.
 func NewOcCommand(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
+	return NewOcCommandContext(context.Background(), cs, args...)
+}
+
+// NewOcCommandContext() performs the same as NewOcCommand, with the returned
+// command bound to ctx. The oc process is killed once ctx is done, which is how
+// callers put an upper bound on an `oc rsh` that never returns.
+func NewOcCommandContext(ctx context.Context, cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
 	// Check for an oc binary in $PATH.
 	path, err := exec.LookPath("oc")
 	if err != nil {
@@ -948,7 +1036,7 @@ func NewOcCommand(cs *framework.ClientSet, args ...string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("could not get kubeconfig: %w", err)
 	}
 
-	cmd := exec.Command(path, args...)
+	cmd := exec.CommandContext(ctx, path, args...)
 	// If one passes a path to a kubeconfig via NewClientSet instead of setting
 	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
 	// KUBECONFIG to the value held by the clientset.
@@ -1161,13 +1249,19 @@ func GetOSReleaseForNode(t *testing.T, cs *framework.ClientSet, node corev1.Node
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	return mcdForNodeContext(context.Background(), cs, node)
+}
+
+// mcdForNodeContext is mcdForNode with the pod lookup bound to ctx, so that a
+// caller working against a deadline does not block here after it has expired.
+func mcdForNodeContext(ctx context.Context, cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
 	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
 	listOptions := metav1.ListOptions{
 		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
 	}
 	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(ctx, listOptions)
 	if err != nil {
 		return nil, err
 	}
