@@ -10,7 +10,9 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Upgrade", func() {
+// The explicit MCO upgrade CI flow selects [MCOUpgrade:Pre] and [MCOUpgrade:Post]
+// in separate invocations. [Early] and [Late] remain for generic run-upgrade jobs.
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][Serial][Disruptive] MCO Upgrade", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -38,7 +40,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:55748][OTP][Feature:ClusterUpgrade][Late] Upgrade failed with Transaction in progress", func() {
+	g.It("[PolarionID:55748][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] Upgrade failed with Transaction in progress", func() {
 
 		exutil.By("check machine config daemon log to verify no error `Transaction in progress` found")
 
@@ -64,7 +66,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=maybe - 90.2% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:59427][OTP][Feature:ClusterUpgrade][Late] ssh keys can be migrated to new dir when node is upgraded from RHCOS8 to RHCOS9", func() {
+	g.It("[PolarionID:59427][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] ssh keys can be migrated to new dir when node is upgraded from RHCOS8 to RHCOS9", func() {
 
 		var (
 			oldAuthorizedKeyPath = "/home/core/.ssh/authorized_key"
@@ -102,7 +104,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=maybe-slow - 98.4% pass rate (305 runs last 60 days) avg 7.9m
-	g.It("[PolarionID:62154][OTP][Feature:ClusterUpgrade][Early] Don't render new MC until base MCs update", func() {
+	g.It("[PolarionID:62154][OTP][Feature:ClusterUpgrade][Early][MCOUpgrade:Pre] Don't render new MC until base MCs update", func() {
 		var (
 			kcName     = "mco-tc-62154-kubeletconfig"
 			kcTemplate = generateTemplateAbsolutePath("generic-kubelet-config.yaml")
@@ -136,7 +138,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=maybe-slow - 98.4% pass rate (305 runs last 60 days) avg 7.9m
-	g.It("[PolarionID:62154][OTP][Feature:ClusterUpgrade][Late] Don't render new MC until base MCs update", func() {
+	g.It("[PolarionID:62154][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] Don't render new MC until base MCs update", func() {
 
 		var (
 			kcName     = "mco-tc-62154-kubeletconfig"
@@ -155,18 +157,19 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			logger.Debugf("failed to get kubeletconfig,containerruntimeconfig (debug only): %v", err)
 		}
 
-		// Skip if the precheck part of the test was not executed
+		// The explicit MCO upgrade CI flow runs the MCOUpgrade:Pre tests before the
+		// upgrade and runs this MCOUpgrade:Post test only after ClusterVersion reports
+		// completion. Missing resources therefore mean pre-upgrade setup failed or the
+		// upgrade lost them: a failure, not a skip. The no-worker skip is mirrored above.
 		kc := NewKubeletConfig(oc.AsAdmin(), kcName, kcTemplate)
-		if !kc.Exists() {
-			g.Skip(fmt.Sprintf(`The PreChkUpgrade part of the test should have created a KubeletConfig resource "%s". This resource does not exist in the cluster. Maybe we are upgrading from an old branch like 4.5?`, kc.GetName()))
-		}
+		o.Expect(kc).To(Exist(),
+			"the MCOUpgrade:Pre phase should have created the KubeletConfig %q before the upgrade and it should have survived it", kcName)
 		defer wMcp.waitForComplete()
 		defer kc.Delete()
 
 		cr := NewContainerRuntimeConfig(oc.AsAdmin(), crName, crTemplate)
-		if !cr.Exists() {
-			g.Skip(fmt.Sprintf(`The PreChkUpgrade part of the test should have created a ContainerRuntimConfig resource "%s". This resource does not exist in the cluster. Maybe we are upgrading from an old branch like 4.5?`, cr.GetName()))
-		}
+		o.Expect(cr).To(Exist(),
+			"the MCOUpgrade:Pre phase should have created the ContainerRuntimeConfig %q before the upgrade and it should have survived it", crName)
 		defer cr.Delete()
 
 		logger.Infof("Jira issure: https://issues.redhat.com/browse/OCPBUGS-6018")
@@ -205,7 +208,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:64781][OTP][Feature:ClusterUpgrade][Late] MAchine-Config-Operator should be compliant with CIS benchmark rule", func() {
+	g.It("[PolarionID:64781][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] MAchine-Config-Operator should be compliant with CIS benchmark rule", func() {
 		exutil.By("Verify that machine-config-opeartor pod is not using the default SA")
 
 		serviceAccounts, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-n", MachineConfigNamespace, "-l", "k8s-app=machine-config-operator",
@@ -226,7 +229,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=yes - 96.4% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:70577][OTP][Feature:ClusterUpgrade][Late] Run ovs-configuration.service before dnsmasq.service on Azure", g.Label("Platform:azure"), func() {
+	g.It("[PolarionID:70577][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] Run ovs-configuration.service before dnsmasq.service on Azure", g.Label("Platform:azure"), func() {
 		skipTestIfSupportedPlatformNotMatched(oc.AsAdmin(), "azure")
 
 		var (
@@ -255,7 +258,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Early] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
+	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Early][MCOUpgrade:Pre] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
 		// Bootimages Update functionality is only available in GCP(GA) and AWS(GA)
 		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImages")
@@ -311,7 +314,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Late] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
+	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
 		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		// Bootimages Update functionality is only available in GCP(GA) and AWS(GA)
 
@@ -328,9 +331,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			currentVersion     = NewResource(oc.AsAdmin(), "ClusterVersion", "version").GetOrFail(`{.status.desired.version}`)
 		)
 
-		if !clonedMS.Exists() {
-			g.Skip("PreChkUpgrad part of this test case was skipped, so we skip the PstChkUpgrade part too")
-		}
+		// The explicit MCO upgrade CI flow runs the MCOUpgrade:Pre tests before the
+		// upgrade and runs this MCOUpgrade:Post test only after ClusterVersion reports
+		// completion. Its valid skip conditions (platform, feature gates, worker scaling)
+		// are mirrored above, so a missing MachineSet is a failure, not a skip.
+		o.Expect(clonedMS).To(Exist(),
+			"the MCOUpgrade:Pre phase should have created the MachineSet %q before the upgrade and it should have survived it", clonedMSLabelName)
 		defer clonedMS.Delete()
 
 		o.Expect(tmpConfigMap).To(Exist(), "The configmap with the pre-upgrade information was not found")
@@ -384,7 +390,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	// port=maybe - 89.8% pass rate (305 runs last 60 days)
-	g.It("[PolarionID:76216][OTP][Feature:ClusterUpgrade][Late] Scale up nodes after upgrade", func() {
+	g.It("[PolarionID:76216][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] Scale up nodes after upgrade", func() {
 		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		var (
 			machineSet   = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
