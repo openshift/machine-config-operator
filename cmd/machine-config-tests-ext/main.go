@@ -90,6 +90,16 @@ func main() {
 		Description:      "Non-disruptive suite that runs as part of the parallel conformance suite",
 	})
 
+	ext.AddGlobalSuite(e.Suite{
+		Name: "openshift/machine-config-operator/upgrade",
+		Qualifiers: []string{
+			`name.contains("[Suite:openshift/machine-config-operator/upgrade]")`,
+		},
+		ClusterStability: e.ClusterStabilityDisruptive,
+		TestTimeout:      &defaultTimeout,
+		Description:      "MCO tests explicitly selected before and after a cluster upgrade",
+	})
+
 	// If using Ginkgo, build test specs automatically
 	specs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {
