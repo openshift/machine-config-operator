@@ -111,6 +111,7 @@ type Controller struct {
 	moscListerSynced          cache.InformerSynced
 	mosbListerSynced          cache.InformerSynced
 	nodeListerSynced          cache.InformerSynced
+	podListerSynced           cache.InformerSynced
 	mcnListerSynced           cache.InformerSynced
 	osImageStreamListerSynced cache.InformerSynced
 
@@ -123,7 +124,8 @@ type Controller struct {
 	infraLister       cligolistersv1.InfrastructureLister
 	infraListerSynced cache.InformerSynced
 
-	queue workqueue.TypedRateLimitingInterface[string]
+	queue             workqueue.TypedRateLimitingInterface[string]
+	manualActionQueue workqueue.TypedRateLimitingInterface[string]
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 
@@ -240,6 +242,9 @@ func newController(
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-nodecontroller"}),
+		manualActionQueue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-node-manual-actions"}),
 		updateDelay:        updateDelay,
 		fgHandler:          fgHandler,
 		osStreamsFgEnabled: osimagestream.IsFeatureEnabled(fgHandler),
@@ -297,6 +302,7 @@ func newController(
 	ctrl.moscListerSynced = moscInformer.Informer().HasSynced
 	ctrl.mosbListerSynced = mosbInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+	ctrl.podListerSynced = podInformer.Informer().HasSynced
 	ctrl.mcnListerSynced = mcnInformer.Informer().HasSynced
 
 	ctrl.schedulerList = schedulerInformer.Lister()
@@ -321,10 +327,11 @@ func newController(
 func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+	defer ctrl.manualActionQueue.ShutDown()
 
 	syncers := []cache.InformerSynced{
 		ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.moscListerSynced,
-		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.mcnListerSynced, ctrl.schedulerListerSynced,
+		ctrl.mosbListerSynced, ctrl.nodeListerSynced, ctrl.podListerSynced, ctrl.mcnListerSynced, ctrl.schedulerListerSynced,
 		ctrl.mcopListerSynced, ctrl.infraListerSynced,
 	}
 	// Only wait for the OSImageStream informer to sync if the feature is enabled
@@ -348,6 +355,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, ctx.Done())
+		go wait.Until(ctrl.manualActionWorker, time.Second, ctx.Done())
 	}
 
 	<-ctx.Done()
@@ -628,6 +636,7 @@ func (ctrl *Controller) addMachineConfigNode(obj interface{}) {
 	if poolName == upgrademonitor.NotYetSet {
 		return
 	}
+	ctrl.enqueueManualAction(curMCN.Name)
 
 	mcp, err := ctrl.mcpLister.Get(poolName)
 	if err != nil {
@@ -651,6 +660,7 @@ func (ctrl *Controller) updateMachineConfigNode(old, cur interface{}) {
 		equality.Semantic.DeepEqual(oldMCN.Status.Conditions, curMCN.Status.Conditions)) {
 		return
 	}
+	ctrl.enqueueManualAction(curMCN.Name)
 
 	klog.V(4).Infof("Updating MachineConfigNode %s", curMCN.Name)
 
@@ -812,6 +822,7 @@ func (ctrl *Controller) addNode(obj interface{}) {
 	if pools == nil {
 		return
 	}
+	ctrl.enqueueManualAction(node.Name)
 	klog.V(4).Infof("Node %s added", node.Name)
 	for _, pool := range pools {
 		ctrl.enqueueMachineConfigPool(pool)
@@ -840,6 +851,9 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	if !isNodeManaged(curNode) {
 		return
+	}
+	if manualActionNodeChanged(oldNode, curNode) {
+		ctrl.enqueueManualAction(curNode.Name)
 	}
 
 	if ctrl.isMaster(curNode) {

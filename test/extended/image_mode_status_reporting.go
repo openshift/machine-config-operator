@@ -10,11 +10,14 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	extpriv "github.com/openshift/machine-config-operator/test/extended-priv"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 )
 
 var (
@@ -97,6 +100,110 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		// Run the machine count test for a default MCP when applying a standard MachineConfig
 		runMachineCountTest(machineConfigClient, oc, "90-master-testfile", "master")
+	})
+
+	g.It("Manual cordon and uncordon should be reported without making an updated pool updating [apigroup:machineconfiguration.openshift.io]", func() {
+		machineConfigClient, clientErr := machineconfigclient.NewForConfig(oc.KubeFramework().ClientConfig())
+		o.Expect(clientErr).NotTo(o.HaveOccurred(), "Error creating client set for test: %s", clientErr)
+
+		workerNodes, err := GetNodesByRole(oc, "worker")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker nodes: %s", err)
+		if len(workerNodes) == 0 {
+			g.Skip("Manual cordon coverage requires a worker node")
+			return
+		}
+
+		kubeClient := oc.AsAdmin().KubeClient()
+		var nodeToTest *corev1.Node
+		for i := range workerNodes {
+			node, getErr := kubeClient.CoreV1().Nodes().Get(context.TODO(), workerNodes[i].Name, metav1.GetOptions{})
+			if getErr != nil || node.Spec.Unschedulable {
+				continue
+			}
+			ready := false
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+					ready = true
+					break
+				}
+			}
+			if ready {
+				nodeToTest = node
+				break
+			}
+		}
+		if nodeToTest == nil {
+			g.Skip("Manual cordon coverage requires a ready, schedulable worker node")
+			return
+		}
+
+		const poolName = "worker"
+		o.Eventually(func() bool {
+			pool, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+			return getErr == nil && machineConfigPoolUpdatedAndNotUpdating(pool)
+		}, 5*time.Minute, 5*time.Second).Should(o.BeTrue(), "Worker MCP should be Updated=True and Updating=False before the manual action")
+		o.Eventually(func() bool {
+			mcn, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeToTest.Name, metav1.GetOptions{})
+			return getErr == nil && getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdated) == metav1.ConditionTrue
+		}, 1*time.Minute, time.Second).Should(o.BeTrue(), "Test node MCN should be Updated=True before the manual action")
+
+		poolBefore, err := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker MCP: %s", err)
+		readyMachineCountBefore := poolBefore.Status.ReadyMachineCount
+		updatedMachineCountBefore := poolBefore.Status.UpdatedMachineCount
+
+		setUnschedulable := func(unschedulable bool) error {
+			return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				node, getErr := kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeToTest.Name, metav1.GetOptions{})
+				if getErr != nil {
+					return getErr
+				}
+				if node.Spec.Unschedulable == unschedulable {
+					return nil
+				}
+				node.Spec.Unschedulable = unschedulable
+				_, updateErr := kubeClient.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+				return updateErr
+			})
+		}
+		defer func() {
+			if err := setUnschedulable(false); err != nil {
+				logger.Errorf("Failed to uncordon node %q during cleanup: %v", nodeToTest.Name, err)
+			}
+		}()
+
+		o.Expect(setUnschedulable(true)).To(o.Succeed(), "Error cordoning node %q", nodeToTest.Name)
+		o.Eventually(func() bool {
+			mcn, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeToTest.Name, metav1.GetOptions{})
+			return getErr == nil &&
+				getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdated) == metav1.ConditionTrue &&
+				getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdateCordoned) == metav1.ConditionTrue
+		}, 2*time.Minute, 2*time.Second).Should(o.BeTrue(), "MCN should report Cordoned=True while keeping Updated=True")
+		o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTest.Name)).To(o.BeTrue(), "Observed cordon must not make the MCN appear to be updating")
+		o.Eventually(func() bool {
+			pool, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+			return getErr == nil &&
+				machineConfigPoolUpdatedAndNotUpdating(pool) &&
+				pool.Status.ReadyMachineCount == readyMachineCountBefore-1 &&
+				pool.Status.UpdatedMachineCount == updatedMachineCountBefore
+		}, 2*time.Minute, 5*time.Second).Should(o.BeTrue(), "Cordoning one worker should lower ReadyMachineCount without changing the updated pool state")
+
+		o.Expect(setUnschedulable(false)).To(o.Succeed(), "Error uncordoning node %q", nodeToTest.Name)
+		o.Eventually(func() bool {
+			mcn, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeToTest.Name, metav1.GetOptions{})
+			return getErr == nil &&
+				getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdated) == metav1.ConditionTrue &&
+				getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdateCordoned) == metav1.ConditionFalse &&
+				getMCNConditionStatus(mcn, mcfgv1.MachineConfigNodeUpdateUncordoned) == metav1.ConditionTrue
+		}, 2*time.Minute, 2*time.Second).Should(o.BeTrue(), "MCN should report the uncordon transition without clearing Updated")
+		o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTest.Name)).To(o.BeTrue(), "Observed uncordon must not make the MCN appear to be updating")
+		o.Eventually(func() bool {
+			pool, getErr := machineConfigClient.MachineconfigurationV1().MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
+			return getErr == nil &&
+				machineConfigPoolUpdatedAndNotUpdating(pool) &&
+				pool.Status.ReadyMachineCount == readyMachineCountBefore &&
+				pool.Status.UpdatedMachineCount == updatedMachineCountBefore
+		}, 2*time.Minute, 5*time.Second).Should(o.BeTrue(), "Uncordoning should restore the worker pool ready count")
 	})
 
 	g.It("MachineConfigPool machine counts should transition when OCB is enabled in a default MCP [apigroup:machineconfiguration.openshift.io]", func() {
@@ -328,9 +435,9 @@ func validateMCNTransitions(oc *exutil.CLI, machineConfigClient *machineconfigcl
 	ValidateTransitionThroughConditions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
 	logger.Infof("OK!\n")
 
-	// When an update is complete, all conditions other than `Updated` must be false
-	logger.Infof("Checking all conditions other than 'Updated' are False.")
-	o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTestName)).Should(o.BeTrue(), "Error, all conditions must be 'False' when Updated=True.")
+	// When an update is complete, no update-progress condition should remain active.
+	logger.Infof("Checking the MCN has no active update-progress conditions.")
+	o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTestName)).Should(o.BeTrue(), "Error, the MCN has active update-progress conditions while Updated=True.")
 	logger.Infof("OK!\n")
 
 	return

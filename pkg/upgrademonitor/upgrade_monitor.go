@@ -10,8 +10,9 @@ import (
 	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	mcfgclientset "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -60,6 +61,117 @@ func UpdateMachineConfigNodeStatus(
 	pool string,
 ) error {
 	return generateAndApplyMachineConfigNodes(parentCondition, childCondition, parentStatus, childStatus, node, mcfgClient, imageSetApplyConfig, fgHandler, pool)
+}
+
+// UpdateMachineConfigNodeActionConditions updates only the supplied action
+// conditions, preserving Updated and all other MCN status fields. This is
+// intended for node actions observed outside an MCO-managed update. The return
+// value reports whether a requested Rebooted=True condition is persisted.
+func UpdateMachineConfigNodeActionConditions(
+	mcfgClient mcfgclientset.Interface,
+	nodeName string,
+	conditions ...metav1.Condition,
+) (bool, error) {
+	if mcfgClient == nil || nodeName == "" || len(conditions) == 0 {
+		return false, nil
+	}
+	for _, condition := range conditions {
+		switch mcfgv1.StateProgress(condition.Type) {
+		case mcfgv1.MachineConfigNodeUpdateCordoned,
+			mcfgv1.MachineConfigNodeUpdateDrained,
+			mcfgv1.MachineConfigNodeUpdateUncordoned,
+			mcfgv1.MachineConfigNodeUpdateRebooted:
+		default:
+			return false, fmt.Errorf("condition %q is not a supported MachineConfigNode action condition", condition.Type)
+		}
+	}
+
+	rebootedConditionRequested := false
+	for _, condition := range conditions {
+		if condition.Type == string(mcfgv1.MachineConfigNodeUpdateRebooted) && condition.Status == metav1.ConditionTrue {
+			rebootedConditionRequested = true
+			break
+		}
+	}
+	rebootedConditionPersisted := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		rebootedConditionPersisted = false
+		machineConfigNode, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			// The node controller will reconcile again when the MCN is created.
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !machineConfigNodeHasUpdatedCondition(machineConfigNode) {
+			// Action conditions outside an MCO update must not create or imply an
+			// update while the node's configuration is not converged. In particular,
+			// callers must not consume a boot-ID change unless Rebooted was persisted.
+			return nil
+		}
+
+		updated := machineConfigNode.DeepCopy()
+		for _, desired := range conditions {
+			mergeActionCondition(&updated.Status.Conditions, desired)
+		}
+
+		if equality.Semantic.DeepEqual(machineConfigNode.Status.Conditions, updated.Status.Conditions) {
+			rebootedConditionPersisted = rebootedConditionRequested && machineConfigNodeHasConditionStatus(
+				updated, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionTrue,
+			)
+			return nil
+		}
+
+		persisted, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().UpdateStatus(context.TODO(), updated, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed updating manual-action conditions for MachineConfigNode %q: %w", nodeName, err)
+		}
+		rebootedConditionPersisted = rebootedConditionRequested && persisted != nil && machineConfigNodeHasConditionStatus(
+			persisted, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionTrue,
+		)
+		return nil
+	})
+	return rebootedConditionPersisted, err
+}
+
+func machineConfigNodeHasUpdatedCondition(machineConfigNode *mcfgv1.MachineConfigNode) bool {
+	for _, condition := range machineConfigNode.Status.Conditions {
+		if condition.Type == string(mcfgv1.MachineConfigNodeUpdated) {
+			return condition.Status == metav1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func machineConfigNodeHasConditionStatus(machineConfigNode *mcfgv1.MachineConfigNode, conditionType mcfgv1.StateProgress, status metav1.ConditionStatus) bool {
+	for _, condition := range machineConfigNode.Status.Conditions {
+		if condition.Type == string(conditionType) {
+			return condition.Status == status
+		}
+	}
+	return false
+}
+
+func mergeActionCondition(conditions *[]metav1.Condition, desired metav1.Condition) {
+	if desired.LastTransitionTime.IsZero() {
+		desired.LastTransitionTime = metav1.Now()
+	}
+
+	for i := range *conditions {
+		if (*conditions)[i].Type != desired.Type {
+			continue
+		}
+
+		// LastTransitionTime tracks status transitions, not message changes.
+		if (*conditions)[i].Status == desired.Status {
+			desired.LastTransitionTime = (*conditions)[i].LastTransitionTime
+		}
+		(*conditions)[i] = desired
+		return
+	}
+
+	*conditions = append(*conditions, desired)
 }
 
 // Helper function to convert metav1.Condition to ConditionApplyConfiguration
@@ -213,9 +325,11 @@ func generateAndApplyMachineConfigNodes(
 		// also set all other ones to false and update last transition time.
 		for i, condition := range newMCNode.Status.Conditions {
 			switch {
-			case condition.Type == string(mcfgv1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type:
+			case condition.Type == string(mcfgv1.MachineConfigNodeUpdated) && condition.Status == metav1.ConditionTrue && condition.Type != newParentCondition.Type && newParentCondition.Type != string(mcfgv1.MachineConfigNodeResumed):
 				// if this happens, it is because we manually updated the MCO.
 				// so, if we get a parent state == unknown or true or ANYTHING and updated also == true but it isn't the parent, set updated == false
+				// Resumed is also reported when the daemon starts after a manual reboot,
+				// so it must not by itself invalidate an otherwise-updated node.
 				newC := metav1.Condition{
 					Type:               string(mcfgv1.MachineConfigNodeUpdated),
 					Message:            "This node is not updated, sensed disruption via a manual update.",
@@ -223,7 +337,7 @@ func generateAndApplyMachineConfigNodes(
 					LastTransitionTime: metav1.Now(),
 					Status:             metav1.ConditionFalse,
 				}
-				newC.DeepCopyInto(&newMCNode.Status.Conditions[i])
+				newC.DeepCopyInto(&condition)
 
 			case newChildCondition != nil && condition.Type == newChildCondition.Type:
 				foundChild = true

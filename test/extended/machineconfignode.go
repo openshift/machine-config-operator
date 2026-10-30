@@ -410,9 +410,10 @@ func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *ma
 	}
 }
 
-// `ConfirmUpdatedMCNStatus` confirms that an MCN is in a fully updated state, which requires:
+// `ConfirmUpdatedMCNStatus` confirms that an MCN is converged, which requires:
 //  1. "Updated" = True
-//  2. All other conditions = False
+//  2. No update is in progress. `Resumed=True` is a completed phase, and observed node-action
+//     conditions may remain True without implying an update is in progress.
 func ConfirmUpdatedMCNStatus(clientSet *machineconfigclient.Clientset, mcnName string) bool {
 	// Get MCN
 	workerNodeMCN, workerErr := clientSet.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), mcnName, metav1.GetOptions{})
@@ -425,6 +426,10 @@ func ConfirmUpdatedMCNStatus(clientSet *machineconfigclient.Clientset, mcnName s
 			logger.Infof("Node '%s' update is not complete; 'Updated' condition status is '%v'", mcnName, condition.Status)
 			return false
 		} else if condition.Type != string(mcfgv1.MachineConfigNodeUpdated) && condition.Status != metav1.ConditionFalse {
+			if isCompletedMCNCondition(condition) {
+				logger.Infof("Node '%s' has completed condition '%s' set to '%s' while Updated=True", mcnName, condition.Type, condition.Status)
+				continue
+			}
 			logger.Infof("Node '%s' is updated but MCN is invalid; '%v' codition status is '%v'", mcnName, condition.Type, condition.Status)
 			return false
 		}
@@ -432,4 +437,33 @@ func ConfirmUpdatedMCNStatus(clientSet *machineconfigclient.Clientset, mcnName s
 
 	logger.Infof("Node '%s' update is complete and corresponding MCN is valid.", mcnName)
 	return true
+}
+
+func isCompletedMCNCondition(condition metav1.Condition) bool {
+	if condition.Status != metav1.ConditionTrue {
+		return false
+	}
+	if condition.Type == string(mcfgv1.MachineConfigNodeResumed) {
+		return true
+	}
+	return isObservedNodeActionCondition(condition)
+}
+
+func isObservedNodeActionCondition(condition metav1.Condition) bool {
+	if condition.Status != metav1.ConditionTrue {
+		return false
+	}
+
+	switch mcfgv1.StateProgress(condition.Type) {
+	case mcfgv1.MachineConfigNodeUpdateCordoned:
+		return condition.Reason == "NodeUnschedulable"
+	case mcfgv1.MachineConfigNodeUpdateDrained:
+		return condition.Reason == "NoDrainablePods"
+	case mcfgv1.MachineConfigNodeUpdateUncordoned:
+		return condition.Reason == "NodeUncordoned"
+	case mcfgv1.MachineConfigNodeUpdateRebooted:
+		return condition.Reason == "BootIDChanged"
+	default:
+		return false
+	}
 }

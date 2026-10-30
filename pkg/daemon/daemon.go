@@ -804,11 +804,15 @@ func (dn *Daemon) syncNode(key string) error {
 			dn.fgHandler,
 			pool,
 		)
+		rebootStatusUpdated := err == nil
 		if err != nil {
 			klog.Errorf("Error making MCN for Rebooted: %v", err)
 		}
 		removeRebooting := make(map[string]string)
 		removeRebooting[constants.MachineConfigDaemonPostConfigAction] = ""
+		if rebootStatusUpdated && node.Status.NodeInfo.BootID != "" {
+			removeRebooting[constants.MachineConfigDaemonLastObservedBootIDAnnotationKey] = node.Status.NodeInfo.BootID
+		}
 		_, err = dn.nodeWriter.SetAnnotations(removeRebooting)
 		if err != nil {
 			klog.Errorf("Could not unset rebooting Anno: %v", err)

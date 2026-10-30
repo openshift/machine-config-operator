@@ -281,3 +281,201 @@ func TestStatusNoDiffGuardAppliesWhenObservedGenerationStale(t *testing.T) {
 		t.Errorf("expected 1 SSA ApplyStatus action when ObservedGeneration is stale, got %d", n)
 	}
 }
+
+func TestUpdateMachineConfigNodeActionConditionsPreservesUpdateStatus(t *testing.T) {
+	const nodeName = "worker-1"
+	const configName = "rendered-worker-abc123"
+
+	existing := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+		Status: mcfgv1.MachineConfigNodeStatus{
+			Conditions: []metav1.Condition{
+				{Type: string(mcfgv1.MachineConfigNodeUpdated), Status: metav1.ConditionTrue, Reason: "Updated"},
+				{Type: string(mcfgv1.MachineConfigNodeUpdatePrepared), Status: metav1.ConditionFalse, Reason: "NotYetOccurred"},
+				{Type: string(mcfgv1.MachineConfigNodeUpdateCordoned), Status: metav1.ConditionFalse, Reason: "NotYetOccurred"},
+			},
+			ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{
+				Current: configName,
+				Desired: configName,
+			},
+		},
+	}
+	fakeClient := fake.NewClientset(existing)
+
+	cordoned := metav1.Condition{
+		Type:    string(mcfgv1.MachineConfigNodeUpdateCordoned),
+		Status:  metav1.ConditionTrue,
+		Reason:  "NodeUnschedulable",
+		Message: "Node is currently unschedulable.",
+	}
+	rebooted := metav1.Condition{
+		Type:    string(mcfgv1.MachineConfigNodeUpdateRebooted),
+		Status:  metav1.ConditionTrue,
+		Reason:  "BootIDChanged",
+		Message: "A reboot was observed.",
+	}
+	if persisted, err := UpdateMachineConfigNodeActionConditions(fakeClient, nodeName, cordoned, rebooted); err != nil {
+		t.Fatalf("unexpected error updating action condition: %v", err)
+	} else if !persisted {
+		t.Fatal("expected Rebooted=True to be reported as persisted")
+	}
+
+	updated, err := fakeClient.MachineconfigurationV1().MachineConfigNodes().Get(t.Context(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed getting MCN: %v", err)
+	}
+	assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeUpdated, metav1.ConditionTrue)
+	assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeUpdatePrepared, metav1.ConditionFalse)
+	assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeUpdateCordoned, metav1.ConditionTrue)
+	assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeUpdateRebooted, metav1.ConditionTrue)
+	if updated.Status.ConfigVersion == nil || updated.Status.ConfigVersion.Current != configName || updated.Status.ConfigVersion.Desired != configName {
+		t.Fatalf("action condition update changed configVersion: %#v", updated.Status.ConfigVersion)
+	}
+
+	statusUpdates := countMachineConfigNodeStatusUpdates(fakeClient.Actions())
+	if persisted, err := UpdateMachineConfigNodeActionConditions(fakeClient, nodeName, cordoned, rebooted); err != nil {
+		t.Fatalf("unexpected error on idempotent action condition update: %v", err)
+	} else if !persisted {
+		t.Fatal("expected already-persisted Rebooted=True to be reported as persisted")
+	}
+	if got := countMachineConfigNodeStatusUpdates(fakeClient.Actions()); got != statusUpdates {
+		t.Fatalf("expected idempotent update to avoid another status write, got %d writes after %d", got, statusUpdates)
+	}
+}
+
+func TestUpdateMachineConfigNodeActionConditionsSkipsUnupdatedNode(t *testing.T) {
+	const nodeName = "worker-1"
+	existing := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+		Status: mcfgv1.MachineConfigNodeStatus{
+			Conditions: []metav1.Condition{{Type: string(mcfgv1.MachineConfigNodeUpdated), Status: metav1.ConditionFalse}},
+		},
+	}
+	fakeClient := fake.NewClientset(existing)
+
+	persisted, err := UpdateMachineConfigNodeActionConditions(fakeClient, nodeName,
+		metav1.Condition{Type: string(mcfgv1.MachineConfigNodeUpdateCordoned), Status: metav1.ConditionTrue},
+		metav1.Condition{Type: string(mcfgv1.MachineConfigNodeUpdateRebooted), Status: metav1.ConditionTrue},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if persisted {
+		t.Fatal("expected no action conditions to be reported as persisted for an unupdated node")
+	}
+	if got := countMachineConfigNodeStatusUpdates(fakeClient.Actions()); got != 0 {
+		t.Fatalf("expected no status update for a node not marked Updated, got %d", got)
+	}
+}
+
+func TestUpdateMachineConfigNodeActionConditionsRejectsUpdatedCondition(t *testing.T) {
+	const nodeName = "worker-1"
+	existing := &mcfgv1.MachineConfigNode{
+		ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+		Status: mcfgv1.MachineConfigNodeStatus{
+			Conditions: []metav1.Condition{{Type: string(mcfgv1.MachineConfigNodeUpdated), Status: metav1.ConditionTrue}},
+		},
+	}
+	fakeClient := fake.NewClientset(existing)
+
+	_, err := UpdateMachineConfigNodeActionConditions(fakeClient, nodeName, metav1.Condition{
+		Type:   string(mcfgv1.MachineConfigNodeUpdated),
+		Status: metav1.ConditionFalse,
+	})
+	if err == nil {
+		t.Fatal("expected Updated to be rejected as an action condition")
+	}
+	if got := countMachineConfigNodeStatusUpdates(fakeClient.Actions()); got != 0 {
+		t.Fatalf("expected no status update when Updated was supplied, got %d", got)
+	}
+}
+
+func TestResumedConditionDoesNotMarkUpdatedNodeAsUpdating(t *testing.T) {
+	const nodeName = "worker-1"
+	const configName = "rendered-worker-abc123"
+
+	newNode := func() (*corev1.Node, *mcfgv1.MachineConfigNode) {
+		return &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nodeName,
+					Annotations: map[string]string{
+						daemonconsts.CurrentMachineConfigAnnotationKey: configName,
+						daemonconsts.DesiredMachineConfigAnnotationKey: configName,
+					},
+				},
+			}, &mcfgv1.MachineConfigNode{
+				ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+				Spec: mcfgv1.MachineConfigNodeSpec{
+					ConfigVersion: mcfgv1.MachineConfigNodeSpecMachineConfigVersion{Desired: configName},
+				},
+				Status: mcfgv1.MachineConfigNodeStatus{
+					ConfigVersion: &mcfgv1.MachineConfigNodeStatusMachineConfigVersion{Current: configName, Desired: configName},
+					Conditions: []metav1.Condition{
+						{Type: string(mcfgv1.MachineConfigNodeUpdated), Status: metav1.ConditionTrue, Reason: "Updated"},
+						{Type: string(mcfgv1.MachineConfigNodeUpdatePrepared), Status: metav1.ConditionFalse, Reason: "NotYetOccurred"},
+					},
+				},
+			}
+	}
+
+	tests := []struct {
+		name              string
+		parent            mcfgv1.StateProgress
+		wantUpdatedStatus metav1.ConditionStatus
+	}{
+		{name: "resumed after a manual reboot", parent: mcfgv1.MachineConfigNodeResumed, wantUpdatedStatus: metav1.ConditionTrue},
+		{name: "update phase still marks node as updating", parent: mcfgv1.MachineConfigNodeUpdatePrepared, wantUpdatedStatus: metav1.ConditionFalse},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node, mcn := newNode()
+			fakeClient := fake.NewSimpleClientset(mcn)
+			err := GenerateAndApplyMachineConfigNodes(
+				&Condition{State: test.parent, Reason: string(test.parent), Message: "test"},
+				nil,
+				metav1.ConditionTrue,
+				metav1.ConditionFalse,
+				node,
+				fakeClient,
+				newFakeHandler(),
+				"worker",
+			)
+			if err != nil {
+				t.Fatalf("unexpected error applying %s condition: %v", test.parent, err)
+			}
+
+			updated, err := fakeClient.MachineconfigurationV1().MachineConfigNodes().Get(t.Context(), nodeName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("failed getting MCN: %v", err)
+			}
+			assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeUpdated, test.wantUpdatedStatus)
+			if test.parent == mcfgv1.MachineConfigNodeResumed {
+				assertConditionStatus(t, updated.Status.Conditions, mcfgv1.MachineConfigNodeResumed, metav1.ConditionTrue)
+			}
+		})
+	}
+}
+
+func assertConditionStatus(t *testing.T, conditions []metav1.Condition, conditionType mcfgv1.StateProgress, expected metav1.ConditionStatus) {
+	t.Helper()
+	for _, condition := range conditions {
+		if condition.Type == string(conditionType) {
+			if condition.Status != expected {
+				t.Fatalf("condition %q status = %q, want %q", conditionType, condition.Status, expected)
+			}
+			return
+		}
+	}
+	t.Fatalf("condition %q not found", conditionType)
+}
+
+func countMachineConfigNodeStatusUpdates(actions []k8stesting.Action) int {
+	count := 0
+	for _, action := range actions {
+		if action.Matches("update", "machineconfignodes") && action.GetSubresource() == "status" {
+			count++
+		}
+	}
+	return count
+}

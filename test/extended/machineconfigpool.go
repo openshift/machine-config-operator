@@ -168,3 +168,21 @@ func IsMachineConfigPoolConditionTrue(conditions []mcfgv1.MachineConfigPoolCondi
 	}
 	return false
 }
+
+func machineConfigPoolUpdatedAndNotUpdating(pool *mcfgv1.MachineConfigPool) bool {
+	if pool == nil {
+		return false
+	}
+
+	updated := false
+	updating := false
+	for _, condition := range pool.Status.Conditions {
+		switch condition.Type {
+		case mcfgv1.MachineConfigPoolUpdated:
+			updated = condition.Status == corev1.ConditionTrue
+		case mcfgv1.MachineConfigPoolUpdating:
+			updating = condition.Status == corev1.ConditionFalse
+		}
+	}
+	return updated && updating
+}

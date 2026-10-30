@@ -1642,6 +1642,48 @@ func TestCalculateStatusWithImageModeReporting(t *testing.T) {
 					degraded:                corev1.ConditionFalse,
 				})
 			},
+		}, {
+			name: "all four nodes updated (via MCN), 1 node manually cordoned — pool remains Updated",
+			nodes: []*corev1.Node{
+				func() *corev1.Node {
+					node := helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-0", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue)
+					node.Spec.Unschedulable = true
+					return node
+				}(),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-1", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-2", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+				helpers.NewNodeWithReadyAndDaemonStateAndImageAnnos("node-3", machineConfigV1, machineConfigV1, "registry.host.com/org/repo@sha256:12345", "registry.host.com/org/repo@sha256:12345", daemonconsts.MachineConfigDaemonStateDone, corev1.ConditionTrue),
+			},
+			mcns: []*mcfgv1.MachineConfigNode{
+				func() *mcfgv1.MachineConfigNode {
+					mcn := helpers.NewMachineConfigNode("node-0", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false)
+					mcn.Status.Conditions = append(mcn.Status.Conditions, metav1.Condition{
+						Type:               string(mcfgv1.MachineConfigNodeUpdateCordoned),
+						Status:             metav1.ConditionTrue,
+						Reason:             "NodeUnschedulable",
+						Message:            "Node is currently unschedulable.",
+						LastTransitionTime: metav1.Now(),
+					})
+					return mcn
+				}(),
+				helpers.NewMachineConfigNode("node-1", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-2", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+				helpers.NewMachineConfigNode("node-3", "worker", machineConfigV1, "registry.host.com/org/repo@sha256:12345", true, false),
+			},
+			currentConfig: machineConfigV1,
+			overrideMosb:  true,
+			mosb:          helpers.NewMachineOSBuildBuilder("mosb-1").WithDesiredConfig(machineConfigV1).WithDigestedImagePushspec("registry.host.com/org/repo@sha256:12345").WithSuccessfulBuild().MachineOSBuild(),
+			verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+				assertPoolStatus(t, status, expectedPoolStatus{
+					machineCount:            new(int32(4)),
+					updatedMachineCount:     new(int32(4)),
+					readyMachineCount:       new(int32(3)),
+					unavailableMachineCount: new(int32(1)),
+					updated:                 corev1.ConditionTrue,
+					updating:                corev1.ConditionFalse,
+					degraded:                corev1.ConditionFalse,
+				})
+			},
 		},
 	}
 
