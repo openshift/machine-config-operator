@@ -447,47 +447,6 @@ func isSingletonCondition(singletonConditionTypes []mcfgv1.StateProgress, condit
 	return false
 }
 
-// UpdateMachineConfigNodeSpecDesiredAnnotations sets the desired config version and image
-// annotation values in the `Spec` of an existing MachineConfigNode resource
-func UpdateMachineConfigNodeSpecDesiredAnnotations(fgHandler ctrlcommon.FeatureGatesHandler, mcfgClient mcfgclientset.Interface, nodeName, desiredConfig, desiredImage string) error {
-	if fgHandler == nil {
-		return nil
-	}
-
-	// Get the existing MCN
-	mcn, mcnErr := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
-	// Note that this function is only intended to update the Spec of an existing MCN. We should
-	// not reach this point if there is not an existing MCN for a node, but we need to handle the
-	// DNE and other potential error situations just in case.
-	if mcnErr != nil {
-		return mcnErr
-	}
-
-	// Set the desired config annotation
-	mcn.Spec.ConfigVersion.Desired = NotYetSet
-	if desiredConfig != "" {
-		mcn.Spec.ConfigVersion.Desired = desiredConfig
-	}
-
-	// Set the desired image annotation if the ImageModeStatusReporting feature gate is enabled
-	if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) {
-		// Set the desired image annotation
-		mcn.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{}
-		if desiredImage != "" {
-			mcn.Spec.ConfigImage = mcfgv1.MachineConfigNodeSpecConfigImage{
-				DesiredImage: mcfgv1.ImageDigestFormat(desiredImage),
-			}
-		}
-	}
-
-	// Update the MCN resource
-	if _, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Update(context.TODO(), mcn, metav1.UpdateOptions{FieldManager: "machine-config-operator"}); err != nil {
-		return fmt.Errorf("failed to update the %s mcn spec with the new desired config and image value: %w", nodeName, err)
-	}
-
-	return nil
-}
-
 // GenerateAndApplyMachineConfigNodeSpec generates and applies a new MCN spec based off the node state
 func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHandler, pool string, node *corev1.Node, mcfgClient mcfgclientset.Interface) error {
 	if fgHandler == nil || node == nil {
@@ -539,7 +498,8 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		// payload, so skip the call if they are all unchanged.
 		if mcNode.Spec.Node.Name == newMCNode.Spec.Node.Name &&
 			mcNode.Spec.Pool.Name == newMCNode.Spec.Pool.Name &&
-			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired {
+			mcNode.Spec.ConfigVersion.Desired == newMCNode.Spec.ConfigVersion.Desired &&
+			mcNode.Spec.ConfigImage.DesiredImage == newMCNode.Spec.ConfigImage.DesiredImage {
 			klog.V(4).Infof("MCN spec for node %q is unchanged, skipping SSA apply", node.Name)
 			return nil
 		}
@@ -547,6 +507,9 @@ func GenerateAndApplyMachineConfigNodeSpec(fgHandler ctrlcommon.FeatureGatesHand
 		poolRefApplyConfig := machineconfigurationv1.MCOObjectReference().WithName(newMCNode.Spec.Pool.Name)
 		specconfigVersionApplyConfig := machineconfigurationv1.MachineConfigNodeSpecMachineConfigVersion().WithDesired(newMCNode.Spec.ConfigVersion.Desired)
 		specApplyConfig := machineconfigurationv1.MachineConfigNodeSpec().WithNode(nodeRefApplyConfig).WithPool(poolRefApplyConfig).WithConfigVersion(specconfigVersionApplyConfig)
+		if fgHandler.Enabled(features.FeatureGateImageModeStatusReporting) && newMCNode.Spec.ConfigImage.DesiredImage != "" {
+			specApplyConfig.WithConfigImage(machineconfigurationv1.MachineConfigNodeSpecConfigImage().WithDesiredImage(newMCNode.Spec.ConfigImage.DesiredImage))
+		}
 		mcnodeApplyConfig := machineconfigurationv1.MachineConfigNode(newMCNode.Name).WithSpec(specApplyConfig)
 		_, err := mcfgClient.MachineconfigurationV1().MachineConfigNodes().Apply(context.TODO(), mcnodeApplyConfig, metav1.ApplyOptions{FieldManager: "machine-config-operator", Force: true})
 		if err != nil {
