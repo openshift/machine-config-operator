@@ -58,6 +58,11 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(kubeletConfig.Spec.TLSSecurityProfile)
 				originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
+				if fgHandler != nil && fgHandler.Enabled(features.FeatureGateTLSGroupPreferences) {
+					// Unlike the running cluster, bootstrap manifests are read straight
+					// from disk, so the CRD never got a chance to prune groups.
+					originalKubeConfig.TLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(kubeletConfig.Spec.TLSSecurityProfile)
+				}
 			}
 
 			var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType
