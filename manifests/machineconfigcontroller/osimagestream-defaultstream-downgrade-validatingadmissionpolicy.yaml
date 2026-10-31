@@ -1,0 +1,22 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "osimagestream-defaultstream-downgrade-validation"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Equivalent
+    namespaceSelector: {}
+    objectSelector: {}
+    resourceRules:
+    - apiGroups:   ["machineconfiguration.openshift.io"]
+      apiVersions: ["v1"]
+      operations:  ["UPDATE"]
+      resources:   ["osimagestreams"]
+      scope: "*"
+  validations:
+    - expression: |
+        !(has(oldObject.spec.defaultStream) &&
+          oldObject.spec.defaultStream in ["rhel-10", "centos-10"] &&
+          object.spec.defaultStream == "rhel-9")
+      message: "Changing the default OS stream from rhel-10 or centos-10 to rhel-9 is not supported"
