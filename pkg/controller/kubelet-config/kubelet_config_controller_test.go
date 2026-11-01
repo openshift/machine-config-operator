@@ -1019,6 +1019,12 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 				MaxPods: 100,
 			},
 		},
+		{
+			name: "raw tlsCurvePreferences alone stays allowed",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				TLSCurvePreferences: []int32{4588},
+			},
+		},
 	}
 
 	// Failure Tests
@@ -1037,6 +1043,79 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+// TestValidateUserKubeletConfigTLSCurvePreferences pins the one case the raw
+// tlsCurvePreferences field is rejected in.
+func TestValidateUserKubeletConfigTLSCurvePreferences(t *testing.T) {
+	customProfile := func(groups ...osev1.TLSGroup) *osev1.TLSSecurityProfile {
+		return &osev1.TLSSecurityProfile{
+			Type: osev1.TLSProfileCustomType,
+			Custom: &osev1.CustomTLSProfile{
+				TLSProfileSpec: osev1.TLSProfileSpec{
+					Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					MinTLSVersion: osev1.VersionTLS12,
+					Groups:        groups,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		raw       []int32
+		profile   *osev1.TLSSecurityProfile
+		wantError bool
+	}{
+		{
+			name: "neither set",
+		},
+		{
+			name: "raw only, as an upgraded cluster would have it",
+			raw:  []int32{23, 29},
+		},
+		{
+			name:    "groups only, the supported way",
+			profile: customProfile(osev1.TLSGroupSecP256r1),
+		},
+		{
+			name:      "both set is ambiguous and rejected",
+			raw:       []int32{23, 29},
+			profile:   customProfile(osev1.TLSGroupSecP256r1),
+			wantError: true,
+		},
+		{
+			// A Custom profile may legitimately omit groups, which leaves the raw
+			// field as the only expression of intent.
+			name:    "raw with a Custom profile carrying no groups",
+			raw:     []int32{23},
+			profile: customProfile(),
+		},
+		{
+			// Groups outside a Custom profile are ignored by
+			// GetSecurityProfileGroups, so there is nothing to conflict with.
+			name:    "raw with a predefined profile",
+			raw:     []int32{23},
+			profile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			kc := newKubeletConfig(test.name,
+				&kubeletconfigv1beta1.KubeletConfiguration{TLSCurvePreferences: test.raw},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+			kc.Spec.TLSSecurityProfile = test.profile
+
+			err := validateUserKubeletConfig(kc)
+			if test.wantError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "may not be set together with")
+				return
+			}
+			require.NoError(t, err)
+		})
 	}
 }
 
@@ -1637,6 +1716,102 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 }
 
 // This test ensures that that the rendering works properly for all types of TLS security profiles
+func TestKubeletConfigTLSGroupsOverride(t *testing.T) {
+	custom := func(groups ...osev1.TLSGroup) *osev1.TLSSecurityProfile {
+		return &osev1.TLSSecurityProfile{
+			Type: osev1.TLSProfileCustomType,
+			Custom: &osev1.CustomTLSProfile{
+				TLSProfileSpec: osev1.TLSProfileSpec{
+					Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					MinTLSVersion: osev1.VersionTLS12,
+					Groups:        groups,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		apiServer *osev1.TLSSecurityProfile
+		kubelet   *osev1.TLSSecurityProfile
+		want      []int32
+	}{
+		{
+			name:    "KubeletConfig groups apply with no cluster-wide profile",
+			kubelet: custom(osev1.TLSGroupSecP256r1, osev1.TLSGroupX25519),
+			want:    []int32{23, 29},
+		},
+		{
+			name:      "KubeletConfig groups win over APIServer groups",
+			apiServer: custom(osev1.TLSGroupX25519),
+			kubelet:   custom(osev1.TLSGroupSecP384r1),
+			want:      []int32{24},
+		},
+		{
+			name:      "a KubeletConfig profile without groups clears the inherited ones",
+			apiServer: custom(osev1.TLSGroupX25519),
+			kubelet:   &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+			want:      nil,
+		},
+		{
+			name:      "APIServer groups survive when the KubeletConfig sets no profile",
+			apiServer: custom(osev1.TLSGroupX25519),
+			want:      []int32{29},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+
+			f.apiserverLister = []*osev1.APIServer{{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec:       osev1.APIServerSpec{TLSSecurityProfile: test.apiServer},
+			}}
+			f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType))
+			f.mcpLister = append(f.mcpLister, helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"))
+
+			kc := newKubeletConfig("tls-groups", &kubeletconfigv1beta1.KubeletConfiguration{},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Spec.TLSSecurityProfile = test.kubelet
+			f.mckLister = append(f.mckLister, kc)
+			f.objects = append(f.objects, kc)
+
+			ctrl := f.newController(fgHandler)
+			require.NoError(t, ctrl.syncHandler(getKey(kc, t)))
+
+			got := renderedKubeletConfig(t, ctrl, "99-master-generated-kubelet")
+			require.Equal(t, test.want, got.TLSCurvePreferences)
+		})
+	}
+}
+
+// renderedKubeletConfig pulls /etc/kubernetes/kubelet.conf back out of a generated
+// MachineConfig and decodes it.
+func renderedKubeletConfig(t *testing.T, ctrl *Controller, mcName string) *kubeletconfigv1beta1.KubeletConfiguration {
+	t.Helper()
+
+	mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
+	require.NoError(t, err)
+	ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	require.NoError(t, err)
+
+	for _, file := range ign.Storage.Files {
+		if file.Path != kubeletConfigPath {
+			continue
+		}
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		require.NoError(t, err)
+		decoded, err := DecodeKubeletConfig(contents)
+		require.NoError(t, err)
+		return decoded
+	}
+
+	t.Fatalf("%s does not contain /etc/kubernetes/kubelet.conf", mcName)
+	return nil
+}
+
 func TestKubeletConfigTLSRender(t *testing.T) {
 	TestCases := []struct {
 		name      string
@@ -1692,6 +1867,24 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Custom TLS profile with groups",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{
+						Type: osev1.TLSProfileCustomType,
+						Custom: &osev1.CustomTLSProfile{
+							TLSProfileSpec: osev1.TLSProfileSpec{
+								Ciphers:       []string{"TLS_AES_128_GCM_SHA256"},
+								MinTLSVersion: osev1.VersionTLS13,
+								Groups:        []osev1.TLSGroup{osev1.TLSGroupX25519MLKEM768, osev1.TLSGroupX25519},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range TestCases {
@@ -1724,6 +1917,15 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 
 			require.Equal(t, originalKubeConfig.TLSCipherSuites, expectedTLSCipherSuites)
 			require.Equal(t, originalKubeConfig.TLSMinVersion, expectedTLSMinVersion)
+
+			var expectedTLSCurvePreferences []int32
+			if testCase.apiserver != nil {
+				expectedTLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(testCase.apiserver.Spec.TLSSecurityProfile)
+			}
+			require.Equal(t, expectedTLSCurvePreferences, originalKubeConfig.TLSCurvePreferences)
+			if expectedTLSCurvePreferences == nil {
+				require.NotContains(t, string(contents), "tlsCurvePreferences")
+			}
 		})
 	}
 }
@@ -1770,7 +1972,7 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	require.NoError(t, err)
 	var kubeletConfigFile ign3types.File
 	for _, file := range generatedIgnConfig.Storage.Files {
-		if file.Path == "/etc/kubernetes/kubelet.conf" {
+		if file.Path == kubeletConfigPath {
 			kubeletConfigFile = file
 		}
 	}

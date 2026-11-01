@@ -370,6 +370,92 @@ func TestBootstrapRun(t *testing.T) {
 	}
 }
 
+// customProfileWithGroups builds the Custom TLS profile the prune helpers below
+// are meant to strip groups from.
+func customProfileWithGroups(groups ...apicfgv1.TLSGroup) *apicfgv1.TLSSecurityProfile {
+	return &apicfgv1.TLSSecurityProfile{
+		Type: apicfgv1.TLSProfileCustomType,
+		Custom: &apicfgv1.CustomTLSProfile{
+			TLSProfileSpec: apicfgv1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: apicfgv1.VersionTLS12,
+				Groups:        groups,
+			},
+		},
+	}
+}
+
+// TestPruneGatedTLSGroups tests the stand-in the bootstrapper uses for the
+// pruning the API server would normally do.
+func TestPruneGatedTLSGroups(t *testing.T) {
+	t.Run("groups are cleared without disturbing the rest of the profile", func(t *testing.T) {
+		apiServer := &apicfgv1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+			Spec: apicfgv1.APIServerSpec{
+				TLSSecurityProfile: customProfileWithGroups(apicfgv1.TLSGroupX25519MLKEM768, apicfgv1.TLSGroupSecP256r1),
+			},
+		}
+
+		pruned := pruneGatedTLSGroups(apiServer)
+
+		require.Empty(t, pruned.Spec.TLSSecurityProfile.Custom.Groups)
+		require.Equal(t, []string{"ECDHE-RSA-AES128-GCM-SHA256"}, pruned.Spec.TLSSecurityProfile.Custom.Ciphers,
+			"pruning groups must not touch the ciphers")
+		require.Equal(t, apicfgv1.VersionTLS12, pruned.Spec.TLSSecurityProfile.Custom.MinTLSVersion)
+
+		// The caller passes in an object parsed from the manifest and keeps using it,
+		// so pruning has to copy rather than edit in place.
+		require.Len(t, apiServer.Spec.TLSSecurityProfile.Custom.Groups, 2,
+			"the input APIServer must not be mutated")
+	})
+
+	t.Run("objects with nothing to prune are returned untouched", func(t *testing.T) {
+		require.Nil(t, pruneGatedTLSGroups(nil))
+
+		noProfile := &apicfgv1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}}
+		require.Same(t, noProfile, pruneGatedTLSGroups(noProfile))
+
+		noGroups := &apicfgv1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+			Spec:       apicfgv1.APIServerSpec{TLSSecurityProfile: customProfileWithGroups()},
+		}
+		require.Same(t, noGroups, pruneGatedTLSGroups(noGroups))
+	})
+}
+
+// TestPruneGatedKubeletConfigTLSGroups is TestPruneGatedTLSGroups for the
+// KubeletConfig manifest
+func TestPruneGatedKubeletConfigTLSGroups(t *testing.T) {
+	t.Run("groups are cleared without disturbing the rest of the profile", func(t *testing.T) {
+		kc := &mcfgv1.KubeletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "curves"},
+			Spec: mcfgv1.KubeletConfigSpec{
+				TLSSecurityProfile: customProfileWithGroups(apicfgv1.TLSGroupX25519),
+			},
+		}
+
+		pruned := pruneGatedKubeletConfigTLSGroups(kc)
+
+		require.Empty(t, pruned.Spec.TLSSecurityProfile.Custom.Groups)
+		require.Equal(t, []string{"ECDHE-RSA-AES128-GCM-SHA256"}, pruned.Spec.TLSSecurityProfile.Custom.Ciphers)
+		require.Len(t, kc.Spec.TLSSecurityProfile.Custom.Groups, 1,
+			"the input KubeletConfig must not be mutated")
+	})
+
+	t.Run("objects with nothing to prune are returned untouched", func(t *testing.T) {
+		require.Nil(t, pruneGatedKubeletConfigTLSGroups(nil))
+
+		noProfile := &mcfgv1.KubeletConfig{ObjectMeta: metav1.ObjectMeta{Name: "plain"}}
+		require.Same(t, noProfile, pruneGatedKubeletConfigTLSGroups(noProfile))
+
+		noGroups := &mcfgv1.KubeletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-groups"},
+			Spec:       mcfgv1.KubeletConfigSpec{TLSSecurityProfile: customProfileWithGroups()},
+		}
+		require.Same(t, noGroups, pruneGatedKubeletConfigTLSGroups(noGroups))
+	})
+}
+
 func TestValidatePreBuiltImage(t *testing.T) {
 	tests := []struct {
 		name          string
