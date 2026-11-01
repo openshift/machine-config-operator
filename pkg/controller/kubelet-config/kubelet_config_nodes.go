@@ -89,6 +89,15 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %w", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	fipsEnabled, err := ctrlcommon.IsFIPSEnabledForCluster(ctrl.mcLister)
+	if err != nil {
+		return err
+	}
+	groupOpts := ctrlcommon.TLSGroupsOptions{
+		FIPSEnabled: fipsEnabled,
+		Enabled:     ctrl.tlsGroupPreferencesEnabled,
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -108,7 +117,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer, groupOpts)
 		if err != nil {
 			return err
 		}
@@ -270,7 +279,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	klog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
@@ -289,7 +298,7 @@ func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGate
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer, groupOpts)
 		if err != nil {
 			return nil, err
 		}

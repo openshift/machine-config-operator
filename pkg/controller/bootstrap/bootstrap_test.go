@@ -14,10 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	"sigs.k8s.io/yaml"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -368,6 +371,202 @@ func TestBootstrapRun(t *testing.T) {
 			assert.Contains(t, string(cconfigBytes), "baseOSExtensionsContainerImage: registry.host.com/extensions:latest")
 		})
 	}
+}
+
+// Check pruning and rendering for self-managed and HyperShift bootstrap.
+func TestBootstrapTLSGroupsFeatureGate(t *testing.T) {
+	modern := &apicfgv1.TLSSecurityProfile{Type: apicfgv1.TLSProfileModernType, Modern: &apicfgv1.ModernTLSProfile{}}
+	custom := customProfileWithGroups(apicfgv1.TLSGroupX25519MLKEM768, apicfgv1.TLSGroupSecP256r1)
+	override := customProfileWithGroups(apicfgv1.TLSGroupX25519MLKEM768, apicfgv1.TLSGroupSecP384r1)
+
+	for _, hosted := range []bool{false, true} {
+		for _, test := range []struct {
+			name       string
+			gate       bool
+			fips       bool
+			profile    *apicfgv1.TLSSecurityProfile
+			override   *apicfgv1.TLSSecurityProfile
+			rawCurves  bool
+			wantMaster []int32
+			wantWorker []int32
+		}{
+			{name: "unset profile, gate disabled"},
+			{name: "unset profile, gate enabled", gate: true, wantMaster: []int32{4588, 29, 23, 24}, wantWorker: []int32{4588, 29, 23, 24}},
+			{name: "named profile, gate disabled", profile: modern},
+			{name: "named profile, gate enabled", gate: true, profile: modern, wantMaster: []int32{4588, 29, 23, 24}, wantWorker: []int32{4588, 29, 23, 24}},
+			{name: "named profile, FIPS target", gate: true, fips: true, profile: modern, wantMaster: []int32{23, 24}, wantWorker: []int32{23, 24}},
+			{name: "Custom profiles are pruned with gate disabled", profile: custom, override: override},
+			{name: "gate disabled preserves raw curves and prunes Custom groups", profile: custom, override: override, rawCurves: true, wantWorker: []int32{23, 29}},
+			{name: "Custom override, gate enabled", gate: true, profile: custom, override: override, wantMaster: []int32{4588, 23}, wantWorker: []int32{4588, 24}},
+			{name: "Custom override, FIPS target", gate: true, fips: true, profile: custom, override: override, wantMaster: []int32{23}, wantWorker: []int32{24}},
+			{name: "named override, gate enabled", gate: true, profile: custom, override: modern, wantMaster: []int32{4588, 23}, wantWorker: []int32{4588, 29, 23, 24}},
+			{name: "named override, FIPS target", gate: true, fips: true, profile: custom, override: modern, wantMaster: []int32{23}, wantWorker: []int32{23, 24}},
+		} {
+			t.Run(fmt.Sprintf("hosted=%t/%s", hosted, test.name), func(t *testing.T) {
+				bootstrap, _, srcDir, destDir := setupForBootstrapTest(t)
+				if hosted {
+					require.NoError(t, exec.Command("cp", "testdata/bootstrap-hypershift/machineconfigcontroller-controllerconfig.yaml", srcDir).Run())
+				}
+				writeManifest := func(name string, obj interface{}) {
+					t.Helper()
+					data, err := yaml.Marshal(obj)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(srcDir, name), data, 0644))
+				}
+
+				data, err := os.ReadFile(filepath.Join(srcDir, "featuregate.yaml"))
+				require.NoError(t, err)
+				var fg apicfgv1.FeatureGate
+				require.NoError(t, yaml.Unmarshal(data, &fg))
+				gate := apicfgv1.FeatureGateAttributes{Name: features.FeatureGateTLSGroupPreferences}
+				if test.gate {
+					fg.Status.FeatureGates[0].Enabled = append(fg.Status.FeatureGates[0].Enabled, gate)
+				} else {
+					fg.Status.FeatureGates[0].Disabled = append(fg.Status.FeatureGates[0].Disabled, gate)
+				}
+				writeManifest("featuregate.yaml", &fg)
+				writeManifest("apiserver.yaml", &apicfgv1.APIServer{
+					TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.GroupVersion.String(), Kind: "APIServer"},
+					ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+					Spec:       apicfgv1.APIServerSpec{TLSSecurityProfile: test.profile},
+				})
+				if test.override != nil {
+					raw := []byte(`{"maxPods":123}`)
+					if test.rawCurves {
+						raw = []byte(`{"maxPods":123,"tlsCurvePreferences":[23,29]}`)
+					}
+					writeManifest("kubeletconfig.yaml", &mcfgv1.KubeletConfig{
+						TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.GroupVersion.String(), Kind: "KubeletConfig"},
+						ObjectMeta: metav1.ObjectMeta{Name: "worker-tls"},
+						Spec: mcfgv1.KubeletConfigSpec{
+							MachineConfigPoolSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"pools.operator.machineconfiguration.openshift.io/worker": ""}},
+							TLSSecurityProfile:        test.override,
+							KubeletConfig:             &runtime.RawExtension{Raw: raw},
+						},
+					})
+				}
+				if test.fips {
+					for _, role := range []string{"master", "worker"} {
+						mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, "99-"+role+"-fips", ctrlcommon.NewIgnConfig())
+						require.NoError(t, err)
+						mc.TypeMeta = metav1.TypeMeta{APIVersion: mcfgv1.GroupVersion.String(), Kind: "MachineConfig"}
+						mc.Spec.FIPS = true
+						writeManifest(mc.Name+".yaml", mc)
+					}
+				}
+
+				require.NoError(t, bootstrap.Run(destDir))
+				for _, role := range []string{"master", "worker"} {
+					paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", "rendered-"+role+"-*.yaml"))
+					require.NoError(t, err)
+					require.Len(t, paths, 1)
+					data, err := os.ReadFile(paths[0])
+					require.NoError(t, err)
+					mc, err := mcoResourceRead.ReadMachineConfigV1(data)
+					require.NoError(t, err)
+					ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+					require.NoError(t, err)
+					contents, err := ctrlcommon.GetIgnitionFileDataByPath(&ign, "/etc/kubernetes/kubelet.conf")
+					require.NoError(t, err)
+					var config kubeletconfigv1beta1.KubeletConfiguration
+					require.NoError(t, yaml.Unmarshal(contents, &config))
+					want := test.wantMaster
+					if role == "worker" {
+						want = test.wantWorker
+						if test.override != nil {
+							require.EqualValues(t, 123, config.MaxPods, "pruning groups must preserve the rest of the KubeletConfig")
+						}
+					}
+					require.Equal(t, want, config.TLSCurvePreferences, "pool %s", role)
+					if want == nil {
+						require.NotContains(t, string(contents), "tlsCurvePreferences", "pool %s", role)
+					}
+				}
+			})
+		}
+	}
+}
+
+// customProfileWithGroups builds a Custom TLS profile for pruning tests.
+func customProfileWithGroups(groups ...apicfgv1.TLSGroup) *apicfgv1.TLSSecurityProfile {
+	return &apicfgv1.TLSSecurityProfile{
+		Type: apicfgv1.TLSProfileCustomType,
+		Custom: &apicfgv1.CustomTLSProfile{
+			TLSProfileSpec: apicfgv1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: apicfgv1.VersionTLS12,
+				Groups:        groups,
+			},
+		},
+	}
+}
+
+// Bootstrap pruning must match API-server pruning without mutating the input.
+func TestPruneGatedTLSGroups(t *testing.T) {
+	t.Run("groups are cleared without disturbing the rest of the profile", func(t *testing.T) {
+		apiServer := &apicfgv1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+			Spec: apicfgv1.APIServerSpec{
+				TLSSecurityProfile: customProfileWithGroups(apicfgv1.TLSGroupX25519MLKEM768, apicfgv1.TLSGroupSecP256r1),
+			},
+		}
+
+		pruned := pruneGatedTLSGroups(apiServer)
+
+		require.Empty(t, pruned.Spec.TLSSecurityProfile.Custom.Groups)
+		require.Equal(t, []string{"ECDHE-RSA-AES128-GCM-SHA256"}, pruned.Spec.TLSSecurityProfile.Custom.Ciphers,
+			"pruning groups must not touch the ciphers")
+		require.Equal(t, apicfgv1.VersionTLS12, pruned.Spec.TLSSecurityProfile.Custom.MinTLSVersion)
+
+		// Preserve the original manifest.
+		require.Len(t, apiServer.Spec.TLSSecurityProfile.Custom.Groups, 2,
+			"the input APIServer must not be mutated")
+	})
+
+	t.Run("objects with nothing to prune are returned untouched", func(t *testing.T) {
+		require.Nil(t, pruneGatedTLSGroups(nil))
+
+		noProfile := &apicfgv1.APIServer{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName}}
+		require.Same(t, noProfile, pruneGatedTLSGroups(noProfile))
+
+		noGroups := &apicfgv1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+			Spec:       apicfgv1.APIServerSpec{TLSSecurityProfile: customProfileWithGroups()},
+		}
+		require.Same(t, noGroups, pruneGatedTLSGroups(noGroups))
+	})
+}
+
+// Check the same pruning behavior for KubeletConfig manifests.
+func TestPruneGatedKubeletConfigTLSGroups(t *testing.T) {
+	t.Run("groups are cleared without disturbing the rest of the profile", func(t *testing.T) {
+		kc := &mcfgv1.KubeletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "curves"},
+			Spec: mcfgv1.KubeletConfigSpec{
+				TLSSecurityProfile: customProfileWithGroups(apicfgv1.TLSGroupX25519),
+			},
+		}
+
+		pruned := pruneGatedKubeletConfigTLSGroups(kc)
+
+		require.Empty(t, pruned.Spec.TLSSecurityProfile.Custom.Groups)
+		require.Equal(t, []string{"ECDHE-RSA-AES128-GCM-SHA256"}, pruned.Spec.TLSSecurityProfile.Custom.Ciphers)
+		require.Len(t, kc.Spec.TLSSecurityProfile.Custom.Groups, 1,
+			"the input KubeletConfig must not be mutated")
+	})
+
+	t.Run("objects with nothing to prune are returned untouched", func(t *testing.T) {
+		require.Nil(t, pruneGatedKubeletConfigTLSGroups(nil))
+
+		noProfile := &mcfgv1.KubeletConfig{ObjectMeta: metav1.ObjectMeta{Name: "plain"}}
+		require.Same(t, noProfile, pruneGatedKubeletConfigTLSGroups(noProfile))
+
+		noGroups := &mcfgv1.KubeletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-groups"},
+			Spec:       mcfgv1.KubeletConfigSpec{TLSSecurityProfile: customProfileWithGroups()},
+		}
+		require.Same(t, noGroups, pruneGatedKubeletConfigTLSGroups(noGroups))
+	})
 }
 
 func TestValidatePreBuiltImage(t *testing.T) {

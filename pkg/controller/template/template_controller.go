@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -67,6 +68,12 @@ type Controller struct {
 
 	ccLister mcfglistersv1.ControllerConfigLister
 
+	mcLister       mcfglistersv1.MachineConfigLister
+	mcListerSynced cache.InformerSynced
+
+	fgHandler                  ctrlcommon.FeatureGatesHandler
+	tlsGroupPreferencesEnabled bool
+
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
@@ -86,12 +93,14 @@ type Controller struct {
 func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	iriSecretsInformer coreinformersv1.SecretInformer,
 	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -101,6 +110,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
+		fgHandler:     fgHandler,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -112,6 +122,8 @@ func New(
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.mcLister = mcInformer.Lister()
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
@@ -306,7 +318,9 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.apiserverListerSynced) {
+	ctrl.tlsGroupPreferencesEnabled = ctrl.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences)
+
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -594,7 +608,17 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		klog.Warningf("Clearing MCs URLs has failed: %v", clearErr)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
+	fipsEnabled, err := ctrlcommon.IsFIPSEnabledForCluster(ctrl.mcLister)
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+
+	groupOpts := ctrlcommon.TLSGroupsOptions{
+		FIPSEnabled: fipsEnabled,
+		Enabled:     ctrl.tlsGroupPreferencesEnabled,
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, groupOpts)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -646,17 +670,19 @@ func (ctrl *Controller) clearImageURLs() error {
 	return err
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer, groupOpts)
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
+		TLSCurvePreferences:  tlsCurvePreferences,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -672,7 +698,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	return mcs, nil
 }
 
-// RunBootstrap runs the template controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
+// RunBootstrap runs the template controller in bootstrap mode.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, groupOpts)
 }
