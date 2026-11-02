@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: &config.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -143,7 +144,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: &config.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -236,14 +237,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{ControllerConfigSpec: &controllerConfig.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{ControllerConfigSpec: &controllerConfig.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -254,7 +255,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{ControllerConfigSpec: &controllerConfig.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -431,7 +432,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{ControllerConfigSpec: &config.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}
@@ -607,7 +608,7 @@ func TestIsBGPVIPManagement(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, c.name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: &config.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, c.name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error, got: %v", err)
 			}
@@ -661,7 +662,7 @@ func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
 			bm.APIServerInternalIPs = tc.apiVIPs
 			bm.IngressIPs = tc.ingressVIPs
 
-			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{ControllerConfigSpec: &controllerConfig.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, templateDir)
 			if err != nil {
 				t.Fatalf("failed to generate machine configs: %v", err)
 			}
@@ -739,7 +740,7 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 		}
 
 		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
-			[]byte(`{"dummy":"dummy"}`), apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled})
+			[]byte(`{"dummy":"dummy"}`), apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled}, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 		require.NoError(t, err)
 
 		want := fmt.Sprintf("01-%s-kubelet", role)
@@ -773,6 +774,93 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 			require.Equal(t, fips, renderFor(t, role, true))
 			require.Equal(t, nonFIPS, renderFor(t, role, false))
 			require.NotEqual(t, fips, nonFIPS, "the target's FIPS state must change the output")
+		})
+	}
+}
+
+func TestFeatureGateEnabled(t *testing.T) {
+	const gate = "PodAndContainerStatsFromCRI"
+	dummyTemplate := []byte(fmt.Sprintf(`{{if featureGateEnabled . %q}}on{{else}}off{{end}}`, gate))
+
+	cases := []struct {
+		name         string
+		featureGates ctrlcommon.FeatureGatesHandler
+		res          string
+	}{{
+		name:         "enabled",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{gate}, nil),
+		res:          "on",
+	}, {
+		name:         "disabled",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, []configv1.FeatureGateName{gate}),
+		res:          "off",
+	}, {
+		name:         "unknown gate",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil),
+		res:          "off",
+	}, {
+		name:         "nil handler",
+		featureGates: nil,
+		res:          "off",
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := renderTemplate(RenderConfig{FeatureGates: c.featureGates}, c.name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			if string(got) != c.res {
+				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
+	}
+}
+
+func TestContainerRuntimeStatsConfig(t *testing.T) {
+	const (
+		gate         = "PodAndContainerStatsFromCRI"
+		statsSection = "[crio.stats]"
+	)
+	crioTemplate := filepath.Join(templateDir, "master", "01-master-container-runtime", "_base", "files", "crio.yaml")
+	b, err := os.ReadFile(crioTemplate)
+	if err != nil {
+		t.Fatalf("failed to read crio template: %v", err)
+	}
+
+	spec := &mcfgv1.ControllerConfigSpec{Images: map[string]string{"infraImageKey": "test-pause-image"}}
+
+	cases := []struct {
+		name         string
+		featureGates ctrlcommon.FeatureGatesHandler
+		want         bool
+	}{{
+		name:         "gate enabled renders stats config",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{gate}, nil),
+		want:         true,
+	}, {
+		name:         "gate disabled omits stats config",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, []configv1.FeatureGateName{gate}),
+		want:         false,
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: spec, FeatureGates: c.featureGates}, c.name, b)
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			rendered := string(got)
+			if present := strings.Contains(rendered, statsSection); present != c.want {
+				t.Fatalf("stats section presence = %v, want %v; rendered:\n%s", present, c.want, rendered)
+			}
+			if c.want {
+				for _, s := range []string{"collection_period = 10", "included_pod_metrics = [", `"all",`} {
+					if !strings.Contains(rendered, s) {
+						t.Fatalf("expected rendered config to contain %q; rendered:\n%s", s, rendered)
+					}
+				}
+			}
 		})
 	}
 }
