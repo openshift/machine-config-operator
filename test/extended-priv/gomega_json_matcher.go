@@ -117,7 +117,41 @@ func (matcher *gjsonMatcher) NegatedFailureMessage(actual interface{}) (message 
 	return message
 }
 
+// gjsonPathMatcher checks whether a path exists in a JSON string.
+type gjsonPathMatcher struct {
+	path string
+}
+
+// Match reports whether the configured JSON path exists.
+func (matcher *gjsonPathMatcher) Match(actual interface{}) (bool, error) {
+	strJSON, ok := actual.(string)
+	if !ok {
+		return false, fmt.Errorf(`matcher expects a JSON string, got %T`, actual)
+	}
+	if !gjson.Valid(strJSON) {
+		return false, fmt.Errorf("matcher expects valid JSON")
+	}
+
+	return gjson.Get(strJSON, matcher.path).Exists(), nil
+}
+
+// FailureMessage describes a missing path without including the JSON payload.
+func (matcher *gjsonPathMatcher) FailureMessage(_ interface{}) string {
+	return fmt.Sprintf("JSON path %q does not exist", matcher.path)
+}
+
+// NegatedFailureMessage describes an unexpectedly present path without including the JSON payload.
+func (matcher *gjsonPathMatcher) NegatedFailureMessage(_ interface{}) string {
+	return fmt.Sprintf("JSON path %q unexpectedly exists", matcher.path)
+}
+
 // HavePathWithValue returns the gomega matcher to check if a path in a json data matches the given condition
 func HavePathWithValue(path string, expected interface{}) types.GomegaMatcher {
 	return &gjsonMatcher{path: path, expected: expected}
+}
+
+// HavePath returns a Gomega matcher that checks whether a gjson path exists in a JSON string.
+// Use it with Not(HavePath(path)) to assert that a path is absent.
+func HavePath(path string) types.GomegaMatcher {
+	return &gjsonPathMatcher{path: path}
 }
