@@ -109,3 +109,12 @@ contents:
 
     [crio.checkpoint_restore]
     container_level_enabled = "checkpoint_only"
+{{- if featureGateEnabled . "PodAndContainerStatsFromCRI" }}
+{{- /* TODO: Remove collection_period and included_pod_metrics once they become the default in CRI-O. */}}
+
+    [crio.stats]
+    collection_period = 10
+    included_pod_metrics = [
+        "all",
+    ]
+{{- end }}

@@ -127,7 +127,7 @@ func TestBGPVIPPeersFileRendering(t *testing.T) {
 			peersFile, err := bgpVIPPeersFileJSON(cc, staticSecretGetter(tc.secrets...))
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, peersFile)
-			mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, peersFile, nil, ctrlcommon.TLSGroupsOptions{})
+			mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, peersFile, nil, ctrlcommon.TLSGroupsOptions{}, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 			require.NoError(t, err)
 
 			f, _, found := findFile(t, mcs, "00-master", frrPeersPath)
@@ -146,7 +146,7 @@ func TestBGPVIPPeersFileRendering(t *testing.T) {
 			assert.Equal(t, specBefore, &cc.Spec, "rendering must not modify the ControllerConfig")
 
 			// The bootstrap path renders the same bytes.
-			bootstrapMCs, err := RunBootstrap(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{}, staticSecretGetter(tc.secrets...))
+			bootstrapMCs, err := RunBootstrap(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{}, staticSecretGetter(tc.secrets...), ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 			require.NoError(t, err)
 			bf, _, found := findFile(t, bootstrapMCs, "00-master", frrPeersPath)
 			require.True(t, found)
@@ -156,7 +156,7 @@ func TestBGPVIPPeersFileRendering(t *testing.T) {
 
 	t.Run("bootstrap without a Secret source fails closed", func(t *testing.T) {
 		cc := bgpControllerConfig(t, fullPeersTransport, true)
-		_, err := RunBootstrap(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{}, nil)
+		_, err := RunBootstrap(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{}, nil, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no Secret source")
 		assert.NotContains(t, err.Error(), "s3cret")
@@ -237,7 +237,7 @@ func lastConditionMessage(ccs []*mcfgv1.ControllerConfig, condType mcfgv1.Contro
 // file.
 func renderMCs(t *testing.T, cc *mcfgv1.ControllerConfig, peersFile string) []*mcfgv1.MachineConfig {
 	t.Helper()
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), peersFile, nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), peersFile, nil, ctrlcommon.TLSGroupsOptions{}, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 	require.NoError(t, err)
 	return mcs
 }

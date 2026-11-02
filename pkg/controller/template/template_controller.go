@@ -681,7 +681,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		Enabled:     ctrl.tlsGroupPreferencesEnabled,
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts, ctrl.fgHandler)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -751,7 +751,7 @@ func bgpVIPPeersFileJSON(config *mcfgv1.ControllerConfig, getSecret ctrlcommon.B
 	return ctrlcommon.ResolveBGPVIPPeersJSON(config.Spec.BGPVIPPeersJSON, getSecret)
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, bgpVIPPeersFile string, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, bgpVIPPeersFile string, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -770,6 +770,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		TLSCurvePreferences:  tlsCurvePreferences,
 		ServerTLSGroups:      serverTLSGroups,
 		BGPVIPPeersFileJSON:  bgpVIPPeersFile,
+		FeatureGates:         fgHandler,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -789,10 +790,10 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 // resolves the BGP VIP peer passwordSecret references (from the bootstrap
 // manifests); it may be nil when no Secrets are available, in which case a
 // referenced password fails the render.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, getBGPVIPSecret ctrlcommon.BGPVIPSecretGetter) ([]*mcfgv1.MachineConfig, error) {
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, getBGPVIPSecret ctrlcommon.BGPVIPSecretGetter, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 	bgpVIPPeersFile, err := bgpVIPPeersFileJSON(config, getBGPVIPSecret)
 	if err != nil {
 		return nil, fmt.Errorf("could not render the BGP VIP peers file: %w", err)
 	}
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts)
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts, fgHandler)
 }

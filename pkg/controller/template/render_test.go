@@ -762,7 +762,7 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 		}
 
 		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
-			[]byte(`{"dummy":"dummy"}`), "", apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled})
+			[]byte(`{"dummy":"dummy"}`), "", apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled}, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 		require.NoError(t, err)
 
 		want := fmt.Sprintf("01-%s-kubelet", role)
@@ -854,7 +854,7 @@ func TestCrioMetricsProxyTLSPropagation(t *testing.T) {
 			cc.Spec.Infra.Status.ControlPlaneTopology = configv1.HighlyAvailableArbiterMode
 		}
 		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
-			[]byte(`{"dummy":"dummy"}`), "", apiServer, groupOpts)
+			[]byte(`{"dummy":"dummy"}`), "", apiServer, groupOpts, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 		require.NoError(t, err)
 
 		want := fmt.Sprintf("01-%s-kubelet", role)
@@ -885,6 +885,93 @@ func TestCrioMetricsProxyTLSPropagation(t *testing.T) {
 			// Curve preferences appear only when the profile includes groups and the gate is enabled.
 			require.Contains(t, withGroups, "tls-curve-preferences="+strings.Join(groups, ","))
 			require.NotContains(t, withoutGroups, "tls-curve-preferences")
+		})
+	}
+}
+
+func TestFeatureGateEnabled(t *testing.T) {
+	const gate = "PodAndContainerStatsFromCRI"
+	dummyTemplate := []byte(fmt.Sprintf(`{{if featureGateEnabled . %q}}on{{else}}off{{end}}`, gate))
+
+	cases := []struct {
+		name         string
+		featureGates ctrlcommon.FeatureGatesHandler
+		res          string
+	}{{
+		name:         "enabled",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{gate}, nil),
+		res:          "on",
+	}, {
+		name:         "disabled",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, []configv1.FeatureGateName{gate}),
+		res:          "off",
+	}, {
+		name:         "unknown gate",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil),
+		res:          "off",
+	}, {
+		name:         "nil handler",
+		featureGates: nil,
+		res:          "off",
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := renderTemplate(RenderConfig{FeatureGates: c.featureGates}, c.name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			if string(got) != c.res {
+				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
+	}
+}
+
+func TestContainerRuntimeStatsConfig(t *testing.T) {
+	const (
+		gate         = "PodAndContainerStatsFromCRI"
+		statsSection = "[crio.stats]"
+	)
+	crioTemplate := filepath.Join(templateDir, "master", "01-master-container-runtime", "_base", "files", "crio.yaml")
+	b, err := os.ReadFile(crioTemplate)
+	if err != nil {
+		t.Fatalf("failed to read crio template: %v", err)
+	}
+
+	spec := &mcfgv1.ControllerConfigSpec{Images: map[string]string{"infraImageKey": "test-pause-image"}}
+
+	cases := []struct {
+		name         string
+		featureGates ctrlcommon.FeatureGatesHandler
+		want         bool
+	}{{
+		name:         "gate enabled renders stats config",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{gate}, nil),
+		want:         true,
+	}, {
+		name:         "gate disabled omits stats config",
+		featureGates: ctrlcommon.NewFeatureGatesHardcodedHandler(nil, []configv1.FeatureGateName{gate}),
+		want:         false,
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: spec, FeatureGates: c.featureGates}, c.name, b)
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			rendered := string(got)
+			if present := strings.Contains(rendered, statsSection); present != c.want {
+				t.Fatalf("stats section presence = %v, want %v; rendered:\n%s", present, c.want, rendered)
+			}
+			if c.want {
+				for _, s := range []string{"collection_period = 10", "included_pod_metrics = [", `"all",`} {
+					if !strings.Contains(rendered, s) {
+						t.Fatalf("expected rendered config to contain %q; rendered:\n%s", s, rendered)
+					}
+				}
+			}
 		})
 	}
 }
