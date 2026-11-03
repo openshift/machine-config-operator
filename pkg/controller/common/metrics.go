@@ -2,8 +2,8 @@ package common
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// DefaultBindAddress is the port for the metrics listener
-	DefaultBindAddress = ":8797"
+	// DefaultMetricsBindAddress is the port for the metrics listener
+	DefaultMetricsBindAddress = "127.0.0.1:8797"
 )
 
 // MCC Metrics
@@ -135,10 +135,22 @@ func RegisterMetrics(metrics []prometheus.Collector) error {
 	return nil
 }
 
-// StartMetricsListener is metrics listener via http on localhost
-func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error, tlsMinVersion string, tlsCipherSuites []string) {
+// StartMetricsListener starts the prometheus metrics listener
+//
+// It is unencrypted and should bind to localhost, with kube-rbac-proxy exposing a TLS endpoint outside localhost
+func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error) {
 	if addr == "" {
-		addr = DefaultBindAddress
+		addr = DefaultMetricsBindAddress
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		klog.Errorf("invalid metrics listen address %q: %v", addr, err)
+		return
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		klog.Errorf("metrics is listening on %q, it should listen on localhost and be exposed via a TLS proxy", addr)
+		return
 	}
 
 	klog.Info("Registering Prometheus metrics")
@@ -148,17 +160,10 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func
 		return
 	}
 
-	// Get TLS config from provided settings, or use defaults
-	tlsConfig := GetGoTLSConfig(tlsMinVersion, tlsCipherSuites)
-
-	klog.Infof("Starting metrics listener on %s with TLS min version: %s", addr, tlsMinVersion)
+	klog.Infof("Starting metrics listener on %s", addr)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
-	s := http.Server{
-		TLSConfig:    tlsConfig,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-		Addr:         addr,
-		Handler:      mux}
+	s := http.Server{Addr: addr, Handler: mux}
 
 	go func() {
 		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
