@@ -1,0 +1,29 @@
+name: keepalived-vip-resign.service
+enabled: {{if and (isOpenShiftManagedDefaultLB .) (or (gt (len (onPremPlatformAPIServerInternalIPs .)) 0) (gt (len (onPremPlatformIngressIPs .)) 0))}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Resign on-prem VIPs (keepalived) before node shutdown
+  Documentation=https://issues.redhat.com/browse/OCPBUGS-109633
+  # This unit does nothing at boot. Its ExecStop runs at shutdown/reboot
+  # and, because stop order is the reverse of the After=/Before= start
+  # ordering, it runs before crio, kubelet and NetworkManager are stopped
+  # (NetworkManager ordering is inherited via network.target, and listed
+  # explicitly as well). Note this does NOT order against the transient
+  # crio-*.scope units that contain the keepalived container - those may
+  # be torn down in parallel - so the clean SIGTERM handoff below is
+  # best-effort; the hard guarantee that no stale VIP survives comes from
+  # the script's force-removal fallback.
+  After=network.target NetworkManager.service crio.service kubelet.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/bin/true
+  ExecStop=/usr/local/bin/keepalived-vip-resign.sh
+  # The script bounds itself (<=10s wait + kill + VIP removal); this is a
+  # safety net so a wedged script cannot block shutdown indefinitely.
+  TimeoutStopSec=20
+  SyslogIdentifier=keepalived-vip-resign
+
+  [Install]
+  WantedBy=multi-user.target

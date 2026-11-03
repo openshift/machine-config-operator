@@ -1,0 +1,102 @@
+mode: 0755
+path: "/usr/local/bin/keepalived-vip-resign.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Resign the on-prem VIPs before the node shuts down.
+    #
+    # During "systemctl reboot" systemd tears down all container scopes and
+    # the network stack in parallel. Whether keepalived manages to send its
+    # VRRP priority-0 resign advertisement and remove the VIPs from the
+    # interface before it is killed is a race. When it loses, the VIP stays
+    # configured on the rebooting node while its kube-apiserver is still
+    # gracefully draining (and the local haproxy redirect is already gone),
+    # so external clients are routed straight to a not-ready apiserver for
+    # up to ~70 seconds. See https://issues.redhat.com/browse/OCPBUGS-109633
+    #
+    # This script runs as ExecStop of keepalived-vip-resign.service, which
+    # is ordered to stop before crio, kubelet and NetworkManager at system
+    # shutdown. It asks keepalived to shut down cleanly (priority-0 advert
+    # + VIP removal) and waits until the VIPs are actually gone. If
+    # keepalived does not finish in time it is killed and the VIPs are
+    # removed directly, so that no stale VIP survives into the shutdown
+    # window.
+    #
+    # No "set -e": every path must fall through to the force-removal
+    # fallback and exit 0; individual failures are tolerated deliberately.
+    set -ux
+    PATH=/usr/sbin:/usr/bin
+
+    VIPS="{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }} {{end}}{{$ip}}{{end}}
+    {{- range onPremPlatformIngressIPs . }} {{.}}{{end}}"
+
+    # Only act while the system is actually shutting down. A plain
+    # "systemctl stop/restart" of this unit on a healthy node (manual, or
+    # a MachineConfig rollout replacing the unit) must not flap the VIPs.
+    # If systemctl itself is unavailable we are deep into shutdown, so
+    # treat that as "stopping".
+    running_state=$(systemctl is-system-running 2>/dev/null) || true
+    if [ -n "${running_state}" ] && [ "${running_state}" != "stopping" ]; then
+        echo "keepalived-vip-resign: system is ${running_state}, not shutting down; nothing to do"
+        exit 0
+    fi
+
+    vip_configured() {
+        # $1 - VIP address; prints "<dev> <cidr>" if configured, else
+        # nothing. "ip addr show to" compares addresses kernel-side, so
+        # non-canonical VIP spellings (uncompressed/uppercase IPv6) still
+        # match.
+        ip -o addr show to "${1}" | awk '{print $2, $4; exit}'
+    }
+
+    any_vip_configured() {
+        for vip in ${VIPS}; do
+            [ -n "$(vip_configured "${vip}")" ] && return 0
+        done
+        return 1
+    }
+
+    if ! any_vip_configured; then
+        echo "keepalived-vip-resign: no VIP configured on this node, nothing to do"
+        exit 0
+    fi
+
+    # Ask keepalived to shut down cleanly. On SIGTERM it sends a VRRP
+    # priority-0 advertisement (instant failover on the peers) and removes
+    # the VIPs from the interface. Exact comm match (-x) is required:
+    # an unanchored "keepalived" also matches dynkeepalived (the
+    # keepalived-monitor process) and this very script's own comm
+    # ("keepalived-vip-").
+    signaled=0
+    if pid=$(pgrep -ox keepalived); then
+        echo "keepalived-vip-resign: sending SIGTERM to keepalived (pid ${pid})"
+        if kill -s TERM "${pid}"; then
+            signaled=1
+        fi
+    else
+        echo "keepalived-vip-resign: keepalived is not running"
+    fi
+
+    if [ "${signaled}" -eq 1 ]; then
+        for _ in $(seq 1 10); do
+            any_vip_configured || {
+                echo "keepalived-vip-resign: all VIPs resigned"
+                exit 0
+            }
+            sleep 1
+        done
+    fi
+
+    # Last resort: make sure keepalived cannot re-add the addresses, then
+    # remove the VIPs directly. The peers take over via the VRRP
+    # master-down timeout (~3-4s), and no stale VIP is left to route
+    # client traffic to the draining local apiserver.
+    pkill -9 -x keepalived || true
+    for vip in ${VIPS}; do
+        read -r dev cidr <<< "$(vip_configured "${vip}")"
+        if [ -n "${dev:-}" ]; then
+            echo "keepalived-vip-resign: force-removing ${cidr} from ${dev}"
+            ip addr del "${cidr}" dev "${dev}" || true
+        fi
+    done
+    exit 0
