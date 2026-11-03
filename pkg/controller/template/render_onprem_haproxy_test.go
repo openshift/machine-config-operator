@@ -36,14 +36,34 @@ func TestOnPremAPIHAProxyRedispatchesUnreachableMasters(t *testing.T) {
 			if masters.redispatchInterval != 1 {
 				t.Errorf("backend masters must redispatch on every connection retry (option redispatch 1), got redispatch interval %d (0 means disabled)", masters.redispatchInterval)
 			}
-			if masters.retries < 2 {
-				t.Errorf("backend masters needs at least 2 connection retries to get past two unreachable masters, got %d", masters.retries)
+			if masters.retries != 3 {
+				t.Errorf("backend masters must retain 3 connection retries, got %d", masters.retries)
+			}
+			if masters.connectTimeout != 2*time.Second {
+				t.Errorf("backend masters must retain timeout connect 2s, got %s", masters.connectTimeout)
 			}
 			if masters.connectTimeout <= initialSYNRetransmissionTimeout {
 				t.Errorf("backend masters timeout connect %s must allow one SYN retransmission (> %s)", masters.connectTimeout, initialSYNRetransmissionTimeout)
 			}
 			if 2*masters.connectTimeout >= clientGoTLSHandshakeTimeout {
 				t.Errorf("two connection attempts to unreachable masters (2 x timeout connect %s) must end before client-go's TLS handshake timeout (%s)", masters.connectTimeout, clientGoTLSHandshakeTimeout)
+			}
+		})
+	}
+}
+
+// TestOnPremAPIHAProxyPreservesConnectingSessions checks that the rendered masters
+// health checks retain their tuning without forcibly closing connecting sessions.
+func TestOnPremAPIHAProxyPreservesConnectingSessions(t *testing.T) {
+	for _, platform := range []string{"baremetal", "vsphere", "openstack", "nutanix"} {
+		t.Run(platform, func(t *testing.T) {
+			masters := parseHAProxyBackend(t, renderOnPremHAProxyConfigTemplate(t, platform), "masters")
+			if len(masters.servers) != 1 {
+				t.Fatalf("backend masters must have one server template, got %d", len(masters.servers))
+			}
+			want := "server {{ .Host }} {{ .Address }}:{{ .Port }} weight 256 verify none check check-ssl inter 5s fall 3 rise 3 slowstart 60s"
+			if masters.servers[0] != want {
+				t.Errorf("backend masters must retain its health-check settings without fastinter or on-marked-down shutdown-sessions:\ngot:  %s\nwant: %s", masters.servers[0], want)
 			}
 		})
 	}
@@ -84,9 +104,10 @@ func renderOnPremHAProxyConfigTemplate(t *testing.T, platform string) string {
 	return ""
 }
 
-// haproxyBackend holds the effective connection retry settings of a backend,
-// after applying what it inherits from the defaults section.
+// haproxyBackend records rendered server lines and explicit retry settings,
+// including directives inherited from the defaults section.
 type haproxyBackend struct {
+	servers []string
 	retries int
 	// connectTimeout is zero when no connect timeout applies (haproxy then
 	// waits forever).
@@ -103,11 +124,12 @@ var haproxySectionKeywords = map[string]bool{
 	"http-errors": true, "ring": true, "cache": true,
 }
 
+// parseHAProxyBackend extracts rendered directives without supplying HAProxy's
+// implicit retry default, so tests require the explicit retries directive.
 func parseHAProxyBackend(t *testing.T, cfg, name string) haproxyBackend {
 	t.Helper()
 
-	// haproxy defaults to 3 retries and no redispatch.
-	defaults := haproxyBackend{retries: 3}
+	var defaults haproxyBackend
 	var backend haproxyBackend
 	section, found := "", false
 
@@ -146,8 +168,11 @@ func parseHAProxyBackend(t *testing.T, cfg, name string) haproxyBackend {
 	return backend
 }
 
+// applyHAProxyDirective records a rendered server or retry directive on a backend.
 func applyHAProxyDirective(b *haproxyBackend, fields []string) error {
 	switch {
+	case fields[0] == "server":
+		b.servers = append(b.servers, strings.Join(fields, " "))
 	case fields[0] == "retries" && len(fields) == 2:
 		retries, err := strconv.Atoi(fields[1])
 		if err != nil {
