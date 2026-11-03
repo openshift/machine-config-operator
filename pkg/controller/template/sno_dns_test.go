@@ -73,10 +73,10 @@ func TestSNOCoreDNSGate(t *testing.T) {
 			}
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler(enabled, nil)
 
-			got, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, fgHandler)
+			got, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), "", nil, ctrlcommon.TLSGroupsOptions{}, fgHandler)
 			require.NoError(t, err)
 
-			disabled, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
+			disabled, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), "", nil, ctrlcommon.TLSGroupsOptions{}, nil)
 			require.NoError(t, err)
 			baseline := map[string]*mcfgv1.MachineConfig{}
 			for _, mc := range disabled {
@@ -379,7 +379,7 @@ func renderSNODNSFile(t *testing.T, path string) string {
 	cc.Spec.Infra.Status.PlatformStatus.Type = configv1.NonePlatformType
 	cc.Spec.Infra.Status.ControlPlaneTopology = configv1.SingleReplicaTopologyMode
 	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]configv1.FeatureGateName{features.FeatureGateUnifiedClusterManagedDNSAndLB}, nil)
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, fgHandler)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy":"dummy"}`), "", nil, ctrlcommon.TLSGroupsOptions{}, fgHandler)
 	require.NoError(t, err)
 	for _, mc := range mcs {
 		ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
