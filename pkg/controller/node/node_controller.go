@@ -82,6 +82,17 @@ const (
 	// zoneLabel is for https://kubernetes.io/docs/setup/best-practices/multiple-zones/
 	zoneLabel = "topology.kubernetes.io/zone"
 
+	// updateOrderAnnotationKey selects age ordering within a zone when rolling
+	// out MachineConfig updates on a MachineConfigPool.
+	// Valid values: OldestFirst (default when unset), NewestFirst.
+	// Zone alphabetical order is always preserved; only age direction within a
+	// zone (or among nodes without a zone) changes.
+	// See RFE-9696.
+	updateOrderAnnotationKey = "machineconfiguration.openshift.io/update-order"
+
+	updateOrderOldestFirst = "OldestFirst"
+	updateOrderNewestFirst = "NewestFirst"
+
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
 )
@@ -1889,9 +1900,11 @@ func (ctrl *Controller) updateCandidateMachines(layered bool, mosc *mcfgv1.Machi
 	}
 	if capacity < uint(len(candidates)) {
 		// when list is longer than maxUnavailable, rollout nodes in zone order, zones without zone label
-		// are done last from oldest to youngest. this reduces likelihood of randomly picking nodes
-		// across multiple zones that run the same types of pods resulting in an outage in HA clusters
-		candidates = sortNodeList(candidates)
+		// are done last. Age order within a zone defaults to oldest→youngest; set pool annotation
+		// machineconfiguration.openshift.io/update-order=NewestFirst to reverse age order.
+		// Zone-first ordering reduces likelihood of randomly picking nodes across multiple zones
+		// that run the same types of pods resulting in an outage in HA clusters.
+		candidates = sortNodeList(candidates, poolWantsNewestFirst(pool))
 
 		candidates = candidates[:capacity]
 	}
@@ -1925,9 +1938,31 @@ func (ctrl *Controller) setDesiredAnnotations(layered bool, mosc *mcfgv1.Machine
 	return nil
 }
 
-// sortNodeList sorts the list of candidate nodes by label topology.kubernetes.io/zone
-// nodes without label are at end of list and sorted by age (oldest to youngest)
-func sortNodeList(nodes []*corev1.Node) []*corev1.Node {
+// poolWantsNewestFirst reports whether the pool opted into newest-first age
+// ordering via the update-order annotation.
+func poolWantsNewestFirst(pool *mcfgv1.MachineConfigPool) bool {
+	if pool == nil || pool.Annotations == nil {
+		return false
+	}
+	return pool.Annotations[updateOrderAnnotationKey] == updateOrderNewestFirst
+}
+
+// ageBefore compares node ages. When newestFirst is false (default), older nodes
+// sort first. When true, newer nodes sort first.
+func ageBefore(a, b *corev1.Node, newestFirst bool) bool {
+	aTime := a.GetObjectMeta().GetCreationTimestamp().Time
+	bTime := b.GetObjectMeta().GetCreationTimestamp().Time
+	if newestFirst {
+		return aTime.After(bTime)
+	}
+	return aTime.Before(bTime)
+}
+
+// sortNodeList sorts the list of candidate nodes by label topology.kubernetes.io/zone.
+// Nodes without the label are at the end of the list. Within a zone (and among
+// no-zone nodes), age order is oldest→youngest by default, or youngest→oldest
+// when newestFirst is true.
+func sortNodeList(nodes []*corev1.Node, newestFirst bool) []*corev1.Node {
 	sort.Slice(nodes, func(i, j int) bool {
 		iZone, iOk := nodes[i].Labels[zoneLabel]
 		jZone, jOk := nodes[j].Labels[zoneLabel]
@@ -1935,15 +1970,13 @@ func sortNodeList(nodes []*corev1.Node) []*corev1.Node {
 		switch {
 		case iOk && jOk:
 			if iZone == jZone {
-				// if nodes have same labels, sort by creationTime oldest to newest
-				return nodes[i].GetObjectMeta().GetCreationTimestamp().Time.Before(nodes[j].GetObjectMeta().GetCreationTimestamp().Time)
+				return ageBefore(nodes[i], nodes[j], newestFirst)
 			}
 			return iZone < jZone
 		case jOk:
 			return false
 		case !iOk && !jOk:
-			// if nodes have no labels, sort by creationTime oldest to newest
-			return nodes[i].GetObjectMeta().GetCreationTimestamp().Time.Before(nodes[j].GetObjectMeta().GetCreationTimestamp().Time)
+			return ageBefore(nodes[i], nodes[j], newestFirst)
 		default:
 			return true
 		}
