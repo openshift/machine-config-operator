@@ -410,26 +410,7 @@ func ValidateTransitionThroughConditions(oc *exutil.CLI, machineConfigClient *ma
 	}
 }
 
-// `ConfirmUpdatedMCNStatus` confirms that an MCN is in a fully updated state, which requires:
-//  1. "Updated" = True
-//  2. All other conditions = False
+// ConfirmUpdatedMCNStatus checks that the MCN is updated and has no active update phase.
 func ConfirmUpdatedMCNStatus(clientSet *machineconfigclient.Clientset, mcnName string) bool {
-	// Get MCN
-	workerNodeMCN, workerErr := clientSet.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), mcnName, metav1.GetOptions{})
-	o.Expect(workerErr).NotTo(o.HaveOccurred())
-
-	// Loop through conditions and return the status of the desired condition type
-	conditions := workerNodeMCN.Status.Conditions
-	for _, condition := range conditions {
-		if condition.Type == string(mcfgv1.MachineConfigNodeUpdated) && condition.Status != metav1.ConditionTrue {
-			logger.Infof("Node '%s' update is not complete; 'Updated' condition status is '%v'", mcnName, condition.Status)
-			return false
-		} else if condition.Type != string(mcfgv1.MachineConfigNodeUpdated) && condition.Status != metav1.ConditionFalse {
-			logger.Infof("Node '%s' is updated but MCN is invalid; '%v' codition status is '%v'", mcnName, condition.Type, condition.Status)
-			return false
-		}
-	}
-
-	logger.Infof("Node '%s' update is complete and corresponding MCN is valid.", mcnName)
-	return true
+	return extpriv.ConfirmUpdatedMCNStatus(clientSet, mcnName)
 }

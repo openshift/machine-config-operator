@@ -6,6 +6,8 @@ import (
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
@@ -471,4 +473,263 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		o.Expect(moscDisabledStatusCurrentImage).To(o.BeEmpty(), "MCN status.configImage.currentImage should be empty after MOSC deletion")
 	})
 
+	g.It("Manual cordon and uncordon should be reported without making an updated pool updating [apigroup:machineconfiguration.openshift.io]", func() {
+		mcp := GetCompactCompatiblePool(oc.AsAdmin())
+
+		exutil.By("Wait until the pool is updated and not updating")
+		o.Eventually(mcp, "5m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Updating", "status", FalseString),
+		), "The pool %s should be Updated=True and Updating=False before the manual action", mcp.PrettyString())
+
+		exutil.By("Get a ready and schedulable node of the pool")
+		nodeToTest := readySchedulablePoolNode(mcp)
+		if nodeToTest == nil {
+			g.Skip("Manual cordon coverage requires a ready and schedulable node in the pool")
+		}
+		mcn := nodeToTest.GetMachineConfigNode()
+		machineConfigClient, err := machineconfigclient.NewForConfig(oc.KubeFramework().ClientConfig())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating machine config client")
+		logger.Infof("Testing with node %s\n", nodeToTest.GetName())
+
+		exutil.By("Wait until the MCN of the node is updated")
+		o.Eventually(mcn, "1m", "5s").Should(HaveConditionField("Updated", "status", TrueString),
+			"The MCN %s should be Updated=True before the manual action", mcn.PrettyString())
+
+		exutil.By("Record the pool machine counts before the manual action")
+		readyMachineCountBefore, readyErr := strconv.Atoi(OrFail[string](mcp.GetReadyMachineCountStatus()))
+		o.Expect(readyErr).NotTo(o.HaveOccurred(), "Error getting the readyMachineCount of pool %s", mcp.GetName())
+		updatedMachineCountBefore := OrFail[int](mcp.GetUpdatedMachineCountStatusAsInt())
+
+		// poolStateUnchanged checks that the pool stays updated and that only the ready machine
+		// count moved to the expected value after the manual node action
+		poolStateUnchanged := func(expectedReadyMachineCount int) bool {
+			updatedStatus, err := mcp.GetUpdatedStatus()
+			if err != nil {
+				return false
+			}
+			updatingStatus, err := mcp.GetUpdatingStatus()
+			if err != nil {
+				return false
+			}
+			readyMachineCountStr, err := mcp.GetReadyMachineCountStatus()
+			if err != nil {
+				return false
+			}
+			readyMachineCount, convErr := strconv.Atoi(readyMachineCountStr)
+			if convErr != nil {
+				return false
+			}
+			updatedMachineCount, err := mcp.GetUpdatedMachineCountStatusAsInt()
+			if err != nil {
+				return false
+			}
+			return updatedStatus == TrueString && updatingStatus == FalseString &&
+				readyMachineCount == expectedReadyMachineCount &&
+				updatedMachineCount == updatedMachineCountBefore
+		}
+
+		// Recover the initial node state if any assertion fails
+		defer func() {
+			if err := nodeToTest.Uncordon(); err != nil {
+				logger.Errorf("Failed to uncordon node %s during cleanup: %v", nodeToTest.GetName(), err)
+			}
+		}()
+
+		exutil.By("Manually cordon the node")
+		o.Expect(nodeToTest.Cordon()).To(o.Succeed(), "Error cordoning node %s", nodeToTest.PrettyString())
+
+		exutil.By("Check that the MCN reports the manual cordon while keeping Updated=True")
+		o.Eventually(mcn, "2m", "2s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Cordoned", "status", TrueString),
+		), "The MCN %s should report Cordoned=True while keeping Updated=True", mcn.PrettyString())
+		o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTest.GetName())).To(o.BeTrue(), "A manual cordon must not make the MCN appear to be updating")
+
+		exutil.By("Check that the manually cordoned node does not make the updated pool updating")
+		o.Eventually(func() bool { return poolStateUnchanged(readyMachineCountBefore - 1) }, "2m", "5s").Should(o.BeTrue(),
+			"Cordoning node %s should lower the ready machine count of pool %s by one without making the updated pool updating",
+			nodeToTest.GetName(), mcp.GetName())
+
+		exutil.By("Manually uncordon the node")
+		o.Expect(nodeToTest.Uncordon()).To(o.Succeed(), "Error uncordoning node %s", nodeToTest.PrettyString())
+
+		exutil.By("Check that the MCN reports the manual uncordon without clearing Updated")
+		o.Eventually(mcn, "2m", "2s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Cordoned", "status", FalseString),
+			HaveConditionField("Uncordoned", "status", TrueString),
+		), "The MCN %s should report the uncordon transition without clearing Updated", mcn.PrettyString())
+		o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTest.GetName())).To(o.BeTrue(), "A manual uncordon must not make the MCN appear to be updating")
+
+		exutil.By("Check that the uncordoned node restores the pool ready machine count")
+		o.Eventually(func() bool { return poolStateUnchanged(readyMachineCountBefore) }, "2m", "5s").Should(o.BeTrue(),
+			"Uncordoning node %s should restore the ready machine count of pool %s", nodeToTest.GetName(), mcp.GetName())
+	})
+
+	g.It("Manual drain should be reported on the MachineConfigNode [apigroup:machineconfiguration.openshift.io]", func() {
+		if IsCompactOrSNOCluster(oc.AsAdmin()) {
+			g.Skip("Manual drain requires a dedicated worker node")
+		}
+
+		mcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		nodeToTest := readySchedulablePoolNode(mcp)
+		if nodeToTest == nil {
+			g.Skip("Manual drain requires a ready and schedulable worker node")
+		}
+		mcn := nodeToTest.GetMachineConfigNode()
+
+		exutil.By("Check that the worker pool and MCN are updated")
+		o.Eventually(mcp, "5m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Updating", "status", FalseString),
+		), "The pool %s should be updated before the manual drain", mcp)
+		o.Eventually(mcn, "1m", "5s").Should(HaveConditionField("Updated", "status", TrueString),
+			"The MCN %s should be updated before the manual drain", mcn)
+
+		exutil.By("Create a workload on the selected worker")
+		oc.SetupProject()
+		deploymentName := "mco-mcn-manual-drain"
+		deployment := NewNamespacedResource(oc.AsAdmin(), "deployment", oc.Namespace(), deploymentName)
+		defer func() {
+			o.Expect(deployment.Delete("--ignore-not-found=true")).To(o.Succeed(), "Error deleting %s", deployment)
+		}()
+		o.Expect(NewMCOTemplate(oc.AsAdmin(), "create-deployment.yaml").Create(
+			"-p", "NAME="+deploymentName, "-p", "NAMESPACE="+oc.Namespace(), "-p", "REPLICAS=0",
+		)).To(o.Succeed(), "Error creating %s", deployment)
+		hostname, err := nodeToTest.GetNodeHostname()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting hostname for %s", nodeToTest)
+		o.Expect(deployment.Patch("merge", fmt.Sprintf(`{"spec":{"replicas":1,"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":%q}}}}}`, hostname))).To(o.Succeed(),
+			"Error scheduling %s on %s", deployment, nodeToTest)
+		o.Eventually(deployment, "6m", "15s").Should(BeAvailable(), "The workload %s should be available", deployment)
+		o.Eventually(func() (string, error) {
+			return exutil.GetPodName(oc.AsAdmin(), oc.Namespace(), "app=test", nodeToTest.GetName())
+		}, "2m", "5s").ShouldNot(o.BeEmpty(), "The workload must run on %s", nodeToTest)
+		podName, err := exutil.GetPodName(oc.AsAdmin(), oc.Namespace(), "app=test", nodeToTest.GetName())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error finding the workload pod on %s", nodeToTest)
+		o.Expect(podName).NotTo(o.BeEmpty(), "The workload must run on %s", nodeToTest)
+		pod := NewNamespacedResource(oc.AsAdmin(), "pod", oc.Namespace(), podName)
+
+		exutil.By("Cordon the worker and check that its workload blocks Drained")
+		defer func() {
+			o.Expect(nodeToTest.Uncordon()).To(o.Succeed(), "Error uncordoning %s during cleanup", nodeToTest)
+		}()
+		o.Expect(nodeToTest.Cordon()).To(o.Succeed(), "Error cordoning %s", nodeToTest)
+		o.Eventually(mcn, "2m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Cordoned", "status", TrueString),
+			HaveConditionField("Drained", "status", FalseString),
+			HaveConditionField("Drained", "reason", "DrainablePodsRemain"),
+		), "The MCN %s should report a cordoned node with drainable workloads", mcn)
+
+		exutil.By("Drain the worker")
+		// Like the MCO drain helper, this permits evicting pods with emptyDir
+		// volumes. Their node-local data, including other workloads', is lost.
+		o.Expect(oc.AsAdmin().Run("adm").Args("drain", nodeToTest.GetName(), "--ignore-daemonsets", "--delete-emptydir-data", "--timeout=5m").Execute()).To(o.Succeed(),
+			"Error draining %s", nodeToTest)
+		o.Eventually(pod.Get, "2m", "5s").WithArguments(`{.metadata.uid}`, "--ignore-not-found=true").Should(o.BeEmpty(),
+			"The workload pod %s should have been evicted", pod)
+
+		exutil.By("Check that the MCN reports Drained without clearing Updated")
+		o.Eventually(mcn, "3m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Cordoned", "status", TrueString),
+			HaveConditionField("Drained", "status", TrueString),
+			HaveConditionField("Drained", "reason", "NoDrainablePods"),
+		), "The MCN %s should report the completed manual drain", mcn)
+
+		exutil.By("Uncordon the worker and check that Drained is cleared")
+		o.Expect(nodeToTest.Uncordon()).To(o.Succeed(), "Error uncordoning %s", nodeToTest)
+		o.Eventually(mcn, "2m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Cordoned", "status", FalseString),
+			HaveConditionField("Drained", "status", FalseString),
+			HaveConditionField("Uncordoned", "status", TrueString),
+		), "The MCN %s should report the uncordon after the drain", mcn)
+	})
+
+	g.It("Manual reboot should be reported on the MachineConfigNode [apigroup:machineconfiguration.openshift.io]", func() {
+		if IsCompactOrSNOCluster(oc.AsAdmin()) {
+			g.Skip("Manual reboot requires a dedicated worker node")
+		}
+
+		mcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		nodeToTest := readySchedulablePoolNode(mcp)
+		if nodeToTest == nil {
+			g.Skip("Manual reboot requires a ready and schedulable worker node")
+		}
+		mcn := nodeToTest.GetMachineConfigNode()
+
+		exutil.By("Check that the worker pool and MCN are updated")
+		o.Eventually(mcp, "5m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Updating", "status", FalseString),
+		), "The pool %s should be updated before the reboot", mcp)
+		o.Eventually(mcn, "1m", "5s").Should(HaveConditionField("Updated", "status", TrueString),
+			"The MCN %s should be updated before the reboot", mcn)
+
+		exutil.By("Record the boot ID and verify that the controller has observed it")
+		oldBootID, err := nodeToTest.Get(`{.status.nodeInfo.bootID}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the boot ID of %s", nodeToTest)
+		o.Expect(oldBootID).NotTo(o.BeEmpty(), "The boot ID of %s should not be empty", nodeToTest)
+		o.Eventually(nodeToTest.GetAnnotation, "2m", "5s").WithArguments(constants.MachineConfigDaemonLastObservedBootIDAnnotationKey).Should(o.Equal(oldBootID),
+			"The controller should observe the current boot ID of %s before the reboot", nodeToTest)
+
+		exutil.By("Reboot the worker")
+		rebootStarted := false
+		defer func() {
+			if rebootStarted {
+				o.Eventually(nodeToTest.Get, "15m", "20s").WithArguments(`{.status.nodeInfo.bootID}`).Should(o.And(o.Not(o.BeEmpty()), o.Not(o.Equal(oldBootID))),
+					"The boot ID of %s did not change", nodeToTest)
+			}
+			o.Eventually(nodeToTest, "15m", "20s").Should(HaveConditionField("Ready", "status", TrueString),
+				"The rebooted node %s did not become ready", nodeToTest)
+		}()
+		err = nodeToTest.Reboot()
+		rebootStarted = err == nil
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error rebooting %s", nodeToTest)
+
+		exutil.By("Verify that the worker rebooted and is ready")
+		o.Eventually(nodeToTest.Get, "15m", "20s").WithArguments(`{.status.nodeInfo.bootID}`).Should(o.And(o.Not(o.BeEmpty()), o.Not(o.Equal(oldBootID))),
+			"The boot ID of %s did not change", nodeToTest)
+		newBootID, err := nodeToTest.Get(`{.status.nodeInfo.bootID}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the new boot ID of %s", nodeToTest)
+		o.Expect(newBootID).To(o.And(o.Not(o.BeEmpty()), o.Not(o.Equal(oldBootID))), "The boot ID of %s did not change", nodeToTest)
+		o.Eventually(nodeToTest, "15m", "20s").Should(HaveConditionField("Ready", "status", TrueString),
+			"The rebooted node %s did not become ready", nodeToTest)
+
+		exutil.By("Check that the MCN reports the new reboot without clearing Updated")
+		o.Eventually(mcn, "5m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("RebootedNode", "status", TrueString),
+			HaveConditionField("RebootedNode", "reason", "BootIDChanged"),
+			HaveConditionField("RebootedNode", "message", o.ContainSubstring(newBootID)),
+		), "The MCN %s should report the observed reboot", mcn)
+		exutil.By("Verify the reboot condition remains true after the node is ready")
+		o.Consistently(mcn, "45s", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("RebootedNode", "status", TrueString),
+			HaveConditionField("RebootedNode", "reason", "BootIDChanged"),
+			HaveConditionField("RebootedNode", "message", o.ContainSubstring(newBootID)),
+		), "The MCN %s should keep reporting the observed reboot", mcn)
+		o.Eventually(nodeToTest.GetAnnotation, "2m", "5s").WithArguments(constants.MachineConfigDaemonLastObservedBootIDAnnotationKey).Should(o.Equal(newBootID),
+			"The controller should record the new boot ID of %s", nodeToTest)
+
+		exutil.By("Check that the worker pool remains updated")
+		o.Eventually(mcp, "5m", "5s").Should(o.And(
+			HaveConditionField("Updated", "status", TrueString),
+			HaveConditionField("Updating", "status", FalseString),
+		), "The pool %s should be updated after the manual reboot", mcp)
+	})
+
 })
+
+// readySchedulablePoolNode selects a ready node whose primary pool is mcp.
+func readySchedulablePoolNode(mcp *MachineConfigPool) *Node {
+	for _, node := range FilterSchedulableNodesOrFail(mcp.GetSortedNodesOrFail()) {
+		if node.IsReady() {
+			return node
+		}
+	}
+	return nil
+}
