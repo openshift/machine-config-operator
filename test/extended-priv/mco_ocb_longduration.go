@@ -954,7 +954,7 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	})
 
 	exutil.By("Create duplicate machineset and scale new node")
-	machineset := GetValidManagedMachineResource(oc.AsAdmin())
+	machineset := existingMS
 	duplicateMSName := machineset.GetName() + "-ocl"
 	duplicateMS, err := machineset.Duplicate(duplicateMSName)
 	o.Expect(err).NotTo(o.HaveOccurred())
