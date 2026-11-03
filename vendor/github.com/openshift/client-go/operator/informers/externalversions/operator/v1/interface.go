@@ -24,6 +24,8 @@ type Interface interface {
 	DNSes() TypedDNSInformer
 	// Etcds returns a EtcdInformer.
 	Etcds() TypedEtcdInformer
+	// Ingresses returns a IngressInformer.
+	Ingresses() TypedIngressInformer
 	// IngressControllers returns a IngressControllerInformer.
 	IngressControllers() TypedIngressControllerInformer
 	// InsightsOperators returns a InsightsOperatorInformer.
@@ -105,6 +107,11 @@ func (v *version) DNSes() TypedDNSInformer {
 // Etcds returns a TypedEtcdInformer.
 func (v *version) Etcds() TypedEtcdInformer {
 	return &etcdInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// Ingresses returns a TypedIngressInformer.
+func (v *version) Ingresses() TypedIngressInformer {
+	return &ingressInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // IngressControllers returns a TypedIngressControllerInformer.
