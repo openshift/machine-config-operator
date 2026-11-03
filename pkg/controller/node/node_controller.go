@@ -16,6 +16,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	v1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -897,8 +898,32 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	if oldReady != newReady {
 		changed = true
 		if newReadyErr != nil {
+			// TODO: Update node as cordoned
 			ctrl.logPoolNode(pool, curNode, "Reporting unready: %v", newReadyErr)
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: string(v1.MachineConfigNodeUpdateCordoned), Message: "Node cordoned"},
+				&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s", string(v1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Cordoned node. The node is reporting Unschedulable = %t", curNode.Spec.Unschedulable)},
+				metav1.ConditionFalse,
+				metav1.ConditionTrue,
+				curNode,
+				ctrl.client,
+				ctrl.fgHandler,
+				pool.Name,
+			)
+			if err != nil {
+				klog.Errorf("Error updating MCN for cordon status: %v", err)
+			}
 		} else {
+			// TODO: remove node as cordoned
+			ctrl.logPoolNode(pool, curNode, "Reporting unready: %v", newReadyErr)
+			err = upgrademonitor.GenerateAndApplyMachineConfigNodes(&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: string(v1.MachineConfigNodeUpdateCordoned), Message: "Node uncordoned"},
+				&upgrademonitor.Condition{State: v1.MachineConfigNodeUpdateCordoned, Reason: fmt.Sprintf("%s", string(v1.MachineConfigNodeUpdateCordoned)), Message: fmt.Sprintf("Node uncordoned. The node is reporting Unschedulable = %t", curNode.Spec.Unschedulable)},
+				metav1.ConditionFalse,
+				metav1.ConditionFalse,
+				curNode,
+				ctrl.client,
+				ctrl.fgHandler,
+				pool.Name,
+			)
 			ctrl.logPoolNode(pool, curNode, "Reporting ready")
 		}
 	}
