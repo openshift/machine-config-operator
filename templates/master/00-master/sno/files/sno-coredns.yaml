@@ -40,6 +40,7 @@ contents:
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
         command:
         - runtimecfg
         - render
@@ -67,6 +68,7 @@ contents:
       - name: coredns-monitor
         image: {{ .Images.baremetalRuntimeCfgImage }}
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
         command:
         - corednsmonitor
         - /var/lib/kubelet/kubeconfig
@@ -95,6 +97,7 @@ contents:
       - name: coredns
         image: {{ .Images.corednsImage }}
         imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
         args:
         - --conf
         - /etc/sno-coredns/Corefile
