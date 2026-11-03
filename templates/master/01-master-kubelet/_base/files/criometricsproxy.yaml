@@ -20,6 +20,8 @@ contents:
       - name: var-lib-kubelet
         hostPath:
           path: "/var/lib/kubelet"
+      - name: tmp-proxy
+        emptyDir: {}
       hostNetwork: true
       priorityClassName: system-cluster-critical
       initContainers:
@@ -32,6 +34,8 @@ contents:
           mountPath: "/var/lib/kubelet"
           mountPropagation: HostToContainer
           readOnly: true
+        - name: tmp-proxy
+          mountPath: "/tmp"
         command: ['/bin/bash', '-ec']
         args:
         - |
@@ -85,3 +89,5 @@ contents:
           mountPath: "/var/lib/kubelet"
           mountPropagation: HostToContainer
           readOnly: true
+        - name: tmp-proxy
+          mountPath: "/tmp"
