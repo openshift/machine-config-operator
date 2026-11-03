@@ -1,0 +1,17 @@
+{
+  "settings": {
+    "lineWidth": 80,
+    "proseWrap": "always",
+    "resourceLink": true,
+    "listItemIndent": "one",
+    "bullet": "-",
+    "rule": "-",
+    "fences": true,
+    "tightDefinitions": true
+  },
+  "plugins": [
+    "remark-preset-lint-recommended",
+    "remark-gfm",
+    "remark-frontmatter"
+  ]
+}
