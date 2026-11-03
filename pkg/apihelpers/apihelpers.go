@@ -6,10 +6,12 @@ package apihelpers
 
 import (
 	"fmt"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 
 	corev1 "k8s.io/api/core/v1"
@@ -384,51 +386,104 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*mcfgv1.C
 	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
 }
 
-// AreMCGeneratingSubControllersCompleted checks whether all MC producing sub-controllers are completed
-func AreMCGeneratingSubControllersCompletedForPool(crcLister func(labels.Selector) ([]*mcfgv1.ContainerRuntimeConfig, error), mckLister func(labels.Selector) ([]*mcfgv1.KubeletConfig, error), poolLabels map[string]string) error {
-	containerConfigs, err := crcLister(labels.Everything())
+// AreMCGeneratingSubControllersCompletedForPool performs the required checks to make sure
+// the sub-controllers are all done generating their managed MCs for the given pool.
+// The function makes sure that the kubelet and container runtime controllers have
+// generated the fresh versions of their managed MCs (if required), returning nil
+// if the state of the MCs is already the expected one or an error if any of them
+// is missing or the status of their associated CR is not Success.
+func AreMCGeneratingSubControllersCompletedForPool(crcLister mcfglistersv1.ContainerRuntimeConfigLister, mckLister mcfglistersv1.KubeletConfigLister, mcLister mcfglistersv1.MachineConfigLister, poolName string, poolLabels map[string]string) error {
+	if err := areContainerRuntimeConfigsCompletedForPool(crcLister, mcLister, poolName, poolLabels); err != nil {
+		return err
+	}
+	return areKubeletConfigsCompletedForPool(mckLister, mcLister, poolName, poolLabels)
+}
+
+func areContainerRuntimeConfigsCompletedForPool(crcLister mcfglistersv1.ContainerRuntimeConfigLister, mcLister mcfglistersv1.MachineConfigLister, poolName string, poolLabels map[string]string) error {
+	containerConfigs, err := crcLister.List(labels.Everything())
 	if err != nil {
 		return err
 	}
+	matchingCRCs := 0
 	for _, crc := range containerConfigs {
 		selector, err := metav1.LabelSelectorAsSelector(crc.Spec.MachineConfigPoolSelector)
 		if err != nil {
 			return fmt.Errorf("invalid label selector: %w", err)
 		}
-		if selector.Matches(labels.Set(poolLabels)) {
-			if crc.Generation != crc.Status.ObservedGeneration {
-				return fmt.Errorf("status for ContainerRuntimeConfig %s is being reported for %d, expecting it for %d", crc.ObjectMeta.Name, crc.Status.ObservedGeneration, crc.Generation)
-			}
-
-			if crc.Status.Conditions[len(crc.Status.Conditions)-1].Type != mcfgv1.ContainerRuntimeConfigSuccess {
-				return fmt.Errorf("ContainerRuntimeConfig has not completed")
-			}
+		if !selector.Matches(labels.Set(poolLabels)) {
+			continue
 		}
+		if crc.Generation != crc.Status.ObservedGeneration {
+			return fmt.Errorf("status for ContainerRuntimeConfig %s is being reported for %d, expecting it for %d", crc.ObjectMeta.Name, crc.Status.ObservedGeneration, crc.Generation)
+		}
+		if len(crc.Status.Conditions) == 0 || crc.Status.Conditions[len(crc.Status.Conditions)-1].Type != mcfgv1.ContainerRuntimeConfigSuccess {
+			return fmt.Errorf("ContainerRuntimeConfig has not completed")
+		}
+		matchingCRCs++
 	}
 
-	kubeletConfigs, err := mckLister(labels.Everything())
+	if matchingCRCs > 0 {
+		if err := verifyGeneratedMCsExist(mcLister, poolName, "containerruntime", matchingCRCs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func areKubeletConfigsCompletedForPool(mckLister mcfglistersv1.KubeletConfigLister, mcLister mcfglistersv1.MachineConfigLister, poolName string, poolLabels map[string]string) error {
+	kubeletConfigs, err := mckLister.List(labels.Everything())
 	if err != nil {
 		return err
 	}
+	matchingKCs := 0
 	for _, mck := range kubeletConfigs {
 		selector, err := metav1.LabelSelectorAsSelector(mck.Spec.MachineConfigPoolSelector)
 		if err != nil {
 			return fmt.Errorf("invalid label selector: %w", err)
 		}
-		if selector.Matches(labels.Set(poolLabels)) {
-			if mck.Generation != mck.Status.ObservedGeneration {
-				return fmt.Errorf("status for KubeletConfig %s is being reported for %d, expecting it for %d", mck.ObjectMeta.Name, mck.Status.ObservedGeneration, mck.Generation)
-			}
-
-			if len(mck.Status.Conditions) == 0 {
-				return fmt.Errorf("KubeletConfig has not completed")
-			}
-			lastCondition := mck.Status.Conditions[len(mck.Status.Conditions)-1]
-			if !((lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
-				lastCondition.Type == mcfgv1.KubeletConfigSuccess) { // backwards compatibility
-				return fmt.Errorf("KubeletConfig has not completed")
-			}
+		if !selector.Matches(labels.Set(poolLabels)) {
+			continue
 		}
+		if mck.Generation != mck.Status.ObservedGeneration {
+			return fmt.Errorf("status for KubeletConfig %s is being reported for %d, expecting it for %d", mck.ObjectMeta.Name, mck.Status.ObservedGeneration, mck.Generation)
+		}
+		if len(mck.Status.Conditions) == 0 {
+			return fmt.Errorf("KubeletConfig has not completed")
+		}
+		lastCondition := mck.Status.Conditions[len(mck.Status.Conditions)-1]
+		if !((lastCondition.Type == mcfgv1.KubeletConfigAccepted && lastCondition.Status == corev1.ConditionTrue) ||
+			lastCondition.Type == mcfgv1.KubeletConfigSuccess) {
+			return fmt.Errorf("KubeletConfig has not completed")
+		}
+		matchingKCs++
+	}
+
+	if matchingKCs > 0 {
+		if err := verifyGeneratedMCsExist(mcLister, poolName, "kubelet", matchingKCs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyGeneratedMCsExist checks that the expected number of generated MCs
+// (99-<poolName>-generated-<suffix>) exist for the pool. The prefix "99" and
+// the naming convention match what the kubelet-config and container-runtime-config
+// sub-controllers produce via ctrlcommon.GetManagedKey.
+func verifyGeneratedMCsExist(mcLister mcfglistersv1.MachineConfigLister, poolName, kind string, expectedCount int) error {
+	prefix := fmt.Sprintf("99-%s-generated-%s", poolName, kind)
+	allMCs, err := mcLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	found := 0
+	for _, mc := range allMCs {
+		if strings.HasPrefix(mc.Name, prefix) {
+			found++
+		}
+	}
+	if found < expectedCount {
+		return fmt.Errorf("expected at least %d generated %s MachineConfig(s) with prefix %q for pool %s, found %d", expectedCount, kind, prefix, poolName, found)
 	}
 	return nil
 }
