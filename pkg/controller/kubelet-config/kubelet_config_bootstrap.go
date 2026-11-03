@@ -58,6 +58,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(kubeletConfig.Spec.TLSSecurityProfile)
 				originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
+				originalKubeConfig.TLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(kubeletConfig.Spec.TLSSecurityProfile)
 			}
 
 			var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType

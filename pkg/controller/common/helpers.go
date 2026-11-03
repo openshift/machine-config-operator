@@ -1287,6 +1287,15 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
 // If profile is nil, returns config defined by the Intermediate TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	profileSpec := getTLSProfileSpec(profile)
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// getTLSProfileSpec resolves a TLSSecurityProfile to the effective TLSProfileSpec,
+// falling back to the Intermediate profile when nothing usable is configured.
+func getTLSProfileSpec(profile *configv1.TLSSecurityProfile) *configv1.TLSProfileSpec {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
 		profileType = configv1.TLSProfileIntermediateType
@@ -1308,8 +1317,38 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 	}
 
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return profileSpec
+}
+
+// GetSecurityProfileGroups extracts the TLS supported groups from a
+// TLSSecurityProfile and converts them to the numeric curve IDs understood by
+// the kubelet's tlsCurvePreferences field. Returns nil when no groups apply.
+func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile) []int32 {
+	if profile == nil || profile.Type != configv1.TLSProfileCustomType || profile.Custom == nil {
+		return nil
+	}
+	if len(profile.Custom.Groups) == 0 {
+		return nil
+	}
+
+	curveIDs, unrecognized := crypto.TLSGroupsToCurvePreferences(profile.Custom.Groups)
+	for _, group := range unrecognized {
+		klog.Warningf("Dropping TLS group %q: not supported by the Go version in use", group)
+	}
+	if len(curveIDs) == 0 {
+		klog.Warningf("All configured TLS groups were filtered out, falling back to platform defaults")
+		return nil
+	}
+	return curveIDs
+}
+
+// GetSecurityProfileGroupsFromAPIServer extracts the TLS supported groups from
+// an apiServer object. If no apiServer object exists, the defaults apply.
+func GetSecurityProfileGroupsFromAPIServer(apiServer *configv1.APIServer) []int32 {
+	if apiServer == nil {
+		return nil
+	}
+	return GetSecurityProfileGroups(apiServer.Spec.TLSSecurityProfile)
 }
 
 // Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
