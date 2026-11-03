@@ -1083,7 +1083,9 @@ func (p *PinnedImageSetManager) deleteMachineConfigPool(obj interface{}) {
 		return
 	}
 
-	crioReload()
+	if err := crioReload(); err != nil {
+		klog.Errorf("failed to reload crio after deleting config file: %v", err)
+	}
 }
 
 func (p *PinnedImageSetManager) enqueue(pool *mcfgv1.MachineConfigPool) {
