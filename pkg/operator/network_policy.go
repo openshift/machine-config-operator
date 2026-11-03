@@ -48,18 +48,6 @@ func allowAllEgressNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicy
 			WithPolicyTypes(networkingv1.PolicyTypeEgress))
 }
 
-func allowMCONetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
-	return networkingv1ac.NetworkPolicy("allow-machine-config-operator", namespace).
-		WithSpec(networkingv1ac.NetworkPolicySpec().
-			WithPodSelector(metav1ac.LabelSelector().
-				WithMatchLabels(map[string]string{"k8s-app": "machine-config-operator"})).
-			WithIngress(networkingv1ac.NetworkPolicyIngressRule().
-				WithPorts(networkingv1ac.NetworkPolicyPort().
-					WithProtocol(corev1.ProtocolTCP).
-					WithPort(intstr.FromInt32(9001)))).
-			WithPolicyTypes(networkingv1.PolicyTypeIngress))
-}
-
 func allowMCCNetworkPolicy(namespace string) *networkingv1ac.NetworkPolicyApplyConfiguration {
 	return networkingv1ac.NetworkPolicy("allow-machine-config-controller", namespace).
 		WithSpec(networkingv1ac.NetworkPolicySpec().
@@ -99,8 +87,6 @@ func desiredNetworkPolicySpec(name string) networkingv1.NetworkPolicySpec {
 			Egress:      []networkingv1.NetworkPolicyEgressRule{{}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 		}
-	case "allow-machine-config-operator":
-		return allowPolicySpec("machine-config-operator")
 	case "allow-machine-config-controller":
 		return allowPolicySpec("machine-config-controller")
 	case "allow-machine-os-builder":
@@ -145,8 +131,7 @@ func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOp
 	// during the window between sequential resource applies.
 	applyOpts := metav1.ApplyOptions{FieldManager: networkPolicyFieldManager, Force: true}
 	policies := []*networkingv1ac.NetworkPolicyApplyConfiguration{
-		allowAllEgressNetworkPolicy(ns),
-		allowMCONetworkPolicy(ns),
+		allowAllEgressNetworkPolicy(ns),		
 		allowMCCNetworkPolicy(ns),
 		allowMOBNetworkPolicy(ns),
 	}
