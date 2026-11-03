@@ -786,3 +786,34 @@ func newTestListener() (net.Listener, error) {
 func (f *FakeRuntime) Stop() {
 	f.server.Stop()
 }
+
+func TestCreateApplyConfigForImageSetClearsFailureIndependently(t *testing.T) {
+	p := &PinnedImageSetManager{
+		cache: newImageCache(16),
+	}
+
+	failed := &mcfgv1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pinned", UID: "uid-failed", Generation: 3},
+	}
+	okSet := &mcfgv1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pinned-2", UID: "uid-ok", Generation: 2},
+	}
+	// Mark okSet as successfully prefetched for its generation.
+	cached := okSet.DeepCopy()
+	cached.Spec.PinnedImages = nil
+	p.cache.Add(strings.TrimSpace(string(okSet.UID)), *cached)
+
+	failedCfg := p.createApplyConfigForImageSet(failed, false, fmt.Errorf("inspect failed for set A"))
+	require.NotNil(t, failedCfg.LastFailedGeneration)
+	require.Equal(t, int32(3), *failedCfg.LastFailedGeneration)
+	require.Equal(t, "inspect failed for set A", *failedCfg.LastFailedGenerationError)
+	require.Nil(t, failedCfg.CurrentGeneration)
+
+	okCfg := p.createApplyConfigForImageSet(okSet, false, nil)
+	require.NotNil(t, okCfg.CurrentGeneration)
+	require.Equal(t, int32(2), *okCfg.CurrentGeneration)
+	require.NotNil(t, okCfg.LastFailedGeneration)
+	require.Equal(t, int32(0), *okCfg.LastFailedGeneration)
+	require.NotNil(t, okCfg.LastFailedGenerationError)
+	require.Equal(t, "", *okCfg.LastFailedGenerationError)
+}
