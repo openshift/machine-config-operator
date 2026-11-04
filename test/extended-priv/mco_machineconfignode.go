@@ -241,7 +241,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 
 		exutil.By("Get one machineset for testing")
-		ms := GetValidManagedMachineResource(oc.AsAdmin())
+		ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 		logger.Infof("Machineset %s will be used for testing", ms.GetName())
 		logger.Infof("OK\n")
 

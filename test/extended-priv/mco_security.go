@@ -914,7 +914,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Verify if able to add new worker node.")
-		ms := GetValidManagedMachineResource(oc.AsAdmin())
+		ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 
 		o.Expect(ms.AddToScale(1)).NotTo(o.HaveOccurred())
 
