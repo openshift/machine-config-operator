@@ -561,6 +561,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		template.New(
 			templatesDir,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.KubeInformerFactory.Core().V1().Secrets(),
 			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
@@ -572,6 +573,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		kubeletconfig.New(
 			templatesDir,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),

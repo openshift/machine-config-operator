@@ -88,6 +88,13 @@ type Controller struct {
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
+	// mcLister supplies the target's FIPS state, which decides whether
+	// non-FIPS-approved TLS groups are filtered out of the rendered kubelet
+	// config. It is read from the MachineConfigs rather than from this
+	// process's crypto runtime; see ctrlcommon.GetSecurityProfileGroups.
+	mcLister       mcfglistersv1.MachineConfigLister
+	mcListerSynced cache.InformerSynced
+
 	featLister       oselistersv1.FeatureGateLister
 	featListerSynced cache.InformerSynced
 
@@ -108,6 +115,7 @@ type Controller struct {
 func New(
 	templatesDir string,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mkuInformer mcfginformersv1.KubeletConfigInformer,
 	featInformer oseinformersv1.FeatureGateInformer,
@@ -168,6 +176,8 @@ func New(
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
+	ctrl.mcLister = mcInformer.Lister()
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
@@ -194,7 +204,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -411,8 +421,8 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer)
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer, fipsEnabled bool) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer, fipsEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -440,10 +450,22 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer) (*ign3types.File, error) {
+// targetFIPSEnabled reports whether the nodes being configured run in FIPS mode,
+// read from the MachineConfigs rather than from this process's crypto runtime.
+// FIPS is chosen at install and applies cluster-wide, and reconcile refuses to
+// change it on a running cluster, so one value covers every pool.
+func (ctrl *Controller) targetFIPSEnabled() (bool, error) {
+	mcs, err := ctrl.mcLister.List(labels.Everything())
+	if err != nil {
+		return false, fmt.Errorf("listing MachineConfigs to determine FIPS mode: %w", err)
+	}
+	return ctrlcommon.IsFIPSEnabledForMachineConfigs(mcs), nil
+}
+
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer, fipsEnabled bool) (*ign3types.File, error) {
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
-	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer)
+	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer, fipsEnabled)
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
 		TLSMinVersion:        tlsMinVersion,
@@ -613,6 +635,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	// The FIPS state of the nodes being configured, which decides whether
+	// non-FIPS-approved TLS groups are dropped from the rendered config.
+	fipsEnabled, err := ctrl.targetFIPSEnabled()
+	if err != nil {
+		return ctrl.syncStatusOnly(cfg, err)
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 
@@ -637,7 +666,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer, fipsEnabled)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}
@@ -674,7 +703,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			observedMinTLSVersion, observedCipherSuites := ctrlcommon.GetSecurityProfileCiphers(cfg.Spec.TLSSecurityProfile)
 			originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 			originalKubeConfig.TLSCipherSuites = observedCipherSuites
-			originalKubeConfig.TLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(cfg.Spec.TLSSecurityProfile)
+			originalKubeConfig.TLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(cfg.Spec.TLSSecurityProfile, fipsEnabled)
 		}
 
 		var systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType

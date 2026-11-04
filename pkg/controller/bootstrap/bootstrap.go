@@ -288,7 +288,15 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
 	}
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer)
+	// FIPS state of the cluster being installed, taken from the MachineConfig
+	// manifests on disk rather than from this process. Under HyperShift the
+	// bootstrapper runs in a management cluster whose own FIPS state has no
+	// bearing on the hosted cluster's nodes, so the renderer's runtime must not
+	// decide this. Read before rendering so every path below sees one value.
+	fipsEnabled := ctrlcommon.IsFIPSEnabledForMachineConfigs(configs)
+	klog.Infof("Bootstrap rendering for a FIPS target: %t", fipsEnabled)
+
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, fipsEnabled)
 	if err != nil {
 		return err
 	}
@@ -314,7 +322,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from containerruntime.")
 
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, fgHandler, nodeConfig, cconfig, pools, apiServer, fipsEnabled)
 		if err != nil {
 			return err
 		}
@@ -331,7 +339,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgHandler, cconfig, nodeConfig, pools, apiServer)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, fgHandler, cconfig, nodeConfig, pools, apiServer, fipsEnabled)
 		if err != nil {
 			return err
 		}
@@ -340,7 +348,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Successfully generated MachineConfigs from node.Configs.")
 
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, fgHandler, nodeConfig, pools, apiServer, fipsEnabled)
 		if err != nil {
 			return err
 		}

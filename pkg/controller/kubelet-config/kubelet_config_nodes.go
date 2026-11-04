@@ -89,6 +89,13 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		return fmt.Errorf("could not get the TLSSecurityProfile from %v: %w", ctrlcommon.APIServerInstanceName, err)
 	}
 
+	// The FIPS state of the nodes being configured; see
+	// ctrlcommon.GetSecurityProfileGroups for why this is a target-side input.
+	fipsEnabled, err := ctrl.targetFIPSEnabled()
+	if err != nil {
+		return err
+	}
+
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -108,7 +115,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 				return err
 			}
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, ctrl.fgHandler, apiServer, fipsEnabled)
 		if err != nil {
 			return err
 		}
@@ -270,7 +277,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	klog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGatesHandler, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool, apiServer *osev1.APIServer, fipsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
 	if nodeConfig == nil {
 		return nil, fmt.Errorf("nodes.config.openshift.io resource not found")
 	}
@@ -289,7 +296,7 @@ func RunNodeConfigBootstrap(templateDir string, fgHandler ctrlcommon.FeatureGate
 		if err != nil {
 			return nil, err
 		}
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer)
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cconfig, templateDir, role, fgHandler, apiServer, fipsEnabled)
 		if err != nil {
 			return nil, err
 		}

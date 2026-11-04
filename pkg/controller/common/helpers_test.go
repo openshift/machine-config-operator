@@ -1,7 +1,10 @@
 package common
 
 import (
+	"os"
+	"os/exec"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,6 +26,7 @@ import (
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	cryptolib "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -2160,23 +2164,23 @@ func TestGetSecurityProfileGroups(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, GetSecurityProfileGroups(tc.profile))
+			require.Equal(t, tc.expected, GetSecurityProfileGroups(tc.profile, false))
 		})
 	}
 }
 
 func TestGetSecurityProfileGroupsFromAPIServer(t *testing.T) {
-	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(nil))
+	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(nil, false))
 
 	apiServer := &configv1.APIServer{
 		Spec: configv1.APIServerSpec{
 			TLSSecurityProfile: customProfileWithGroups(configv1.TLSGroupSecP256r1),
 		},
 	}
-	require.Equal(t, []int32{23}, GetSecurityProfileGroupsFromAPIServer(apiServer))
+	require.Equal(t, []int32{23}, GetSecurityProfileGroupsFromAPIServer(apiServer, false))
 
 	// An APIServer with no TLS profile must not emit curves.
-	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(&configv1.APIServer{}))
+	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(&configv1.APIServer{}, false))
 }
 
 // Ciphers and minTLSVersion must keep behaving exactly as before the groups
@@ -2191,4 +2195,95 @@ func TestGetSecurityProfileCiphersUnchanged(t *testing.T) {
 	minVersion, ciphers = GetSecurityProfileCiphers(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType})
 	require.Equal(t, expectedMin, minVersion)
 	require.Equal(t, expectedCiphers, ciphers)
+}
+
+// TestGetSecurityProfileGroupsIndependentOfRenderer verifies all four
+// renderer/target FIPS combinations in separate processes. GODEBUG is read
+// during crypto initialization, so subprocesses are required to vary the
+// renderer's actual FIPS state rather than merely labelling a table row.
+func TestGetSecurityProfileGroupsIndependentOfRenderer(t *testing.T) {
+	if os.Getenv("MCO_TLS_GROUPS_FIPS_HELPER") == "1" {
+		rendererFIPS, err := strconv.ParseBool(os.Getenv("MCO_RENDERER_FIPS"))
+		require.NoError(t, err)
+		targetFIPS, err := strconv.ParseBool(os.Getenv("MCO_TARGET_FIPS"))
+		require.NoError(t, err)
+
+		require.Equal(t, rendererFIPS, cryptolib.IsFIPSEnabled(),
+			"the subprocess must actually run with the requested renderer FIPS state")
+		assertTLSGroupsForTargetFIPS(t, targetFIPS)
+		return
+	}
+
+	for _, test := range []struct {
+		name     string
+		renderer bool
+		target   bool
+	}{
+		{name: "non-FIPS renderer, non-FIPS target", renderer: false, target: false},
+		{name: "FIPS renderer, non-FIPS target", renderer: true, target: false},
+		{name: "non-FIPS renderer, FIPS target", renderer: false, target: true},
+		{name: "FIPS renderer, FIPS target", renderer: true, target: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestGetSecurityProfileGroupsIndependentOfRenderer$")
+			env := make([]string, 0, len(os.Environ())+4)
+			for _, value := range os.Environ() {
+				if !strings.HasPrefix(value, "GODEBUG=") {
+					env = append(env, value)
+				}
+			}
+			cmd.Env = append(env,
+				"GODEBUG=fips140="+map[bool]string{false: "off", true: "on"}[test.renderer],
+				"MCO_TLS_GROUPS_FIPS_HELPER=1",
+				"MCO_RENDERER_FIPS="+strconv.FormatBool(test.renderer),
+				"MCO_TARGET_FIPS="+strconv.FormatBool(test.target),
+			)
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "subprocess failed:\n%s", output)
+		})
+	}
+}
+
+func assertTLSGroupsForTargetFIPS(t *testing.T, targetFIPS bool) {
+	t.Helper()
+
+	profile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: configv1.VersionTLS12,
+				Groups: []configv1.TLSGroup{
+					configv1.TLSGroupX25519MLKEM768, // not FIPS-approved by library-go
+					configv1.TLSGroupX25519,         // not FIPS-approved
+					configv1.TLSGroupSecP256r1,      // approved
+					configv1.TLSGroupSecP384r1,      // approved
+				},
+			},
+		},
+	}
+
+	want := []int32{4588, 29, 23, 24}
+	if targetFIPS {
+		want = []int32{23, 24}
+	}
+	require.Equal(t, want, GetSecurityProfileGroups(profile, targetFIPS))
+}
+
+// TestIsFIPSEnabledForMachineConfigs covers the target-side signal that feeds
+// the parameter above. It mirrors MergeMachineConfigs: any MachineConfig setting
+// fips: true turns FIPS on for the pool.
+func TestIsFIPSEnabledForMachineConfigs(t *testing.T) {
+	mc := func(name string, fips bool) *mcfgv1.MachineConfig {
+		return &mcfgv1.MachineConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       mcfgv1.MachineConfigSpec{FIPS: fips},
+		}
+	}
+
+	require.False(t, IsFIPSEnabledForMachineConfigs(nil), "no MachineConfigs means no FIPS")
+	require.False(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{mc("a", false), mc("b", false)}))
+	require.True(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{mc("a", false), mc("99-fips", true)}),
+		"one MachineConfig setting fips: true turns it on, as MergeMachineConfigs does")
+	require.False(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{nil}), "a nil entry must not panic")
 }
