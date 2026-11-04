@@ -52,8 +52,11 @@ type fixture struct {
 	client    *fake.Clientset
 	oseclient *oseconfigfake.Clientset
 
-	ccLister        []*mcfgv1.ControllerConfig
-	mcpLister       []*mcfgv1.MachineConfigPool
+	ccLister  []*mcfgv1.ControllerConfig
+	mcpLister []*mcfgv1.MachineConfigPool
+	// mcLister supplies the MachineConfigs the controller reads the target's
+	// FIPS state from.
+	mcLister        []*mcfgv1.MachineConfig
 	mckLister       []*mcfgv1.KubeletConfig
 	featLister      []*osev1.FeatureGate
 	nodeLister      []*osev1.Node
@@ -222,6 +225,7 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
+		i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
 		featinformer.Config().V1().FeatureGates(),
@@ -233,6 +237,7 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 		fgHandler,
 	)
 	c.mcpListerSynced = alwaysReady
+	c.mcListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.featListerSynced = alwaysReady
@@ -250,6 +255,9 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 	}
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.mcLister {
+		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.mckLister {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(c)
@@ -1897,7 +1905,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 			ctrl := f.newController(fgHandler)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver, false)
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
@@ -1920,7 +1928,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 
 			var expectedTLSCurvePreferences []int32
 			if testCase.apiserver != nil {
-				expectedTLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(testCase.apiserver.Spec.TLSSecurityProfile)
+				expectedTLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(testCase.apiserver.Spec.TLSSecurityProfile, false)
 			}
 			require.Equal(t, expectedTLSCurvePreferences, originalKubeConfig.TLSCurvePreferences)
 			if expectedTLSCurvePreferences == nil {
@@ -1985,4 +1993,124 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, kc.TLSCipherSuites, overrideTLSCiphers)
 	require.Equal(t, kc.TLSMinVersion, overrideTLSMinVersion)
+}
+
+// fipsMachineConfig is a MachineConfig that turns FIPS on for a role, the way
+// the installer's 99-<role>-fips does.
+func fipsMachineConfig(role string) *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("99-%s-fips", role),
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: role},
+		},
+		Spec: mcfgv1.MachineConfigSpec{FIPS: true},
+	}
+}
+
+// TestKubeletConfigTLSGroupsFollowTargetFIPS covers the per-pool override layer:
+// a KubeletConfig's own tlsSecurityProfile is filtered against the target's FIPS
+// state, which the controller reads from the MachineConfigs rather than from its
+// own crypto runtime.
+//
+// The renderer's state cannot be varied under `go test` — the test binary is
+// built without the FIPS flags, so crypto.IsFIPSEnabled() is always false. That
+// is precisely why the decision must not be taken from it: were it, the FIPS
+// column below would be unreachable in any unit test and a regression here would
+// reach a cluster before anything noticed.
+func TestKubeletConfigTLSGroupsFollowTargetFIPS(t *testing.T) {
+	profile := &osev1.TLSSecurityProfile{
+		Type: osev1.TLSProfileCustomType,
+		Custom: &osev1.CustomTLSProfile{
+			TLSProfileSpec: osev1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: osev1.VersionTLS12,
+				Groups: []osev1.TLSGroup{
+					osev1.TLSGroupX25519MLKEM768,
+					osev1.TLSGroupSecP256r1,
+				},
+			},
+		},
+	}
+
+	for _, test := range []struct {
+		name       string
+		targetFIPS bool
+		want       []int32
+	}{
+		{name: "non-FIPS target keeps the post-quantum group", targetFIPS: false, want: []int32{4588, 23}},
+		{name: "FIPS target drops it", targetFIPS: true, want: []int32{23}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+
+			f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType))
+			f.mcpLister = append(f.mcpLister, helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"))
+			if test.targetFIPS {
+				f.mcLister = append(f.mcLister, fipsMachineConfig("master"))
+			}
+
+			kc := newKubeletConfig("tls-groups-fips", &kubeletconfigv1beta1.KubeletConfiguration{},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Spec.TLSSecurityProfile = profile
+			f.mckLister = append(f.mckLister, kc)
+			f.objects = append(f.objects, kc)
+
+			ctrl := f.newController(fgHandler)
+			require.NoError(t, ctrl.syncHandler(getKey(kc, t)))
+
+			got := renderedKubeletConfig(t, ctrl, "99-master-generated-kubelet")
+			require.Equal(t, test.want, got.TLSCurvePreferences)
+		})
+	}
+}
+
+// TestRunKubeletBootstrapTLSGroupsFollowTargetFIPS covers the bootstrap path,
+// which is also the HyperShift path: there the renderer runs in a management
+// cluster whose FIPS state has no bearing on the hosted cluster's nodes, so the
+// target's state has to arrive as an argument. Both values are exercised against
+// a renderer that is identical in each case.
+func TestRunKubeletBootstrapTLSGroupsFollowTargetFIPS(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		targetFIPS bool
+		want       []int32
+	}{
+		{name: "non-FIPS target", targetFIPS: false, want: []int32{4588, 23}},
+		{name: "FIPS target", targetFIPS: true, want: []int32{23}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			}
+			kc := newKubeletConfig("bootstrap-tls-groups", &kubeletconfigv1beta1.KubeletConfiguration{},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Spec.TLSSecurityProfile = &osev1.TLSSecurityProfile{
+				Type: osev1.TLSProfileCustomType,
+				Custom: &osev1.CustomTLSProfile{
+					TLSProfileSpec: osev1.TLSProfileSpec{
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+						MinTLSVersion: osev1.VersionTLS12,
+						Groups:        []osev1.TLSGroup{osev1.TLSGroupX25519MLKEM768, osev1.TLSGroupSecP256r1},
+					},
+				},
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc,
+				fgHandler, nil, pools, nil, test.targetFIPS)
+			require.NoError(t, err)
+			require.NotEmpty(t, mcs)
+
+			ign, err := ctrlcommon.ParseAndConvertConfig(mcs[0].Spec.Config.Raw)
+			require.NoError(t, err)
+			contents, err := ctrlcommon.GetIgnitionFileDataByPath(&ign, kubeletConfigPath)
+			require.NoError(t, err)
+			decoded, err := DecodeKubeletConfig(contents)
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, decoded.TLSCurvePreferences)
+		})
+	}
 }
