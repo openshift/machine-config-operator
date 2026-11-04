@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -760,6 +761,95 @@ func getCoreOsBootImageFromConfigMapOrFail(platform, region string, arch archite
 	image, err := getCoreOsBootImageFromConfigMap(platform, region, arch, coreosBootimagesCM)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting the boot image from %s for platform %s and arch %s", coreosBootimagesCM, platform, arch)
 	return image
+}
+
+// getCoreOsBootImageFromConfigMapForStream retrieves the boot image for a specific osImageStream from the
+// coreos-bootimages ConfigMap. It reads from the "streams" data key which contains per-stream
+// boot image metadata indexed by stream name (e.g. "rhel-9", "rhel-10").
+func getCoreOsBootImageFromConfigMapForStream(platform, region string, arch architecture.Architecture, streamName string, coreosBootimagesCM *ConfigMap) (string, error) {
+	var (
+		coreOsBootImagePath string
+		stringArch          = arch.GNUString()
+	)
+
+	logger.Infof("Looking for coreos boot image for stream %s, architecture %s in %s", streamName, stringArch, coreosBootimagesCM)
+
+	streamsJSON, err := coreosBootimagesCM.GetDataValue("streams")
+	if err != nil {
+		return "", fmt.Errorf("error reading 'streams' from %s: %w", coreosBootimagesCM, err)
+	}
+
+	streamData := gjson.Parse(streamsJSON).Get(streamName)
+	if !streamData.Exists() {
+		return "", fmt.Errorf("stream '%s' not found in coreos-bootimages streams data", streamName)
+	}
+
+	switch platform {
+	case AWSPlatform:
+		if region == "" {
+			return "", fmt.Errorf("region is empty for platform %s. The region is mandatory if we want to get the boot image value", platform)
+		}
+		coreOsBootImagePath = fmt.Sprintf(`architectures.%s.images.%s.regions.%s.image`, stringArch, platform, region)
+	case GCPPlatform:
+		coreOsBootImagePath = fmt.Sprintf(`architectures.%s.images.%s.name`, stringArch, platform)
+	case VspherePlatform:
+		baseImageURL, urlErr := getCoreOsBootImageURLFromConfigMapForStream(platform, arch, streamName, coreosBootimagesCM)
+		if urlErr != nil {
+			return "", urlErr
+		}
+		return path.Base(baseImageURL), nil
+	case AzurePlatform:
+		coreOsBootImagePath = fmt.Sprintf(`architectures.%s.rhel-coreos-extensions.marketplace.%s.no-purchase-plan.hyperVGen2`, stringArch, "azure")
+	default:
+		return "", fmt.Errorf("getCoreOsBootImageFromConfigMapForStream is only supported for GCP, Vsphere, Azure, and AWS platforms")
+	}
+
+	bootImage := streamData.Get(coreOsBootImagePath).String()
+	if bootImage == "" {
+		return "", fmt.Errorf("boot image not found for stream '%s', arch %s, platform %s in %s (path: %s)",
+			streamName, stringArch, platform, coreosBootimagesCM, coreOsBootImagePath)
+	}
+
+	logger.Infof("Boot image for stream %s: %s", streamName, bootImage)
+	return bootImage, nil
+}
+
+// getCoreOsBootImageURLFromConfigMapForStream retrieves the boot image download URL for a specific
+// osImageStream from the coreos-bootimages ConfigMap's "streams" data key.
+// This is the configmap equivalent of GetBaseImageURLFromRHCOSImageInfo.
+func getCoreOsBootImageURLFromConfigMapForStream(platform string, arch architecture.Architecture, streamName string, coreosBootimagesCM *ConfigMap) (string, error) {
+	var platformKey, format string
+	switch platform {
+	case AWSPlatform:
+		platformKey, format = "aws", "vmdk.gz"
+	case GCPPlatform:
+		platformKey, format = "gcp", "tar.gz"
+	case VspherePlatform:
+		platformKey, format = "vmware", "ova"
+	default:
+		return "", fmt.Errorf("getCoreOsBootImageURLFromConfigMapForStream is not supported for platform %s", platform)
+	}
+
+	stringArch := arch.GNUString()
+
+	streamsJSON, err := coreosBootimagesCM.GetDataValue("streams")
+	if err != nil {
+		return "", fmt.Errorf("error reading 'streams' from %s: %w", coreosBootimagesCM, err)
+	}
+
+	streamData := gjson.Parse(streamsJSON).Get(streamName)
+	if !streamData.Exists() {
+		return "", fmt.Errorf("stream '%s' not found in coreos-bootimages streams data", streamName)
+	}
+
+	imagePath := fmt.Sprintf(`architectures.%s.artifacts.%s.formats.%s.disk.location`, stringArch, platformKey, strings.ReplaceAll(format, ".", `\.`))
+	imageURL := streamData.Get(imagePath).String()
+	if imageURL == "" {
+		return "", fmt.Errorf("boot image URL not found for stream '%s', arch %s, platform %s (path: %s)", streamName, stringArch, platform, imagePath)
+	}
+
+	logger.Infof("Boot image URL for stream %s: %s", streamName, imageURL)
+	return imageURL, nil
 }
 
 // GetRHCOSVersionFromConfigMap retrieves the RHCOS release version from the coreos-bootimages ConfigMap

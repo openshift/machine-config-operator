@@ -56,6 +56,7 @@ type ManagedMachineResource interface {
 	GetUserDataSecret() (*Secret, error)
 	GetManagedUserDataSecret() (ManagedUserDataSecret, error)
 	SetUserDataSecret(userDataSecretName string) error
+	SetPool(poolName string) error
 	GetReplicaOfSpec() (string, error)
 	ScaleTo(scale int) error
 	AddToScale(delta int) error
@@ -157,6 +158,29 @@ func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) 
 	}
 	e2e.Failf("No ready ManagedMachineResource with replicas > 0 found")
 	return nil
+}
+
+// GetValidManagedMachineResourceByArchitecture returns a ready ManagedMachineResource with
+// replicas > 0 that matches the given architecture.
+func GetValidManagedMachineResourceByArchitecture(oc *exutil.CLI, arch architecture.Architecture) (ManagedMachineResource, error) {
+	all, err := GetAllManagedMachineResources(oc)
+	if err != nil {
+		return nil, fmt.Errorf("error listing ManagedMachineResources: %w", err)
+	}
+	for _, ms := range all {
+		replicas, err := ms.GetReplicaOfSpec()
+		if err != nil || replicas == "0" || !ms.GetIsReady() {
+			continue
+		}
+		msArch, err := ms.GetArchitecture()
+		if err != nil {
+			continue
+		}
+		if msArch == arch {
+			return ms, nil
+		}
+	}
+	return nil, fmt.Errorf("no ready ManagedMachineResource with architecture %s found", arch)
 }
 
 func (ms MachineSet) String() string {
@@ -534,6 +558,11 @@ func (ms MachineSet) GetManagedUserDataSecret() (ManagedUserDataSecret, error) {
 // SetUserDataSecret configures the machineset to use the provided user-data secret in the machine-config-api namespace
 func (ms MachineSet) SetUserDataSecret(userDataSecretName string) error {
 	return ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "`+userDataSecretName+`" }]`)
+}
+
+// SetPool configures the machineset so that new machines boot directly into the given MCP
+func (ms MachineSet) SetPool(poolName string) error {
+	return ms.SetUserDataSecret(fmt.Sprintf("%s-user-data-managed", poolName))
 }
 
 // GetCoreOsBootImage returns the configured coreOsBootImage in this machineset

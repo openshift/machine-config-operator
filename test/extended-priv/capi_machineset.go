@@ -494,6 +494,11 @@ func (ms CAPIMachineSet) SetUserDataSecret(userDataSecretName string) error {
 	return ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/bootstrap/dataSecretName", "value": "`+userDataSecretName+`" }]`)
 }
 
+// SetPool configures the CAPI machineset so that new machines boot directly into the given MCP
+func (ms CAPIMachineSet) SetPool(poolName string) error {
+	return ms.SetUserDataSecret(fmt.Sprintf("%s-user-data-managed", poolName))
+}
+
 // duplicateInfrastructureTemplate clones the infrastructure template referenced by this machineset
 // with a new name, optionally applying extra modifications to the cloned JSON before creation.
 func (ms CAPIMachineSet) duplicateInfrastructureTemplate(newTemplateName string, extraModifications func(string) (string, error)) (*Resource, error) {
