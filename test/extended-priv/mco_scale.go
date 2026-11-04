@@ -122,7 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		)
 
 		exutil.By("Scale up a machineset")
-		ms := GetValidManagedMachineResource(oc.AsAdmin())
+		ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 
 		initialMsNodes, err := ms.GetNodes()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of nodes that belong to machineset %s", ms.GetName())
@@ -230,7 +230,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up a machineset")
-		ms := GetValidManagedMachineResource(oc.AsAdmin())
+		ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 
 		initialMsNodes, err := ms.GetNodes()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a list of nodes that belong to machineset %s", ms.GetName())
@@ -291,7 +291,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		logger.Infof("OK!\n")
 
 		exutil.By("Scale up a machineset")
-		ms := GetValidManagedMachineResource(oc.AsAdmin())
+		ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 
 		initialNumMsNodes := len(ms.GetNodesOrFail())
 
@@ -514,7 +514,7 @@ func SimpleScaleUPTest(oc *exutil.CLI, mcp *MachineConfigPool, imageVersion, ign
 	}
 
 	logger.Infof("Create a new MachineSet using the right base image")
-	ms := GetValidManagedMachineResource(oc.AsAdmin())
+	ms := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 	newMs, cloneErr := cloneMachineSet(oc.AsAdmin(), ms, newMsName, imageVersion, ignitionVersion)
 
 	defer SafeCleanup(func() {

@@ -119,37 +119,49 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
+		logger.Infof("OK!\n")
 
 		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
-		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
+		createdCustomPoolName := fmt.Sprintf("tc%s", testID)
 
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.AMD64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
+		exutil.By(fmt.Sprintf("Create custom MCP %s on %s stream via MachineSet", createdCustomPoolName, OSImageStreamRHEL9))
+		customMcp, _, cleanup, err := CreateCustomMCPWithMachineSetForArchitecture(oc.AsAdmin(), createdCustomPoolName, OSImageStreamRHEL9, 1, architecture.AMD64)
+		defer cleanup()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP with MachineSet for %s", createdCustomPoolName)
+		logger.Infof("OK!\n")
+
+		testKernelTypeAcrossOSImageStreams(oc, osis, customMcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87096][OTP] 64k pages kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.ARM64)
 		skipTestIfNotSupportedPlatform(oc.AsAdmin(), GCPPlatform)
+		logger.Infof("OK!\n")
 
 		testID := GetCurrentTestPolarionIDNumber()
-		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.ARM64)
-		defer DeleteCustomMCP(oc.AsAdmin(), createdCustomPoolName)
+		createdCustomPoolName := fmt.Sprintf("tc%s", testID)
 
-		mcp, _ := GetPoolAndNodesForArchitectureOrFail(oc.AsAdmin(), createdCustomPoolName, architecture.ARM64, 1)
-		testKernelTypeAcrossOSImageStreams(oc, osis, mcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
+		exutil.By(fmt.Sprintf("Create custom MCP %s on %s stream via MachineSet", createdCustomPoolName, OSImageStreamRHEL9))
+		customMcp, _, cleanup, err := CreateCustomMCPWithMachineSetForArchitecture(oc.AsAdmin(), createdCustomPoolName, OSImageStreamRHEL9, 1, architecture.ARM64)
+		defer cleanup()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP with MachineSet for %s", createdCustomPoolName)
+		logger.Infof("OK!\n")
+
+		testKernelTypeAcrossOSImageStreams(oc, osis, customMcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes (rhel9 -> rhel10)
 	g.It("[PolarionID:87259][OTP] Extensions from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 revert path is blocked by admission; see OCPBUGS-135363")
-		SkipIfDefaultOSImageStream(oc.AsAdmin(), OSImageStreamRHEL10)
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
+
 		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
@@ -264,36 +276,36 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	// AI-assisted: Test case to validate osImageStream inheritance for custom MachineConfigPools
 	g.It("[PolarionID:88122][OTP] Validate osImageStream inheritance for custom MachineConfigPools [Disruptive] [apigroup:machineconfiguration.openshift.io] [apigroup:machine.openshift.io]", func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		SkipIfCompactOrSNO(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
 
-		// Get initial and target streams based on cluster version
-		initialStream, targetStream := GetInitialAndTargetStreams(oc.AsAdmin())
-
-		testCustomMCPInheritsStreamFromWorkerPool(oc.AsAdmin(), osis, mcp, initialStream, targetStream)
+		defaultStream := exutil.OrFail[string](GetDefaultOSImageStream(oc.AsAdmin()))
+		nonDefaultStream := OSImageStreamRHEL9
+		if defaultStream == OSImageStreamRHEL9 {
+			nonDefaultStream = OSImageStreamRHEL10
+		}
+		testCustomMCPInheritsStreamFromWorkerPool(oc.AsAdmin(), osis, nonDefaultStream)
 	})
 
 	g.It("[PolarionID:88203][OTP] In image-mode, verify the MOSB is triggered when osImageStream is patched [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		SkipIfCompactOrSNO(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
 
-		// Get initial and target streams based on cluster version
-		initialStream, targetStream := GetInitialAndTargetStreams(oc.AsAdmin())
-
-		testMOSBTriggeredOnStreamChange(oc.AsAdmin(), osis, initialStream, targetStream)
+		testMOSBTriggeredOnStreamChange(oc.AsAdmin(), osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	g.It("[PolarionID:88365][OTP] Verify when osstream and osImageurl MC is applied the MCP is degraded [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		g.Skip("Temporarily disabled: rhel-10→rhel-9 stream switch is blocked by admission; see OCPBUGS-135363")
 		var (
 			testID = GetCurrentTestPolarionIDNumber()
 			mcName = fmt.Sprintf("tc-%s-osimageurl", testID)
 			// Use a fake image URL since it will be rejected in the render phase anyway
 			fakeImageURL = "quay.io/openshift-release-dev/ocp-release:fake-test-image"
+			targetStream = OSImageStreamRHEL10
 		)
-
-		// Get initial and target streams - use targetStream to ensure a change happens
-		_, targetStream := GetInitialAndTargetStreams(oc.AsAdmin())
 
 		exutil.By("Get pool for testing")
 		customMcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
@@ -451,36 +463,15 @@ func validateOsImageStreamInPool(mcp *MachineConfigPool, osis *OSImageStream, st
 	}
 }
 
-// ensureOsImageStream checks the current osImageStream and configures it to the desired stream if necessary
-func ensureOsImageStream(mcp *MachineConfigPool, stream string) {
-	currentStream, err := GetEffectiveOsImageStream(mcp)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
-	logger.Infof("Current stream: '%s'", currentStream)
-
-	if currentStream != stream {
-		logger.Infof("Configuring osImageStream to '%s' in %s", stream, mcp)
-		o.Expect(mcp.SetOsImageStream(stream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", stream, mcp)
-		mcp.waitForComplete()
-	} else {
-		logger.Infof("%s is already using %s stream", mcp, stream)
-	}
-}
 
 // testKernelTypeAcrossOSImageStreams tests kernel type configuration across OS image streams
 func testKernelTypeAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, mcp *MachineConfigPool, testID string, kernelType KernelType, mcTemplate, initialStream, targetStream string) {
 	mcName := fmt.Sprintf("tc-%s-%s-kernel", testID, kernelType)
 
-	defer mcp.waitForComplete()
-	defer mcp.SetSpec(mcp.GetSpecOrFail())
-
 	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", initialStream, targetStream))
 	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(initialStream, targetStream),
 		"Both streams '%s' and '%s' should be available", initialStream, targetStream)
 	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Check current osImageStream and configure %s if necessary", initialStream))
-	ensureOsImageStream(mcp, initialStream)
 	logger.Infof("OK!\n")
 
 	exutil.By(fmt.Sprintf("Validate that %s is using osImageStream '%s'", mcp, initialStream))
@@ -548,17 +539,11 @@ func testExtensionsAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, ini
 	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
 	logger.Infof("OK!\n")
 
-	exutil.By("Get the MCP used to execute this test")
-	mcp, cleanup, err := GetCompactCompatibleOrCustomPool(oc.AsAdmin(), 1)
+	exutil.By(fmt.Sprintf("Create custom MCP with MachineSet on %s stream", initialStream))
+	customMcpName := fmt.Sprintf("tc%s", testID)
+	mcp, _, cleanup, err := CreateCustomMCPWithMachineSet(oc.AsAdmin(), customMcpName, initialStream, 1)
 	defer cleanup()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting pool for testing")
-
-	defer mcp.waitForComplete()
-	defer mcp.SetSpec(mcp.GetSpecOrFail())
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Check current osImageStream and configure %s if necessary", initialStream))
-	ensureOsImageStream(mcp, initialStream)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP with MachineSet for extensions test")
 	logger.Infof("OK!\n")
 
 	exutil.By(fmt.Sprintf("Validate that %s is using osImageStream '%s'", mcp, initialStream))
@@ -624,104 +609,42 @@ func testExtensionsAcrossOSImageStreams(oc *exutil.CLI, osis *OSImageStream, ini
 	logger.Infof("OK!\n")
 }
 
-// testCustomMCPInheritsStreamFromWorkerPool tests osImageStream inheritance for custom MCPs
-// Used by: [PolarionID:88122]
-func testCustomMCPInheritsStreamFromWorkerPool(oc *exutil.CLI, osis *OSImageStream, mcp *MachineConfigPool, initialStream, targetStream string) {
+// testCustomMCPInheritsStreamFromWorkerPool tests osImageStream inheritance for custom MCPs.
+// A custom MCP without explicit osImageStream inherits the worker pool's stream, while a
+// custom MCP with an explicit non-default stream (provisioned via MachineSet) uses that stream.
+// Since rhel-10 to rhel-9 downgrade is not supported, the test uses MachineSet-based
+// node provisioning when pools need to run on a stream different from the worker pool.
+func testCustomMCPInheritsStreamFromWorkerPool(oc *exutil.CLI, osis *OSImageStream, nonDefaultStream string) {
 	var (
-		testID    = GetCurrentTestPolarionIDNumber()
-		mcp1Name  = fmt.Sprintf("tc-%s-mcp1", testID)
-		mcp2Name  = fmt.Sprintf("tc-%s-mcp2", testID)
-		infraName = fmt.Sprintf("tc-%s-infra", testID)
-		cmcp1Name = fmt.Sprintf("tc-%s-cmcp1", testID)
-		cmcp2Name = fmt.Sprintf("tc-%s-cmcp2", testID)
+		testID        = GetCurrentTestPolarionIDNumber()
+		defaultStream = exutil.OrFail[string](GetDefaultOSImageStream(oc))
 	)
 
-	defer mcp.waitForComplete()
-	defer mcp.SetSpec(mcp.GetSpecOrFail())
-
-	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", initialStream, targetStream))
-	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(initialStream, targetStream),
-		"Both streams '%s' and '%s' should be available", initialStream, targetStream)
-	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
+	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", defaultStream, nonDefaultStream))
+	o.Eventually(osis.GetAvailableStreamNames, "2m", "20s").Should(o.ContainElements(defaultStream, nonDefaultStream),
+		"Both streams '%s' and '%s' should be available", defaultStream, nonDefaultStream)
+	logger.Infof("Both %s and %s streams are available", defaultStream, nonDefaultStream)
 	logger.Infof("OK!\n")
 
-	exutil.By(fmt.Sprintf("Case1: Applied below custom MCP to inherit the default value of worker pool (%s)", initialStream))
-	currentStream, err := GetEffectiveOsImageStream(mcp)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting effective osImageStream from %s", mcp)
-	logger.Infof("Current worker pool stream: '%s'", currentStream)
-
-	if currentStream != initialStream {
-		logger.Infof("Configuring osImageStream to '%s' in %s", initialStream, mcp)
-		o.Expect(mcp.SetOsImageStream(initialStream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", initialStream, mcp)
-		mcp.waitForComplete()
-	}
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Create custom MCP that inherits %s from worker pool", initialStream))
+	exutil.By(fmt.Sprintf("Create custom MCP to inherit the default value of worker pool (%s)", defaultStream))
+	mcp1Name := fmt.Sprintf("tc%s-a", testID)
 	defer DeleteCustomMCP(oc.AsAdmin(), mcp1Name)
 	mcp1, err := CreateCustomMCP(oc.AsAdmin(), mcp1Name, 1)
 	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s", mcp1Name)
+
+	exutil.By(fmt.Sprintf("Check the inheriting MCP node uses %s", defaultStream))
+	validateOsImageStreamInPool(mcp1, osis, defaultStream)
 	logger.Infof("OK!\n")
 
-	exutil.By(fmt.Sprintf("Check the node uses %s", initialStream))
-	validateOsImageStreamInPool(mcp1, osis, initialStream)
+	mcp2Name := fmt.Sprintf("tc%s-b", testID)
+	exutil.By(fmt.Sprintf("Create custom MCP with explicit %s via MachineSet", nonDefaultStream))
+	mcp2, _, mcp2Cleanup, err := CreateCustomMCPWithMachineSet(oc.AsAdmin(), mcp2Name, nonDefaultStream, 1)
+	defer mcp2Cleanup()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s with %s", mcp2Name, nonDefaultStream)
 
-	exutil.By(fmt.Sprintf("Create custom MCP with %s explicitly configured", targetStream))
-	defer DeleteCustomMCP(oc.AsAdmin(), mcp2Name)
-	mcp2, err := CreateCustomMCPWithStream(oc.AsAdmin(), mcp2Name, targetStream, 1)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s with %s", mcp2Name, targetStream)
+	exutil.By(fmt.Sprintf("Check the explicit MCP node uses %s", nonDefaultStream))
+	validateOsImageStreamInPool(mcp2, osis, nonDefaultStream)
 	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Check the node uses %s", targetStream))
-	validateOsImageStreamInPool(mcp2, osis, targetStream)
-
-	exutil.By("Clean up Case 1 MCPs to free nodes for Case 2")
-	o.Expect(DeleteCustomMCP(oc.AsAdmin(), mcp1Name)).To(o.Succeed(), "Error deleting MCP %s", mcp1Name)
-	o.Expect(DeleteCustomMCP(oc.AsAdmin(), mcp2Name)).To(o.Succeed(), "Error deleting MCP %s", mcp2Name)
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Case2: Create custom mcp infra without osstream field, patch worker to %s, and verify infra inherits %s", targetStream, targetStream))
-
-	exutil.By(fmt.Sprintf("Create custom MCP %s without osstream field to test dynamic inheritance", infraName))
-	defer DeleteCustomMCP(oc.AsAdmin(), infraName)
-	infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraName, 0)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s without osstream", infraName)
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Patch worker pool with %s", targetStream))
-	o.Expect(mcp.SetOsImageStream(targetStream)).To(o.Succeed(), "Error setting osImageStream to '%s' in %s", targetStream, mcp)
-	mcp.waitForComplete()
-	logger.Infof("OK!\n")
-
-	exutil.By("Add a node to infra pool")
-	err = AddNodesToMachineConfigPool(oc.AsAdmin(), infraName, []*Node{mcp.GetSortedNodesOrFail()[0]})
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error adding node to infra pool")
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Verify node in infra pool inherited %s from worker pool", targetStream))
-	validateOsImageStreamInPool(infraMcp, osis, targetStream)
-
-	exutil.By("Clean up Case 2 MCP to free nodes for Case 3")
-	o.Expect(DeleteCustomMCP(oc.AsAdmin(), infraName)).To(o.Succeed(), "Error deleting MCP %s", infraName)
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Case3: Verify worker pool is on %s, then create cmcp1 (inherits %s) and cmcp2 (explicit %s)", targetStream, targetStream, initialStream))
-	o.Expect(GetEffectiveOsImageStream(mcp)).To(o.Equal(targetStream), "Worker pool should be on %s from Case 2", targetStream)
-
-	exutil.By(fmt.Sprintf("Create custom mcp cmcp1 (inherits %s) and cmcp2 (explicit %s)", targetStream, initialStream))
-	defer DeleteCustomMCP(oc.AsAdmin(), cmcp1Name)
-	cmcp1, err := CreateCustomMCP(oc.AsAdmin(), cmcp1Name, 1)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s", cmcp1Name)
-	logger.Infof("OK!\n")
-
-	defer DeleteCustomMCP(oc.AsAdmin(), cmcp2Name)
-	cmcp2, err := CreateCustomMCPWithStream(oc.AsAdmin(), cmcp2Name, initialStream, 1)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP %s with %s", cmcp2Name, initialStream)
-	logger.Infof("OK!\n")
-
-	exutil.By("Verify nodes use the correct osImageStreams")
-	validateOsImageStreamInPool(cmcp1, osis, targetStream)
-	validateOsImageStreamInPool(cmcp2, osis, initialStream)
 }
 
 // testMOSBTriggeredOnStreamChange tests that MachineOSBuild is triggered when osImageStream changes
@@ -729,7 +652,7 @@ func testCustomMCPInheritsStreamFromWorkerPool(oc *exutil.CLI, osis *OSImageStre
 func testMOSBTriggeredOnStreamChange(oc *exutil.CLI, osis *OSImageStream, initialStream, targetStream string) {
 	var (
 		testID        = GetCurrentTestPolarionIDNumber()
-		customMcpName = fmt.Sprintf("tc-%s", testID)
+		customMcpName = fmt.Sprintf("tc%s", testID)
 	)
 
 	exutil.By(fmt.Sprintf("Verify %s and %s streams are available", initialStream, targetStream))
@@ -738,15 +661,10 @@ func testMOSBTriggeredOnStreamChange(oc *exutil.CLI, osis *OSImageStream, initia
 	logger.Infof("Both %s and %s streams are available", initialStream, targetStream)
 	logger.Infof("OK!\n")
 
-	exutil.By("Create custom pool and apply OCL configuration")
-	customMcp, err := CreateCustomMCP(oc.AsAdmin(), customMcpName, 1)
-	defer DeleteCustomMCP(oc.AsAdmin(), customMcpName)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom pool %s", customMcpName)
-	logger.Infof("OK!\n")
-
-	exutil.By(fmt.Sprintf("Set osImageStream to %s before enabling OCL to ensure known starting state", initialStream))
-	o.Expect(customMcp.SetOsImageStream(initialStream)).To(o.Succeed(), "Error setting osImageStream to %s", initialStream)
-	customMcp.waitForComplete()
+	exutil.By(fmt.Sprintf("Create custom pool on %s stream via MachineSet", initialStream))
+	customMcp, _, cleanup, err := CreateCustomMCPWithMachineSet(oc.AsAdmin(), customMcpName, initialStream, 1)
+	defer cleanup()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom pool %s on %s", customMcpName, initialStream)
 	logger.Infof("OK!\n")
 
 	exutil.By("Enable OCL functionality for the custom MCP")
