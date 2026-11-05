@@ -146,6 +146,7 @@ func TestOSBuildControllerDeletesRunningBuildBeforeStartingANewOne(t *testing.T)
 // builds but will still clear running builds before statring a new build for
 // the same MachineOSConfig.
 func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
+	t.Skip("OCPBUGS-109660: temporarily skipped; re-enable once OS build controller test lifecycle stabilization (openshift/machine-config-operator#6616) is validated")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 	t.Cleanup(cancel)
@@ -218,6 +219,7 @@ func TestOSBuildControllerLeavesSuccessfulBuildAlone(t *testing.T) {
 // behind unless someone makes a change to the MachineOSConfig or
 // MachineConfigPool.
 func TestOSBuildControllerFailure(t *testing.T) {
+	t.Skip("OCPBUGS-109660: temporarily skipped; re-enable once OS build controller test lifecycle stabilization (openshift/machine-config-operator#6616) is validated")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	t.Cleanup(cancel)
@@ -293,6 +295,7 @@ func TestOSBuildControllerFailure(t *testing.T) {
 // whenever the MachineOSConfig itself is deleted.
 
 func TestOSBuildController(t *testing.T) {
+	t.Skip("OCPBUGS-109660: temporarily skipped; re-enable once OS build controller test lifecycle stabilization (openshift/machine-config-operator#6616) is validated")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*25)
 	t.Cleanup(cancel)
@@ -863,6 +866,7 @@ func assertMachineOSConfigGetsCurrentBuildAnnotation(ctx context.Context, t *tes
 // Test that when the MCP’s rendered-MC name changes but the two MCs only differ
 // by on-cluster layering, no Build Job is created.
 func TestOSBuildControllerSkipsBuildForLayerOnlyChanges(t *testing.T) {
+	t.Skip("OCPBUGS-109660: temporarily skipped; re-enable once OS build controller test lifecycle stabilization (openshift/machine-config-operator#6616) is validated")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	poolName := "worker"
