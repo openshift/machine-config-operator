@@ -30,6 +30,13 @@ type bootstrapServer struct {
 	certs []string
 }
 
+// GetFailureReporter returns nil for bootstrap server (no failure reporting during bootstrap).
+// Boot images are kept current with the release payload, so firstboot pivot failures
+// are not a realistic scenario during cluster bootstrap.
+func (bsc *bootstrapServer) GetFailureReporter() FailureReporter {
+	return nil
+}
+
 // NewBootstrapServer initializes a new Bootstrap server that implements
 // the Server interface.
 func NewBootstrapServer(dir, kubeconfig string, ircerts []string) (Server, error) {
@@ -133,6 +140,11 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 
 	addDataAndMaybeAppendToIgnition(caBundleFilePath, cc.Spec.KubeAPIServerServingCAData, &ignConf)
 	addDataAndMaybeAppendToIgnition(cloudProviderCAPath, cc.Spec.CloudProviderCAData, &ignConf)
+
+	// The MCS root CA is deliberately not written here. Firstboot failure
+	// reporting needs a URL to report to, and the bootstrap server has none to
+	// serve, so the daemon bails before it ever reads the CA. Writing it would
+	// leave an unreadable cert on every node provisioned during install.
 
 	appenders := newAppendersBuilder(nil, bsc.kubeconfigFunc, bsc.certs, bsc.serverBaseDir).
 		WithNodeAnnotations(currConf, "").

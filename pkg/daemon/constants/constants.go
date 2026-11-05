@@ -12,7 +12,6 @@ const (
 	CurrentImageAnnotationKey = "machineconfiguration.openshift.io/currentImage"
 	// DesiredImageAnnotationKey is used to specify the desired OS image pullspec for a machine
 	DesiredImageAnnotationKey = "machineconfiguration.openshift.io/desiredImage"
-
 	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine
@@ -65,6 +64,22 @@ const (
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
 	// InitialNodeAnnotationsBakPath defines the path of InitialNodeAnnotationsFilePath when the initial bootstrap is done. We leave it around for debugging and reconciling.
 	InitialNodeAnnotationsBakPath = "/etc/machine-config-daemon/node-annotation.json.bak"
+	// FirstbootMCSRootCABundlePath defines the path where the MCS root CA bundle
+	// is written by the Machine Config Server during ignition provisioning. The
+	// MCD uses this CA to establish TLS trust when sending firstboot failure
+	// reports to the MCS. Only read before the node joins the cluster, and
+	// removed by removeIgnitionArtifacts once the machine is up, so it does not
+	// linger as a copy of a CA that nothing refreshes.
+	FirstbootMCSRootCABundlePath = "/etc/machine-config-daemon/firstboot-mcs-ca-bundle.crt"
+	// FirstbootMCSConnectionInfoFilePath defines the path where the Machine
+	// Config Server writes the details a node needs to reach it during ignition
+	// provisioning: the base URL to send firstboot failure reports to, and the
+	// minimum TLS version the cluster's security profile requires. Stored as a
+	// file rather than node annotations so it is not persisted onto the
+	// in-cluster Node object. The contents are a JSON
+	// ctrlcommon.MCSConnectionInfo. Shares the firstboot-only lifecycle of
+	// FirstbootMCSRootCABundlePath.
+	FirstbootMCSConnectionInfoFilePath = "/etc/machine-config-daemon/firstboot-mcs-connection-info.json"
 
 	// IgnitionSystemdPresetFile is where Ignition writes initial enabled/disabled systemd unit configs
 	// This should be removed on boot after MCO takes over, so if any of these are deleted we can go back

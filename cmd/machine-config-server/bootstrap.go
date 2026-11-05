@@ -59,9 +59,11 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
 	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites)
 
+	// Bootstrap mode: no failure reporting (boot images are kept current), so
+	// the endpoint is left unregistered on both servers.
 	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "", tlsConfig)
+	secureServer := server.NewAPIServer(apiHandler, nil, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)
+	insecureServer := server.NewAPIServer(apiHandler, nil, rootOpts.isport, true, "", "", tlsConfig)
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()

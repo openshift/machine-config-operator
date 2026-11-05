@@ -45,10 +45,16 @@ type APIServer struct {
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string, t *tls.Config) *APIServer {
+// A nil failureHandler leaves the firstboot failure reporting endpoint
+// unregistered; callers pass nil for the insecure server so that reports are
+// only accepted over TLS.
+func NewAPIServer(a *APIHandler, failureHandler *NodeFailureHandler, p int, is bool, c, k string, t *tls.Config) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
+	if failureHandler != nil {
+		mux.Handle("/v1/node-failure", failureHandler)
+	}
 	mux.Handle("/", &defaultHandler{})
 
 	return &APIServer{
@@ -181,6 +187,90 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthHandler struct{}
+
+// maxReportBodyBytes bounds the request body. The report is a few short fields
+// and the error is cut to 1 KiB anyway, so this is ample headroom.
+const maxReportBodyBytes = 8 << 10
+
+// NodeFailureHandler handles POST requests to /v1/node-failure
+type NodeFailureHandler struct {
+	reporter FailureReporter
+}
+
+// writeFailureReportError replies with a JSON error body.
+func writeFailureReportError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// NewNodeFailureHandler creates a handler for node failure reports
+func NewNodeFailureHandler(reporter FailureReporter) *NodeFailureHandler {
+	return &NodeFailureHandler{
+		reporter: reporter,
+	}
+}
+
+// ServeHTTP processes firstboot failure reports from nodes
+func (h *NodeFailureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only accept POST
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// The endpoint is unauthenticated, so bound what a caller can make us read.
+	r.Body = http.MaxBytesReader(w, r.Body, maxReportBodyBytes)
+
+	// Read and decode JSON body
+	var report ctrlcommon.FirstbootFailureReport
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&report); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			klog.Errorf("Rejected oversized failure report (limit %d bytes)", maxBytesErr.Limit)
+			writeFailureReportError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
+		klog.Errorf("Failed to decode failure report: %v", err)
+		writeFailureReportError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	// Bound and flatten before any of this reaches a log line, the pool lookup
+	// or the event message.
+	sanitizeReport(&report)
+
+	// Validate required fields
+	if report.Pool == "" || report.NodeID == "" || report.Stage == "" {
+		klog.Errorf("Missing required fields in failure report: pool=%s node=%s stage=%s",
+			report.Pool, report.NodeID, report.Stage)
+		writeFailureReportError(w, http.StatusBadRequest, "Missing required fields: pool, nodeID, and stage are required")
+		return
+	}
+
+	klog.Infof("Received failure report: pool=%s node=%s stage=%s",
+		report.Pool, report.NodeID, report.Stage)
+
+	// Report the failure (best-effort, errors are logged but don't fail the request)
+	// In bootstrap mode, reporter may be nil
+	if h.reporter != nil {
+		ctx := r.Context()
+		if err := h.reporter.ReportFailure(ctx, &report); err != nil {
+			// Log error but still return 202 - we don't want the node to retry-loop
+			klog.Errorf("Failed to process failure report (still returning 202): %v", err)
+		}
+	}
+
+	// Always return 202 Accepted (best-effort delivery)
+	// Never return 5xx - the node must not retry-loop on reporter errors
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "accepted",
+	})
+}
 
 type acceptHeaderValue struct {
 	MIMEType    string

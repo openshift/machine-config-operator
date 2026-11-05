@@ -29,6 +29,10 @@ func (ms *mockServer) GetConfig(pr poolRequest) (*runtime.RawExtension, error) {
 	return ms.GetConfigFn(pr)
 }
 
+func (ms *mockServer) GetFailureReporter() FailureReporter {
+	return nil
+}
+
 type checkResponse func(t *testing.T, response *http.Response)
 
 type scenario struct {
@@ -567,6 +571,37 @@ func TestDefaultHandler(t *testing.T) {
 	}
 }
 
+func TestAPIServerNodeFailureRoute(t *testing.T) {
+	apiHandler := NewServerAPIHandler(&mockServer{
+		GetConfigFn: func(poolRequest) (*runtime.RawExtension, error) {
+			return &runtime.RawExtension{Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig())}, nil
+		},
+	})
+
+	body := `{"pool":"worker","nodeID":"node-1","stage":"firstboot-update"}`
+
+	t.Run("registered when a failure handler is supplied", func(t *testing.T) {
+		srv := NewAPIServer(apiHandler, NewNodeFailureHandler(&mockFailureReporter{}), 0, false, "", "", nil)
+
+		w := httptest.NewRecorder()
+		srv.handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://testrequest/v1/node-failure", strings.NewReader(body)))
+
+		assert.Equal(t, http.StatusAccepted, w.Code)
+	})
+
+	t.Run("unregistered without one", func(t *testing.T) {
+		// Callers pass nil when --mcs-url is unset, so the route must not exist.
+		// The request falls through to defaultHandler, which answers 405 to a
+		// POST on any unknown path.
+		srv := NewAPIServer(apiHandler, nil, 0, false, "", "", nil)
+
+		w := httptest.NewRecorder()
+		srv.handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://testrequest/v1/node-failure", strings.NewReader(body)))
+
+		assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	})
+}
+
 func TestAPIServer(t *testing.T) {
 	scenarios := []scenario{
 		{
@@ -718,7 +753,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "", nil)
+			server := NewAPIServer(NewServerAPIHandler(ms), nil, 0, false, "", "", nil)
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()
