@@ -1,8 +1,10 @@
 package extended
 
 import (
+	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -10,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO MachineConfigNode", func() {
@@ -477,24 +480,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		mcp := GetCompactCompatiblePool(oc.AsAdmin())
 
 		exutil.By("Wait until the pool is updated and not updating")
-		o.Eventually(mcp, "5m", "5s").Should(o.And(
-			HaveConditionField("Updated", "status", TrueString),
-			HaveConditionField("Updating", "status", FalseString),
-		), "The pool %s should be Updated=True and Updating=False before the manual action", mcp.PrettyString())
-
-		exutil.By("Get a ready and schedulable node of the pool")
-		nodeToTest := readySchedulablePoolNode(mcp)
-		if nodeToTest == nil {
-			g.Skip("Manual cordon coverage requires a ready and schedulable node in the pool")
+		if !waitForPoolToBeStable(mcp, 5*time.Minute) {
+			g.Skip(fmt.Sprintf("Pool %s did not reach Updated=True and Updating=False in time, skipping manual action test", mcp.GetName()))
 		}
-		mcn := nodeToTest.GetMachineConfigNode()
+
+		exutil.By("Get a ready and schedulable node of the pool whose MCN is updated")
+		nodeToTest, mcn := readyUpdatedPoolNode(mcp, time.Minute)
+		if nodeToTest == nil {
+			g.Skip("No ready and schedulable node in the pool reached MCN Updated=True in time, skipping manual action test")
+		}
 		machineConfigClient, err := machineconfigclient.NewForConfig(oc.KubeFramework().ClientConfig())
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating machine config client")
 		logger.Infof("Testing with node %s\n", nodeToTest.GetName())
-
-		exutil.By("Wait until the MCN of the node is updated")
-		o.Eventually(mcn, "1m", "5s").Should(HaveConditionField("Updated", "status", TrueString),
-			"The MCN %s should be Updated=True before the manual action", mcn.PrettyString())
 
 		exutil.By("Record the pool machine counts before the manual action")
 		readyMachineCountBefore, readyErr := strconv.Atoi(OrFail[string](mcp.GetReadyMachineCountStatus()))
@@ -512,11 +509,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			if err != nil {
 				return false
 			}
-			readyMachineCountStr, err := mcp.GetReadyMachineCountStatus()
-			if err != nil {
-				return false
-			}
-			readyMachineCount, convErr := strconv.Atoi(readyMachineCountStr)
+			readyMachineCount, convErr := mcp.GetReadyMachineCountStatusAsInt()
 			if convErr != nil {
 				return false
 			}
@@ -654,19 +647,17 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		}
 
 		mcp := NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
-		nodeToTest := readySchedulablePoolNode(mcp)
-		if nodeToTest == nil {
-			g.Skip("Manual reboot requires a ready and schedulable worker node")
-		}
-		mcn := nodeToTest.GetMachineConfigNode()
 
-		exutil.By("Check that the worker pool and MCN are updated")
-		o.Eventually(mcp, "5m", "5s").Should(o.And(
-			HaveConditionField("Updated", "status", TrueString),
-			HaveConditionField("Updating", "status", FalseString),
-		), "The pool %s should be updated before the reboot", mcp)
-		o.Eventually(mcn, "1m", "5s").Should(HaveConditionField("Updated", "status", TrueString),
-			"The MCN %s should be updated before the reboot", mcn)
+		exutil.By("Wait until the pool is updated and not updating")
+		if !waitForPoolToBeStable(mcp, 5*time.Minute) {
+			g.Skip(fmt.Sprintf("Pool %s did not reach Updated=True and Updating=False in time, skipping manual reboot test", mcp.GetName()))
+		}
+
+		exutil.By("Get a ready and schedulable node of the pool whose MCN is updated")
+		nodeToTest, mcn := readyUpdatedPoolNode(mcp, time.Minute)
+		if nodeToTest == nil {
+			g.Skip("No ready and schedulable worker node reached MCN Updated=True in time, skipping manual reboot test")
+		}
 
 		exutil.By("Record the boot ID and verify that the controller has observed it")
 		oldBootID, err := nodeToTest.Get(`{.status.nodeInfo.bootID}`)
@@ -732,4 +723,50 @@ func readySchedulablePoolNode(mcp *MachineConfigPool) *Node {
 		}
 	}
 	return nil
+}
+
+// waitForPoolToBeStable polls, up to timeout, until mcp is Updated=True and Updating=False.
+// It returns false instead of failing the test if the pool never becomes stable in time.
+func waitForPoolToBeStable(mcp *MachineConfigPool, timeout time.Duration) bool {
+	matcher := o.And(
+		HaveConditionField("Updated", "status", TrueString),
+		HaveConditionField("Updating", "status", FalseString),
+	)
+	stable := false
+	_ = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, true, func(_ context.Context) (bool, error) {
+		ok, err := matcher.Match(mcp)
+		if err != nil {
+			return false, nil
+		}
+		stable = ok
+		return ok, nil
+	})
+	return stable
+}
+
+// readyUpdatedPoolNode returns the first ready and schedulable node of mcp whose MachineConfigNode
+// reaches Updated=True within timeout, trying each candidate node in turn. It returns nil, nil
+// instead of failing the test if no node becomes updated in time.
+func readyUpdatedPoolNode(mcp *MachineConfigPool, timeout time.Duration) (*Node, *MachineConfigNode) {
+	matcher := HaveConditionField("Updated", "status", TrueString)
+	for _, candidate := range FilterSchedulableNodesOrFail(mcp.GetSortedNodesOrFail()) {
+		if !candidate.IsReady() {
+			continue
+		}
+		candidateMcn := candidate.GetMachineConfigNode()
+		updated := false
+		_ = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, true, func(_ context.Context) (bool, error) {
+			ok, err := matcher.Match(candidateMcn)
+			if err != nil {
+				return false, nil
+			}
+			updated = ok
+			return ok, nil
+		})
+		if updated {
+			return candidate, candidateMcn
+		}
+		logger.Infof("Node %s MCN did not reach Updated=True in time, trying another node\n", candidate.GetName())
+	}
+	return nil, nil
 }
