@@ -42,13 +42,13 @@ func TestMCDToken(t *testing.T) {
 	}
 
 	mcdList, err := cs.Pods(ctrlcommon.MCONamespace).List(context.TODO(), listOptions)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	for _, pod := range mcdList.Items {
 		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
 		}).DoRaw(context.TODO())
-		require.Nil(t, err)
+		require.NoError(t, err)
 		for _, line := range strings.Split(string(res), "\n") {
 			if strings.Contains(line, "Unable to rotate token") {
 				t.Fatalf("found token rotation failure message: %s", line)
@@ -73,11 +73,11 @@ func TestMCDeployed(t *testing.T) {
 
 	t.Logf("Created %s", mcadd.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForPoolComplete(t, cs, "worker", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	for _, node := range nodes {
 		assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
 		assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
@@ -125,14 +125,14 @@ func TestKernelArguments(t *testing.T) {
 			t.Fatal(err)
 		}
 		delete()
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 	})
 	// create old mc to have something to verify we successfully rolled back
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// create kargs MC
 	kargsMC := &mcfgv1.MachineConfig{
@@ -149,12 +149,12 @@ func TestKernelArguments(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", kargsMC.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kargsMC.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Re-fetch the infra node for updated annotations
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
@@ -175,15 +175,15 @@ func TestKernelArguments(t *testing.T) {
 	}
 	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -192,14 +192,14 @@ func TestKernelArguments(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestKernelType(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	isOKD, err := helpers.IsOKDCluster(cs)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if isOKD {
 		t.Skip("skipping test on OKD")
 	}
@@ -217,11 +217,11 @@ func TestKernelType(t *testing.T) {
 			t.Fatal(err)
 		}
 		delete()
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 	})
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	// create kernel type MC and roll out
 	kernelType := &mcfgv1.MachineConfig{
@@ -238,10 +238,10 @@ func TestKernelType(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kernelType.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -282,10 +282,10 @@ func TestKernelType(t *testing.T) {
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -294,7 +294,7 @@ func TestKernelType(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestNoReboot(t *testing.T) {
@@ -312,12 +312,12 @@ func TestNoReboot(t *testing.T) {
 			t.Fatal(err)
 		}
 		delete()
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 	})
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
 	sshKeyContent := "test adding authorized key without node reboot"
@@ -358,14 +358,14 @@ func TestNoReboot(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), addAuthorizedKey, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
+	require.NoError(t, err, "failed to create MC")
 	t.Logf("Created %s", addAuthorizedKey.Name)
 
 	// grab the latest worker- MC
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", addAuthorizedKey.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Re-fetch the infra node for updated annotations
 	infraNode = helpers.GetSingleNodeByRole(t, cs, "infra")
@@ -404,10 +404,10 @@ func TestNoReboot(t *testing.T) {
 
 	// To ensure we didn't reboot, new uptime should be greater than old uptime
 	uptimeOld, err := strconv.ParseFloat(oldTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	uptimeNew, err := strconv.ParseFloat(newTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	if uptimeOld > uptimeNew {
 		t.Fatalf("Node %s rebooted uptime decreased from %f to %f", infraNode.Name, uptimeOld, uptimeNew)
@@ -447,7 +447,7 @@ func TestNoReboot(t *testing.T) {
 	newTime = strings.Split(output, " ")[0]
 
 	uptimeNew, err = strconv.ParseFloat(newTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	if uptimeOld > uptimeNew {
 		t.Fatalf("Node %s rebooted during rollback, uptime decreased from %f to %f", infraNode.Name, uptimeOld, uptimeNew)
@@ -458,10 +458,10 @@ func TestNoReboot(t *testing.T) {
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -470,7 +470,7 @@ func TestNoReboot(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	rollbackEtcShadowContents := helpers.ExecCmdOnNode(t, cs, infraNode, "grep", "^core:", "/rootfs/etc/shadow")
 
@@ -483,14 +483,14 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
-	require.Nil(t, err, "failed to parse ignition config")
+	require.NoError(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
 	mcadd.Spec.Config.Raw = rawIgnCfg
 
 	// create the dummy MC now
 	_, err = cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create machine config")
+	require.NoError(t, err, "failed to create machine config")
 
 	// verify the pool goes degraded
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
@@ -544,11 +544,11 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		delete()
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 	})
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 
 	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
@@ -560,9 +560,9 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", mcHostFile.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// now delete the bad MC and watch the nodes reconciling as expected
 	if err := cs.MachineConfigs().Delete(context.TODO(), mcHostFile.Name, metav1.DeleteOptions{}); err != nil {
@@ -571,7 +571,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 
 	// wait for the mcp to go back to previous config
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
@@ -586,10 +586,10 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -598,7 +598,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestIgn3Cfg(t *testing.T) {
@@ -693,14 +693,14 @@ func TestIgn3Cfg(t *testing.T) {
 	mcadd.Spec.Config.Raw = rawIgnConfig
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
+	require.NoError(t, err, "failed to create MC")
 	t.Logf("Created %s", mcadd.Name)
 
 	// grab the latest worker- MC
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", mcadd.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
@@ -762,10 +762,10 @@ func TestIgn3Cfg(t *testing.T) {
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -774,7 +774,7 @@ func TestIgn3Cfg(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 // Test case for correct certificate rotation, even if a pool is paused
@@ -785,7 +785,7 @@ func TestMCDRotatesCerts(t *testing.T) {
 
 	// Rotate the certificates
 	controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	oldData := ""
 	for _, cert := range controllerConfig.Status.ControllerCertificates {
@@ -795,7 +795,7 @@ func TestMCDRotatesCerts(t *testing.T) {
 	}
 	t.Logf("Patching certificate")
 	err = helpers.ForceKubeApiserverCertificateRotation(cs)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Patched")
 
 	// Get the on-disk state for the cert
@@ -803,9 +803,9 @@ func TestMCDRotatesCerts(t *testing.T) {
 	require.NotEmpty(t, nodes)
 	selectedNode := nodes[0]
 	controllerConfig, err = cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = helpers.WaitForMCDToSyncCert(t, cs, selectedNode, controllerConfig.ResourceVersion)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Due to the nature of the cert updates(more info in https://github.com/openshift/machine-config-operator/pull/3718#discussion_r1218282540)
 	// attempt to retry on failure after waiting for a few seconds before failing the test
@@ -813,7 +813,7 @@ func TestMCDRotatesCerts(t *testing.T) {
 
 	if err := wait.PollImmediate(5*time.Second, 15*time.Second, func() (bool, error) {
 		inClusterCert, err := helpers.GetKubeletCABundleFromConfigmap(cs)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		onDiskCert := helpers.ExecCmdOnNode(t, cs, selectedNode, "cat", "/rootfs/etc/kubernetes/kubelet-ca.crt")
 		return (onDiskCert == inClusterCert), nil
 	}); err != nil {
@@ -821,7 +821,7 @@ func TestMCDRotatesCerts(t *testing.T) {
 	}
 
 	err = helpers.WaitForCertStatusToChange(t, cs, oldData)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 // This test provisions a new node by using the MachineSet API to ensure that

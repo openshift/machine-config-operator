@@ -96,10 +96,10 @@ func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) fu
 	SetMetadataOnObject(t, mc)
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	return func() {
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
 	}
 }
 
@@ -140,7 +140,7 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 	mcDeleteFunc := maybeApplyMCAndWaitForPoolComplete(t, cs, poolName, mc)
 
 	mcpMCName := GetMcName(t, cs, poolName)
-	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
+	require.NoError(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
 
 	return MakeIdempotent(func() {
 		t.Logf("Cleaning up MCP %s", poolName)
@@ -153,10 +153,10 @@ func CreatePoolAndApplyMCToNode(t *testing.T, cs *framework.ClientSet, poolName 
 		time.Sleep(5 * time.Second)
 
 		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
-		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
+		require.NoError(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
 
 		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
-		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
+		require.NoError(t, WaitForNodeConfigChange(t, cs, node, workerMC))
 
 		t.Logf("Deleting MCP %s", poolName)
 		deleteMCPFunc()
@@ -186,7 +186,7 @@ func GetMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return mcp.Status.Configuration.Name
 }
 
@@ -194,9 +194,9 @@ func GetMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 // The return value is the final rendered config.
 func WaitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, mcName string) string {
 	config, err := WaitForRenderedConfig(t, cs, pool, mcName)
-	require.Nil(t, err, "failed to render machine config %s from pool %s", mcName, pool)
+	require.NoError(t, err, "failed to render machine config %s from pool %s", mcName, pool)
 	err = WaitForPoolComplete(t, cs, pool, config)
-	require.Nil(t, err, "pool %s did not update to config %s", pool, config)
+	require.NoError(t, err, "pool %s did not update to config %s", pool, config)
 	return config
 }
 
@@ -510,7 +510,7 @@ func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData st
 	ctx := context.TODO()
 	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		// shows us that the status is updating
 
@@ -535,9 +535,9 @@ func WaitForCertStatusToChange(t *testing.T, cs *framework.ClientSet, oldData st
 func WaitForCADataToAppear(t *testing.T, cs *framework.ClientSet) error {
 	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(_ context.Context) (bool, error) {
 		controllerConfig, err := cs.ControllerConfigs().Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		nodes, err := GetNodesByRole(cs, "worker")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		for _, cert := range controllerConfig.Spec.ImageRegistryBundleUserData {
 			foundCA, _ := ExecCmdOnNodeWithError(cs, nodes[0], "ls", canonicalizeNodeFilePath(filepath.Join("/etc/docker/certs.d", cert.File)))
 			if strings.Contains(foundCA, "ca.crt") {
@@ -619,7 +619,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 		return err
 	})
 
-	require.Nil(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
+	require.NoError(t, err, "unable to label %s node %s with infra: %s", label, node.Name, err)
 
 	t.Logf("Applied label %q to node %s", label, node.Name)
 
@@ -636,7 +636,7 @@ func LabelNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, label st
 			_, err = cs.CoreV1Interface.Nodes().Update(ctx, n, metav1.UpdateOptions{})
 			return err
 		})
-		require.Nil(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
+		require.NoError(t, err, "unable to remove label %q from node %q: %s", label, node.Name, err)
 		t.Logf("Removed label %q from node %s", label, node.Name)
 	})
 }
@@ -671,7 +671,7 @@ func GetRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.No
 // Gets a random node from a given pool.
 func getRandomNode(t *testing.T, cs *framework.ClientSet, pool string) corev1.Node {
 	nodes, err := GetNodesByRole(cs, pool)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotEmpty(t, nodes)
 
 	// Disable gosec here to avoid throwing
@@ -690,7 +690,7 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 // GetSingleNodeByRoll gets all nodes by role pool, and asserts there should only be one
 func GetSingleNodeByRole(t *testing.T, cs *framework.ClientSet, role string) corev1.Node {
 	nodes, err := GetNodesByRole(cs, role)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Len(t, nodes, 1)
 	return nodes[0]
 }
@@ -743,7 +743,7 @@ func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 
 	return func() {
 		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		t.Logf("Deleted MachineConfigPool %q", mcpName)
 	}
 }
@@ -809,18 +809,18 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	t.Helper()
 
 	cmd, err := execCmdOnNode(cs, node, subArgs...)
-	require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+	require.NoError(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
 	if err != nil {
 		// common err is that the mcd went down mid cmd. Re-try for good measure
 		cmd, err = execCmdOnNode(cs, node, subArgs...)
-		require.Nil(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
+		require.NoError(t, err, "could not prepare to exec cmd %v on node %s: %s", subArgs, node.Name, err)
 		out, err = cmd.Output()
 
 	}
-	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
+	require.NoError(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
 	return string(out)
 }
 
@@ -1078,7 +1078,7 @@ func GetNodeUptime(t *testing.T, cs *framework.ClientSet, node corev1.Node) floa
 	output := ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
 	uptimeString := strings.Split(output, " ")[0]
 	uptime, err := strconv.ParseFloat(uptimeString, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return uptime
 }
 
@@ -1550,7 +1550,7 @@ func getMCDLogs(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, node 
 
 	// common err is that the mcd went down mid cmd. Re-try for good measure
 	mcdPod, err = MCDForNode(cs, node)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 		Container: "machine-config-daemon",
 	}).DoRaw(ctx)

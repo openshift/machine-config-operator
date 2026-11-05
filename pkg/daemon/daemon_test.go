@@ -254,7 +254,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: "",
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, ufc.currentConfig)
 				require.NotNil(t, ufc.desiredConfig)
 				require.Equal(t, ufc.currentConfig.GetName(), "test1")
@@ -272,7 +272,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.Nil(t, ufc)
 			},
 		},
@@ -286,7 +286,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: "",
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, ufc.currentConfig)
 				require.NotNil(t, ufc.desiredConfig)
 				require.Equal(t, "test3", ufc.currentConfig.GetName())
@@ -306,7 +306,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: "",
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, ufc.currentConfig)
 				require.NotNil(t, ufc.desiredConfig)
 				require.Equal(t, "image1", ufc.currentImage)
@@ -326,7 +326,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: "",
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, ufc.currentConfig)
 				require.NotNil(t, ufc.desiredConfig)
 				require.Equal(t, "image2", ufc.currentImage)
@@ -346,7 +346,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.Nil(t, ufc)
 			},
 		},
@@ -361,7 +361,7 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 				constants.MachineConfigDaemonStateAnnotationKey: "",
 			},
 			verify: func(t *testing.T, ufc *updateFromCluster, err error) {
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, ufc.currentConfig)
 				require.NotNil(t, ufc.desiredConfig)
 				require.Equal(t, "image3", ufc.currentImage)

@@ -23,7 +23,7 @@ func TestGetPodmanImageInfoByReference_Success(t *testing.T) {
 	}
 
 	jsonOutput, err := json.Marshal(imageInfo)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	mock := &MockCommandRunner{
 		outputs: map[string][]byte{
@@ -113,7 +113,7 @@ func TestGetPodmanImageInfoByReference_RepoDigestMatching(t *testing.T) {
 	}
 
 	jsonOutput, err := json.Marshal(imageInfo)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	mock := &MockCommandRunner{
 		outputs: map[string][]byte{
@@ -143,7 +143,7 @@ func TestGetPodmanImageInfoByReference_NoRepoDigestMatch(t *testing.T) {
 	}
 
 	jsonOutput, err := json.Marshal(imageInfo)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	mock := &MockCommandRunner{
 		outputs: map[string][]byte{
@@ -170,7 +170,7 @@ func TestGetPodmanInfo_Success(t *testing.T) {
 	}
 
 	jsonOutput, err := json.Marshal(podmanInfo)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	mock := &MockCommandRunner{
 		outputs: map[string][]byte{
