@@ -1,0 +1,16 @@
+inheritance: true
+reviews:
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        Flag changes enabling or overriding graceful node shutdown (GNS), or bypassing its platform guards, involving shutdownGracePeriod, shutdownGracePeriodCriticalPods, shutdownGracePeriodByPodPriority, GracefulNodeShutdown, or GracefulNodeShutdownBasedOnPodPriority.
+
+        Review changes affecting effective kubelet shutdown configuration: kubelet reads /etc/kubernetes/kubelet.conf and drop-ins from /etc/openshift/kubelet.conf.d. Base-file source templates include templates/master/01-master-kubelet/_base/files/kubelet.yaml, templates/worker/01-worker-kubelet/_base/files/kubelet.yaml and templates/arbiter/01-arbiter-kubelet/_base/files/kubelet.yaml; these are repository sources, not runtime file paths. Trace alternate/layered writes, defaults, rendering, feature-gate generation, KubeletConfig .spec.kubeletConfig validation/merging and daemon changes affecting these settings across templates/**, pkg/controller/** and pkg/daemon/**, not just the named templates or user overrides.
+
+        Explain the distinct public failure patterns: https://github.com/openshift/machine-config-operator/pull/6442 documents pods, mainly DaemonSet pods, remaining Ready on NotReady/shutting-down nodes; https://github.com/kubernetes/enhancements/issues/6249 describes GNS terminating DaemonSet pods and the controller recreating replacements that the kubelet rejects or terminates repeatedly during shutdown, increasing API-server load.
+
+        Recognize the upstream DaemonSet recreate/reject deficiency by its concrete signature, not a generic alert: repeated daemonset-controller SuccessfulCreate events for replacement pods with distinct UIDs for the same DaemonSet on the same node during shutdown, followed by kubelet rejections with reason NodeShutdown and exact message "Pod was rejected as the node is shutting down."
+
+        Before proceeding with GNS enablement or accepting overrides, require review of the Kubernetes GNS feature and prerequisite coordination fixes, plus demonstrated OpenShift correctness and regression validation for shutdown/recovery, pod readiness and DaemonSet lifecycle/API load. Tracker closure alone is insufficient and does not establish that all OpenShift symptoms are resolved.
+
+        Do not treat harmless disabling, removal or documentation-only changes as activation, or a feature gate being true alone as active GNS without effective shutdown configuration. This is advisory review guidance, not runtime enforcement or test coverage.
