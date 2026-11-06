@@ -40,7 +40,7 @@ var awsMachineTemplateGVR = capav1beta2.GroupVersion.WithResource("awsmachinetem
 // Returns the oldest RHCOS version across all marketplace CAPI MachineSets
 // (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl
-func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
+func (ctrl *Controller) syncCAPIMachineSets(ctx context.Context, reason string) string {
 	ctrl.capiMachineSetStats = MachineResourceStats{}
 	if ctrl.capiMachineSetLister == nil {
 		return ""
@@ -51,7 +51,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.capiMachineSetStats.erroredCount++
 		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -60,7 +60,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 		klog.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
 		ctrl.capiMachineSetStats.erroredCount++
 		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -76,7 +76,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 		klog.Errorf("failed to list CAPI MachineSets: %v", err)
 		ctrl.capiMachineSetStats.erroredCount++
 		ctrl.capiMachineSetStats.syncErr = fmt.Errorf("failed to list CAPI MachineSets: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -90,7 +90,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 	ctrl.capiMachineSetStats.totalCount = len(objs)
 
 	var syncErrors []error
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	var rhcosVersion string
 	for _, obj := range objs {
@@ -101,7 +101,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 			ctrl.capiMachineSetStats.erroredCount++
 			continue
 		}
-		patchSkipped, version, err := ctrl.syncCAPIMachineSet(ms)
+		patchSkipped, version, err := ctrl.syncCAPIMachineSet(ctx, ms)
 		if err == nil {
 			ctrl.capiMachineSetStats.inProgress++
 		} else {
@@ -117,10 +117,10 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 				rhcosVersion = version
 			}
 		}
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.capiMachineSetStats.syncErr = kubeErrs.NewAggregate(syncErrors)
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 
@@ -128,7 +128,7 @@ func (ctrl *Controller) syncCAPIMachineSets(reason string) string {
 // Returns the oldest RHCOS version across all marketplace CAPI MachineDeployments
 // (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl
-func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
+func (ctrl *Controller) syncCAPIMachineDeployments(ctx context.Context, reason string) string {
 	ctrl.capiMachineDeploymentStats = MachineResourceStats{}
 	if ctrl.capiMachineDeploymentLister == nil {
 		return ""
@@ -139,7 +139,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.capiMachineDeploymentStats.erroredCount++
 		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing CAPI MachineDeployments: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -148,7 +148,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 		klog.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err)
 		ctrl.capiMachineDeploymentStats.erroredCount++
 		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to create a selector while enqueueing CAPI MachineDeployments: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -164,7 +164,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 		klog.Errorf("failed to list CAPI MachineDeployments: %v", err)
 		ctrl.capiMachineDeploymentStats.erroredCount++
 		ctrl.capiMachineDeploymentStats.syncErr = fmt.Errorf("failed to list CAPI MachineDeployments: %v", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -178,7 +178,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 	ctrl.capiMachineDeploymentStats.totalCount = len(objs)
 
 	var syncErrors []error
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	var rhcosVersion string
 	for _, obj := range objs {
@@ -189,7 +189,7 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 			ctrl.capiMachineDeploymentStats.erroredCount++
 			continue
 		}
-		patchSkipped, version, err := ctrl.syncCAPIMachineDeployment(md)
+		patchSkipped, version, err := ctrl.syncCAPIMachineDeployment(ctx, md)
 		if err == nil {
 			ctrl.capiMachineDeploymentStats.inProgress++
 		} else {
@@ -205,16 +205,16 @@ func (ctrl *Controller) syncCAPIMachineDeployments(reason string) string {
 				rhcosVersion = version
 			}
 		}
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.capiMachineDeploymentStats.syncErr = kubeErrs.NewAggregate(syncErrors)
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 
 // syncCAPIMachineSet reconciles a single CAPI MachineSet's boot image.
 // Returns (patchSkipped, rhcosVersion, error).
-func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, string, error) {
+func (ctrl *Controller) syncCAPIMachineSet(ctx context.Context, ms *clusterv1.MachineSet) (bool, string, error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing CAPI MachineSet %q (%v)", ms.Name, startTime)
 	defer func() {
@@ -294,7 +294,7 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, stri
 	}
 
 	// Fetch the current infrastructure template from the cache-backed per-platform lister.
-	currentTemplate, err := ctrl.getCAPIInfraTemplate(ms.Spec.Template.Spec.InfrastructureRef.Name)
+	currentTemplate, err := ctrl.getCAPIInfraTemplate(ctx, ms.Spec.Template.Spec.InfrastructureRef.Name)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to fetch infrastructure template for CAPI MachineSet %s: %w", ms.Name, err)
 	}
@@ -314,7 +314,7 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, stri
 		}
 		newTemplateName := newInfraTemplateName(ms.Name, newTemplateSpecBytes)
 		klog.Infof("Creating new CAPI infrastructure template %s for MachineSet %s", newTemplateName, ms.Name)
-		return false, rhcosVersion, ctrl.patchCAPIMachineSet(ms, newTemplate, newTemplateName)
+		return false, rhcosVersion, ctrl.patchCAPIMachineSet(ctx, ms, newTemplate, newTemplateName)
 	}
 
 	klog.Infof("No patching required for CAPI MachineSet %s", ms.Name)
@@ -323,7 +323,7 @@ func (ctrl *Controller) syncCAPIMachineSet(ms *clusterv1.MachineSet) (bool, stri
 
 // syncCAPIMachineDeployment reconciles a single CAPI MachineDeployment's boot image.
 // Returns (patchSkipped, rhcosVersion, error).
-func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeployment) (bool, string, error) {
+func (ctrl *Controller) syncCAPIMachineDeployment(ctx context.Context, md *clusterv1.MachineDeployment) (bool, string, error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing CAPI MachineDeployment %q (%v)", md.Name, startTime)
 	defer func() {
@@ -378,7 +378,7 @@ func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeploymen
 		return true, "", nil
 	}
 
-	currentTemplate, err := ctrl.getCAPIInfraTemplate(md.Spec.Template.Spec.InfrastructureRef.Name)
+	currentTemplate, err := ctrl.getCAPIInfraTemplate(ctx, md.Spec.Template.Spec.InfrastructureRef.Name)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to fetch infrastructure template for CAPI MachineDeployment %s: %w", md.Name, err)
 	}
@@ -398,7 +398,7 @@ func (ctrl *Controller) syncCAPIMachineDeployment(md *clusterv1.MachineDeploymen
 		}
 		newTemplateName := newInfraTemplateName(md.Name, newTemplateSpecBytes)
 		klog.Infof("Creating new CAPI infrastructure template %s for MachineDeployment %s", newTemplateName, md.Name)
-		return false, rhcosVersion, ctrl.patchCAPIMachineDeployment(md, newTemplate, newTemplateName)
+		return false, rhcosVersion, ctrl.patchCAPIMachineDeployment(ctx, md, newTemplate, newTemplateName)
 	}
 
 	klog.Infof("No patching required for CAPI MachineDeployment %s", md.Name)
@@ -443,7 +443,7 @@ func (ctrl *Controller) checkCAPIHotLoop(state map[string]BootImageState, name s
 // It tries the cache-backed lister first. If the lister returns not-found it falls
 // back to a live API Get, because every boot image update creates a new template
 // object and the informer cache may not have caught up yet.
-func (ctrl *Controller) getCAPIInfraTemplate(name string) (*unstructured.Unstructured, error) {
+func (ctrl *Controller) getCAPIInfraTemplate(ctx context.Context, name string) (*unstructured.Unstructured, error) {
 	if ctrl.capiInfraTemplateLister == nil {
 		return nil, fmt.Errorf("CAPI infrastructure template lister is not initialized")
 	}
@@ -455,7 +455,7 @@ func (ctrl *Controller) getCAPIInfraTemplate(name string) (*unstructured.Unstruc
 		return nil, err
 	}
 	klog.V(4).Infof("CAPI infrastructure template %s not found in cache, falling back to live Get", name)
-	return ctrl.dynamicClient.Resource(awsMachineTemplateGVR).Namespace(CAPINamespace).Get(context.TODO(), name, metav1.GetOptions{})
+	return ctrl.dynamicClient.Resource(awsMachineTemplateGVR).Namespace(CAPINamespace).Get(ctx, name, metav1.GetOptions{})
 }
 
 // checkCAPIMachineSet dispatches to the platform-specific reconcile function.
@@ -493,7 +493,7 @@ func checkCAPIMachineSet(fgHandler ctrlcommon.FeatureGatesHandler, infra *osconf
 // patchCAPIMachineSet creates a new infrastructure template with the given name and patches
 // the MachineSet's infrastructureRef to point at it.
 // nolint:dupl
-func (ctrl *Controller) patchCAPIMachineSet(ms *clusterv1.MachineSet, newTemplate *unstructured.Unstructured, newTemplateName string) error {
+func (ctrl *Controller) patchCAPIMachineSet(ctx context.Context, ms *clusterv1.MachineSet, newTemplate *unstructured.Unstructured, newTemplateName string) error {
 	templateGVR := awsMachineTemplateGVR
 	newTemplate.SetName(newTemplateName)
 	newTemplate.SetResourceVersion("")
@@ -508,7 +508,7 @@ func (ctrl *Controller) patchCAPIMachineSet(ms *clusterv1.MachineSet, newTemplat
 	}
 	newTemplate.SetOwnerReferences(refs)
 
-	_, err := ctrl.dynamicClient.Resource(templateGVR).Namespace(ms.Namespace).Create(context.TODO(), newTemplate, metav1.CreateOptions{})
+	_, err := ctrl.dynamicClient.Resource(templateGVR).Namespace(ms.Namespace).Create(ctx, newTemplate, metav1.CreateOptions{})
 	if err != nil && !kubeApiErrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create new infrastructure template %s: %w", newTemplateName, err)
 	}
@@ -534,7 +534,7 @@ func (ctrl *Controller) patchCAPIMachineSet(ms *clusterv1.MachineSet, newTemplat
 	if err != nil {
 		return fmt.Errorf("unable to marshal patch for CAPI MachineSet %s: %w", ms.Name, err)
 	}
-	_, err = ctrl.dynamicClient.Resource(capiMachineSetGVR).Namespace(ms.Namespace).Patch(context.TODO(), ms.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = ctrl.dynamicClient.Resource(capiMachineSetGVR).Namespace(ms.Namespace).Patch(ctx, ms.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to patch CAPI MachineSet %s: %w", ms.Name, err)
 	}
@@ -545,7 +545,7 @@ func (ctrl *Controller) patchCAPIMachineSet(ms *clusterv1.MachineSet, newTemplat
 // patchCAPIMachineDeployment creates a new infrastructure template with the given name and patches
 // the MachineDeployment's infrastructureRef to point at it.
 // nolint:dupl
-func (ctrl *Controller) patchCAPIMachineDeployment(md *clusterv1.MachineDeployment, newTemplate *unstructured.Unstructured, newTemplateName string) error {
+func (ctrl *Controller) patchCAPIMachineDeployment(ctx context.Context, md *clusterv1.MachineDeployment, newTemplate *unstructured.Unstructured, newTemplateName string) error {
 	templateGVR := awsMachineTemplateGVR
 	newTemplate.SetName(newTemplateName)
 	newTemplate.SetResourceVersion("")
@@ -557,7 +557,7 @@ func (ctrl *Controller) patchCAPIMachineDeployment(md *clusterv1.MachineDeployme
 	}
 	newTemplate.SetOwnerReferences(refs)
 
-	_, err := ctrl.dynamicClient.Resource(templateGVR).Namespace(md.Namespace).Create(context.TODO(), newTemplate, metav1.CreateOptions{})
+	_, err := ctrl.dynamicClient.Resource(templateGVR).Namespace(md.Namespace).Create(ctx, newTemplate, metav1.CreateOptions{})
 	if err != nil && !kubeApiErrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create new infrastructure template %s: %w", newTemplateName, err)
 	}
@@ -583,7 +583,7 @@ func (ctrl *Controller) patchCAPIMachineDeployment(md *clusterv1.MachineDeployme
 	if err != nil {
 		return fmt.Errorf("unable to marshal patch for CAPI MachineDeployment %s: %w", md.Name, err)
 	}
-	_, err = ctrl.dynamicClient.Resource(capiMachineDeploymentGVR).Namespace(md.Namespace).Patch(context.TODO(), md.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = ctrl.dynamicClient.Resource(capiMachineDeploymentGVR).Namespace(md.Namespace).Patch(ctx, md.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to patch CAPI MachineDeployment %s: %w", md.Name, err)
 	}
