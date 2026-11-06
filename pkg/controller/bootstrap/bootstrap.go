@@ -296,7 +296,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	fipsEnabled := ctrlcommon.IsFIPSEnabledForMachineConfigs(configs)
 	klog.Infof("Bootstrap rendering for a FIPS target: %t", fipsEnabled)
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, fipsEnabled)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, fipsEnabled, fgHandler.Enabled(features.FeatureGateTLSGroupPreferences))
 	if err != nil {
 		return err
 	}

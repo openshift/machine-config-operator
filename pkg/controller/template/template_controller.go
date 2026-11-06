@@ -720,10 +720,15 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 // FIPS state of the cluster being installed, which the bootstrapper derives from
 // the MachineConfig manifests on disk rather than from its own process: under
 // HyperShift the renderer runs in a management cluster whose FIPS state need not
-// match the hosted cluster's nodes.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
-	// Bootstrap runs outside of a live controller: no feature gate handler is available
-	// because the API server is not yet running, so ServerTLSGroups is left nil.
-	// TODO(TLSGroupPreferences-GA): pass GetServerTLSGroupsFromAPIServer here once the feature gate is removed.
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled, nil)
+// match the hosted cluster's nodes. tlsGroupsEnabled mirrors the
+// FeatureGateTLSGroupPreferences gate state read from the bootstrap featuregate
+// manifest so that the rendered MCs match what the live controller will produce.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool, tlsGroupsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
+	var serverTLSGroups []string
+	if tlsGroupsEnabled {
+		for _, id := range ctrlcommon.GetServerTLSGroupsFromAPIServer(apiServer, fipsEnabled) {
+			serverTLSGroups = append(serverTLSGroups, strconv.FormatInt(int64(id), 10))
+		}
+	}
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled, serverTLSGroups)
 }
