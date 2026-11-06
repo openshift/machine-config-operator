@@ -106,7 +106,7 @@ func discoverNVMeByPathDisks(node *Node) []string {
 	return paths
 }
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
 	var (

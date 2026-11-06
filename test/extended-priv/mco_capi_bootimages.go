@@ -6,7 +6,7 @@ import (
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesAWSCAPI] MCO CAPI Bootimages", g.Label("Platform:aws"), func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesAWSCAPI] MCO CAPI Bootimages", g.Label("Platform:aws"), func() {
 	defer g.GinkgoRecover()
 
 	var (
