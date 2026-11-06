@@ -2859,6 +2859,304 @@ spec:
                       rule: '!has(self.dnsRecordsType) || self.dnsRecordsType == ''Internal''
                         || (has(self.loadBalancer) && self.loadBalancer.type == ''UserManaged'')'
                 type: object
+              topologyTransitionStatus:
+                description: |-
+                  topologyTransitionStatus reports evaluations of supported topology transitions
+                  and the status of a requested transition, if any.
+                  It is optional and is omitted until the topology controller reports transition status.
+                  A transition is requested through spec.controlPlaneTopology. The controller
+                  reports completion only after both topologies reach that transition's target
+                  and post-transition checks pass; reaching the target topology alone is not completion.
+                minProperties: 1
+                properties:
+                  conditions:
+                    description: |-
+                      conditions provides information on topology transition progress and the
+                      evaluation of supported transition types. The controller always reports both
+                      conditions once topologyTransitionStatus is set.
+
+                      Valid condition types are TopologyTransitionsEvaluated and
+                      TopologyTransitionCompleted. Both conditions must be present: the controller
+                      always reports each condition explicitly, using Unknown when a condition's
+                      state is not yet known, rather than omitting it.
+                    items:
+                      description: Condition contains details for one aspect of the
+                        current state of this API Resource.
+                      properties:
+                        lastTransitionTime:
+                          description: |-
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
+                            This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                          format: date-time
+                          type: string
+                        message:
+                          description: |-
+                            message is a human readable message indicating details about the transition.
+                            This may be an empty string.
+                          maxLength: 32768
+                          type: string
+                        observedGeneration:
+                          description: |-
+                            observedGeneration represents the .metadata.generation that the condition was set based upon.
+                            For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                            with respect to the current state of the instance.
+                          format: int64
+                          minimum: 0
+                          type: integer
+                        reason:
+                          description: |-
+                            reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                            Producers of specific condition types may define expected values and meanings for this field,
+                            and whether the values are considered a guaranteed API.
+                            The value should be a CamelCase string.
+                            This field may not be empty.
+                          maxLength: 1024
+                          minLength: 1
+                          pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                          type: string
+                        status:
+                          description: status of the condition, one of True, False,
+                            Unknown.
+                          enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                          type: string
+                        type:
+                          description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                          maxLength: 316
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                          type: string
+                      required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                      type: object
+                    maxItems: 2
+                    minItems: 2
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - type
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: conditions may only contain TopologyTransitionsEvaluated
+                        and TopologyTransitionCompleted
+                      rule: self.all(c, c.type in ['TopologyTransitionsEvaluated',
+                        'TopologyTransitionCompleted'])
+                  transitions:
+                    description: |-
+                      transitions contains each supported transition type and its availability.
+                      It is optional. The controller clears this list whenever
+                      TopologyTransitionsEvaluated is not True, so its presence always reflects
+                      current, trustworthy results: an omitted list while TopologyTransitionsEvaluated
+                      is True means no supported transition options were found, and an omitted list
+                      otherwise means no transition options have been reported yet.
+
+                      Between one and eight transition options must be present when the list is set.
+                      This list reports transition options, not concurrent transitions. The topology
+                      controller determines which transition options are supported.
+                    items:
+                      properties:
+                        evaluations:
+                          description: |-
+                            evaluations contains the availability condition for this transition and
+                            conditions for the checks run against the cluster to determine availability.
+
+                            TopologyTransitionAvailable is required; other condition types report
+                            individual checks. Between one and 32 conditions must be present, allowing
+                            at most 31 individual checks in addition to the availability condition.
+                            The controller defines individual check types, reasons, and messages, and
+                            always reports each one explicitly, using Unknown when a check's result is
+                            not yet known.
+                          items:
+                            description: Condition contains details for one aspect
+                              of the current state of this API Resource.
+                            properties:
+                              lastTransitionTime:
+                                description: |-
+                                  lastTransitionTime is the last time the condition transitioned from one status to another.
+                                  This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                format: date-time
+                                type: string
+                              message:
+                                description: |-
+                                  message is a human readable message indicating details about the transition.
+                                  This may be an empty string.
+                                maxLength: 32768
+                                type: string
+                              observedGeneration:
+                                description: |-
+                                  observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                  For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                  with respect to the current state of the instance.
+                                format: int64
+                                minimum: 0
+                                type: integer
+                              reason:
+                                description: |-
+                                  reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                  Producers of specific condition types may define expected values and meanings for this field,
+                                  and whether the values are considered a guaranteed API.
+                                  The value should be a CamelCase string.
+                                  This field may not be empty.
+                                maxLength: 1024
+                                minLength: 1
+                                pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                type: string
+                              status:
+                                description: status of the condition, one of True,
+                                  False, Unknown.
+                                enum:
+                                - "True"
+                                - "False"
+                                - Unknown
+                                type: string
+                              type:
+                                description: type of condition in CamelCase or in
+                                  foo.example.com/CamelCase.
+                                maxLength: 316
+                                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                type: string
+                            required:
+                            - lastTransitionTime
+                            - message
+                            - reason
+                            - status
+                            - type
+                            type: object
+                          maxItems: 32
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - type
+                          x-kubernetes-list-type: map
+                          x-kubernetes-validations:
+                          - message: evaluations must contain TopologyTransitionAvailable
+                            rule: self.exists(c, c.type == 'TopologyTransitionAvailable')
+                        source:
+                          description: |-
+                            source is the control-plane and infrastructure topology this transition was
+                            evaluated from. It may differ from the current topology while status is
+                            being refreshed. External control planes cannot be a transition source.
+                            controlPlaneTopology is the topology of the control-plane nodes. Valid values
+                            are HighlyAvailable, HighlyAvailableArbiter, and SingleReplica.
+                            External is not valid: transitions cannot involve an externally hosted control plane.
+                            SingleReplica means a single instance of control-plane services is expected
+                            to meet cluster needs.
+                            HighlyAvailable means multiple instances are expected to provide redundancy.
+                            HighlyAvailableArbiter means two control-plane nodes and a smaller arbiter
+                            node to maintain quorum. See
+                            https://pkg.go.dev/github.com/openshift/api/config/v1#TopologyMode for topology definitions.
+                            infrastructureTopology is the topology of infrastructure services. Valid
+                            values are SingleReplica and HighlyAvailable.
+                            SingleReplica means operators expect a single instance of infrastructure
+                            services to meet cluster needs.
+                            HighlyAvailable means operators expect multiple instances of infrastructure
+                            services to provide redundancy.
+                            source is required.
+                          properties:
+                            controlPlaneTopology:
+                              description: |-
+                                controlPlaneTopology is the topology of the control-plane nodes. Valid values
+                                are HighlyAvailable, HighlyAvailableArbiter, and SingleReplica.
+                                External is not valid: transitions cannot involve an externally hosted control plane.
+                                SingleReplica means a single instance of control-plane services is expected
+                                to meet cluster needs. HighlyAvailable means multiple instances are expected
+                                to provide redundancy. HighlyAvailableArbiter means two control-plane nodes
+                                and a smaller arbiter node to maintain quorum.
+                                See https://pkg.go.dev/github.com/openshift/api/config/v1#TopologyMode for
+                                topology definitions.
+                                controlPlaneTopology is required.
+                              enum:
+                              - HighlyAvailable
+                              - HighlyAvailableArbiter
+                              - SingleReplica
+                              type: string
+                            infrastructureTopology:
+                              description: |-
+                                infrastructureTopology is the topology of infrastructure services. Valid
+                                values are SingleReplica and HighlyAvailable.
+                                SingleReplica means operators expect a single instance of infrastructure
+                                services to meet cluster needs.
+                                HighlyAvailable means operators expect multiple instances of infrastructure
+                                services to provide redundancy.
+                                infrastructureTopology is required.
+                              enum:
+                              - SingleReplica
+                              - HighlyAvailable
+                              type: string
+                          required:
+                          - controlPlaneTopology
+                          - infrastructureTopology
+                          type: object
+                        target:
+                          description: |-
+                            target is the control-plane and infrastructure topology this transition would
+                            move to.
+                            controlPlaneTopology is the topology of the control-plane nodes. Valid values
+                            are HighlyAvailable, HighlyAvailableArbiter, and SingleReplica.
+                            External is not valid: transitions cannot involve an externally hosted control plane.
+                            SingleReplica means a single instance of control-plane services is expected
+                            to meet cluster needs.
+                            HighlyAvailable means multiple instances are expected to provide redundancy.
+                            HighlyAvailableArbiter means two control-plane nodes and a smaller arbiter
+                            node to maintain quorum. See
+                            https://pkg.go.dev/github.com/openshift/api/config/v1#TopologyMode for topology definitions.
+                            infrastructureTopology is the topology of infrastructure services. Valid
+                            values are SingleReplica and HighlyAvailable.
+                            SingleReplica means operators expect a single instance of infrastructure
+                            services to meet cluster needs.
+                            HighlyAvailable means operators expect multiple instances of infrastructure
+                            services to provide redundancy.
+                            External control planes cannot be a transition target.
+                            target is required.
+                          properties:
+                            controlPlaneTopology:
+                              description: |-
+                                controlPlaneTopology is the topology of the control-plane nodes. Valid values
+                                are HighlyAvailable, HighlyAvailableArbiter, and SingleReplica.
+                                External is not valid: transitions cannot involve an externally hosted control plane.
+                                SingleReplica means a single instance of control-plane services is expected
+                                to meet cluster needs. HighlyAvailable means multiple instances are expected
+                                to provide redundancy. HighlyAvailableArbiter means two control-plane nodes
+                                and a smaller arbiter node to maintain quorum.
+                                See https://pkg.go.dev/github.com/openshift/api/config/v1#TopologyMode for
+                                topology definitions.
+                                controlPlaneTopology is required.
+                              enum:
+                              - HighlyAvailable
+                              - HighlyAvailableArbiter
+                              - SingleReplica
+                              type: string
+                            infrastructureTopology:
+                              description: |-
+                                infrastructureTopology is the topology of infrastructure services. Valid
+                                values are SingleReplica and HighlyAvailable.
+                                SingleReplica means operators expect a single instance of infrastructure
+                                services to meet cluster needs.
+                                HighlyAvailable means operators expect multiple instances of infrastructure
+                                services to provide redundancy.
+                                infrastructureTopology is required.
+                              enum:
+                              - SingleReplica
+                              - HighlyAvailable
+                              type: string
+                          required:
+                          - controlPlaneTopology
+                          - infrastructureTopology
+                          type: object
+                      required:
+                      - evaluations
+                      - source
+                      - target
+                      type: object
+                    maxItems: 8
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
             type: object
         required:
         - spec

@@ -652,11 +652,13 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer)
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
+		TLSCurvePreferences:  tlsCurvePreferences,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {

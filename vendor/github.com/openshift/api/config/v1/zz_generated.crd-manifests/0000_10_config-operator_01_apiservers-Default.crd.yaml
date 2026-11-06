@@ -158,6 +158,72 @@ spec:
                 description: encryption allows the configuration of encryption of
                   resources at the datastore layer.
                 properties:
+                  kms:
+                    description: |-
+                      kms defines the configuration for the external KMS instance that manages the encryption keys,
+                      when KMS encryption is enabled sensitive resources will be encrypted using keys managed by an
+                      externally configured KMS instance.
+
+                      The Key Management Service (KMS) instance provides symmetric encryption and is responsible for
+                      managing the lifecyle of the encryption keys outside of the control plane.
+                      This allows integration with an external provider to manage the data encryption keys securely.
+                    properties:
+                      pluginConfig:
+                        description: |-
+                          pluginConfig is a required reference to a cluster-scoped resource with a status subresource
+                          that satisfies the OpenShift KMS plugin configuration status interface.
+                        properties:
+                          apiVersion:
+                            description: |-
+                              apiVersion is required and identifies the API version of the referenced KMS plugin configuration resource.
+                              The value must be in the format <group>/<version>, where group is a DNS subdomain
+                              and version is a Kubernetes API version (for example, v1 or v1alpha1).
+                              It must contain between 1 and 64 characters.
+                            maxLength: 64
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: apiVersion must be in the format <group>/<version>
+                              rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+/v[0-9]+([a-z0-9]+)*$')
+                          name:
+                            description: |-
+                              name is required and is the metadata.name of the referenced KMS plugin configuration resource.
+                              The referenced resource must be cluster-scoped.
+                              The name must be a valid DNS subdomain name: it must contain between 1 and 253 characters,
+                              contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'name must be a valid DNS subdomain name: contain
+                                no more than 253 characters, contain only lowercase
+                                alphanumeric characters, ''-'' or ''.'', and start
+                                and end with an alphanumeric character'
+                              rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
+                          resource:
+                            description: |-
+                              resource is required and is the resource name of the referenced KMS plugin configuration custom resource.
+                              This is the plural name used in the Kubernetes API (for example, vaultkmsconfigs),
+                              not the Kind (for example, VaultKMSConfig).
+                              The value must be between 1 and 63 characters, contain only lowercase alphanumeric
+                              characters or '-', and start and end with an alphanumeric character.
+                            maxLength: 63
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'resource must be a valid Kubernetes resource
+                                name: contain no more than 63 characters, contain
+                                only lowercase alphanumeric characters or ''-'', and
+                                start and end with an alphanumeric character'
+                              rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$')
+                        required:
+                        - apiVersion
+                        - name
+                        - resource
+                        type: object
+                    required:
+                    - pluginConfig
+                    type: object
                   type:
                     description: |-
                       type defines what encryption type should be used to encrypt resources at the datastore layer.
@@ -178,8 +244,14 @@ spec:
                     - identity
                     - aescbc
                     - aesgcm
+                    - KMS
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: kms config is required when encryption type is KMS, and
+                    forbidden otherwise
+                  rule: 'has(self.type) && self.type == ''KMS'' ?  has(self.kms) :
+                    !has(self.kms)'
               servingCerts:
                 description: |-
                   servingCert is the TLS cert info for serving secure traffic. If not specified, operator managed certificates
