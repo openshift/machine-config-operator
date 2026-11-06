@@ -722,7 +722,8 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 // HyperShift the renderer runs in a management cluster whose FIPS state need not
 // match the hosted cluster's nodes.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
-	// Bootstrap runs outside of a live controller: no feature gate handler is available,
-	// so ServerTLSGroups is left nil and groups are not injected into bootstrap MCs.
+	// Bootstrap runs outside of a live controller: no feature gate handler is available
+	// because the API server is not yet running, so ServerTLSGroups is left nil.
+	// TODO(TLSGroupPreferences-GA): pass GetServerTLSGroupsFromAPIServer here once the feature gate is removed.
 	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled, nil)
 }

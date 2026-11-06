@@ -57,6 +57,8 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// If apiServer==nil, this call will default to the intermediate profile
 	tlsminversion, tlsciphersuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
+	// TODO(TLSGroupPreferences-GA): call GetServerTLSGroupsFromAPIServer here once the feature gate is removed.
+	// The gate cannot be checked at bootstrap time because the API server is not yet running.
 	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites, nil)
 
 	apiHandler := server.NewServerAPIHandler(bs)
