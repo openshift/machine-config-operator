@@ -125,8 +125,8 @@ github.com/chavacava/garif
 # github.com/clarketm/json v1.17.1
 ## explicit
 github.com/clarketm/json
-# github.com/containers/common v0.50.1
-## explicit; go 1.17
+# github.com/containers/common v0.48.1
+## explicit; go 1.16
 github.com/containers/common/pkg/retry
 # github.com/containers/image/v5 v5.27.0
 ## explicit; go 1.18
@@ -630,13 +630,15 @@ github.com/kisielk/gotool/internal/load
 # github.com/kkHAIKE/contextcheck v1.1.4
 ## explicit; go 1.20
 github.com/kkHAIKE/contextcheck
-# github.com/klauspost/compress v1.16.6
-## explicit; go 1.18
+# github.com/klauspost/compress v1.20.2
+## explicit; go 1.25
 github.com/klauspost/compress
 github.com/klauspost/compress/flate
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/huff0
 github.com/klauspost/compress/internal/cpuinfo
+github.com/klauspost/compress/internal/le
+github.com/klauspost/compress/internal/regmask
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
