@@ -64,6 +64,15 @@ func IsSingleNodeTopology(oc *CLI) bool {
 	return output == string(configv1.SingleReplicaTopologyMode)
 }
 
+// IsExternalControlPlaneTopology returns true if the cluster's control plane runs outside of it,
+// as on HyperShift hosted clusters. It reads the Infrastructure through the API client rather
+// than oc, whose combined output would let a warning on stderr break the comparison.
+func IsExternalControlPlaneTopology(ctx context.Context, oc *CLI) bool {
+	infra, err := oc.AdminConfigClient().ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred(), "could not retrieve the cluster Infrastructure")
+	return infra.Status.ControlPlaneTopology == configv1.ExternalTopologyMode
+}
+
 // SkipIfUnsupportedOSStreamLabel skips the test if any MachineSet in the cluster carries
 // the machineconfiguration.openshift.io/osstream label with a value other than "rhel-9".
 // MachineSets that do not carry the label at all are treated as compatible.
@@ -102,6 +111,15 @@ func SkipIfCPMSHasUnsupportedOSStreamLabel(oc *CLI) {
 func SkipOnSingleNodeTopology(oc *CLI) {
 	if IsSingleNodeTopology(oc) {
 		e2eskipper.Skipf("This test does not apply to single-node topologies")
+	}
+}
+
+// SkipOnExternalControlPlaneTopology skips the test if the cluster's control plane runs outside
+// of it. Such clusters (HyperShift hosted clusters) do not run the MCO and do not serve the
+// MachineConfig API.
+func SkipOnExternalControlPlaneTopology(ctx context.Context, oc *CLI) {
+	if IsExternalControlPlaneTopology(ctx, oc) {
+		e2eskipper.Skipf("This test does not apply to clusters with an external control plane topology")
 	}
 }
 

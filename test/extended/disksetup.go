@@ -505,8 +505,9 @@ func assertAzureDataDisk(expected azureExpectedDisk, setup diskSetup, dataDisksB
 // parallel conformance suite.
 //
 // They run only on a cluster installed with the layout in azureExpectedDisks and skip otherwise,
-// because other Azure jobs configure a different one.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/parallel][OCPFeatureGate:AzureMultiDisk][OCPFeatureGate:MultiDiskSetup] Azure machine pool disk setup",
+// because other Azure jobs configure a different one. They also skip on clusters with an
+// external control plane (HyperShift hosted clusters), which have no MachineConfig API.
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/parallel][OCPFeatureGate:AzureMultiDisk] Azure machine pool disk setup",
 	g.Label("Platform:azure"), func() {
 		defer g.GinkgoRecover()
 
@@ -518,6 +519,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/parallel][
 		)
 
 		g.BeforeEach(func(ctx context.Context) {
+			// Hosted clusters enable AzureMultiDisk too, but they do not run the MCO, so the
+			// MachineConfig API is not served and listing MachineConfigs fails with a 404.
+			// Skip before the first MachineConfig call.
+			exutil.SkipOnExternalControlPlaneTopology(ctx, oc)
+
 			var err error
 			mcClientSet, err = machineconfigclient.NewForConfig(oc.KubeFramework().ClientConfig())
 			o.Expect(err).NotTo(o.HaveOccurred(), "Error creating the machineconfiguration client.")
