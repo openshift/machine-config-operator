@@ -51,6 +51,9 @@ type OSBuildController struct {
 
 	// This channel is primarily used for testing purposes to ensure that
 	shutdownChan chan struct{}
+	// runStarted is an optional test hook closed after caches sync and workers
+	// start. Production controllers leave it nil.
+	runStarted chan struct{}
 }
 
 type Config struct {
@@ -107,6 +110,20 @@ func newOSBuildController(
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeclient.CoreV1().Events("")})
+	eventRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"})
+
+	return newOSBuildControllerWithEventRecorder(ctrlConfig, mcfgclient, kubeclient, imageclient, routeclient, imagepruner, eventRecorder)
+}
+
+func newOSBuildControllerWithEventRecorder(
+	ctrlConfig Config,
+	mcfgclient mcfgclientset.Interface,
+	kubeclient clientset.Interface,
+	imageclient imagev1clientset.Interface,
+	routeclient routeclientset.Interface,
+	imagepruner imagepruner.ImagePruner,
+	eventRecorder record.EventRecorder,
+) *OSBuildController {
 
 	informers := newInformers(mcfgclient, kubeclient)
 
@@ -117,7 +134,7 @@ func newOSBuildController(
 		routeclient:   routeclient,
 		informers:     informers,
 		listers:       informers.listers(),
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineosbuilder"}),
+		eventRecorder: eventRecorder,
 		execQueue: ctrlcommon.NewWrappedQueueWithOpts(ctrlcommon.WrappedQueueOpts{
 			Name:       "machineosbuilder",
 			MaxRetries: ctrlConfig.MaxRetries,
@@ -206,6 +223,9 @@ func (ctrl *OSBuildController) Run(parentCtx context.Context, workers int) {
 	}
 
 	ctrl.execQueue.Start(ctrlCtx, workers)
+	if ctrl.runStarted != nil {
+		close(ctrl.runStarted)
+	}
 
 	<-parentCtx.Done()
 }
