@@ -15,6 +15,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/drain"
+	globalpullsecret "github.com/openshift/machine-config-operator/pkg/controller/global-pull-secret"
 	"github.com/openshift/machine-config-operator/pkg/controller/internalreleaseimage"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
@@ -27,6 +28,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/klog/v2"
 )
@@ -287,6 +290,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
+			ctx.FeatureGatesHandler,
 		),
 		// Add all "sub-renderers here"
 		kubeletconfig.New(
@@ -357,6 +361,14 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 			pisCacheWarmer,
 		),
 	)
+	if ctx.FeatureGatesHandler.Enabled(ctrlcommon.MultiSecretGlobalPullConfig) {
+		controllers = append(controllers, globalpullsecret.New(
+			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+			dynamic.NewForConfigOrDie(rest.AddUserAgent(ctx.ClientBuilder.GetBuilderConfig(), "global-pull-secret-controller")),
+			ctx.ClientBuilder.KubeClientOrDie("global-pull-secret-controller"),
+			ctx.FeatureGatesHandler,
+		))
+	}
 
 	return controllers
 }
