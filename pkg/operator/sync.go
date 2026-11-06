@@ -115,6 +115,8 @@ const (
 	mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath = "manifests/machineconfigcontroller/machineconfigpool-osimagestream-reference-validatingadmissionpolicybinding.yaml"
 	mccOSImageStreamDeletionGuardValidatingAdmissionPolicyPath            = "manifests/machineconfigcontroller/osimagestream-deletion-guard-validatingadmissionpolicy.yaml"
 	mccOSImageStreamDeletionGuardValidatingAdmissionPolicyBindingPath     = "manifests/machineconfigcontroller/osimagestream-deletion-guard-validatingadmissionpolicybinding.yaml"
+	mccOSImageStreamDowngradeGuardValidatingAdmissionPolicyPath           = "manifests/machineconfigcontroller/osimagestream-defaultstream-downgrade-validatingadmissionpolicy.yaml"
+	mccOSImageStreamDowngradeGuardValidatingAdmissionPolicyBindingPath    = "manifests/machineconfigcontroller/osimagestream-defaultstream-downgrade-validatingadmissionpolicybinding.yaml"
 	mccIRIDeletionGuardValidatingAdmissionPolicyPath                      = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicy.yaml"
 	mccIRIDeletionGuardValidatingAdmissionPolicyBindingPath               = "manifests/machineconfigcontroller/internalreleaseimage-deletion-guard-validatingadmissionpolicybinding.yaml"
 	mccNetworkPolicyDeletionGuardValidatingAdmissionPolicyPath            = "manifests/machineconfigcontroller/networkpolicy-deletion-guard-validatingadmissionpolicy.yaml"
@@ -1547,10 +1549,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig, _ *confi
 		paths.validatingAdmissionPolicies = append(paths.validatingAdmissionPolicies,
 			mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyPath,
 			mccOSImageStreamDeletionGuardValidatingAdmissionPolicyPath,
+			mccOSImageStreamDowngradeGuardValidatingAdmissionPolicyPath,
 		)
 		paths.validatingAdmissionPolicyBindings = append(paths.validatingAdmissionPolicyBindings,
 			mccMachineConfigPoolOSImageStreamValidatingAdmissionPolicyBindingPath,
 			mccOSImageStreamDeletionGuardValidatingAdmissionPolicyBindingPath,
+			mccOSImageStreamDowngradeGuardValidatingAdmissionPolicyBindingPath,
 		)
 	}
 	if optr.fgHandler.Enabled(features.FeatureGateManagedBootImagesCPMS) {
