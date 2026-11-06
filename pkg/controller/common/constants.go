@@ -17,6 +17,14 @@ const (
 	// GlobalPullSecretName is the name of the global pull secret
 	GlobalPullSecretName = "pull-secret"
 
+	// GlobalPullSecretMergedName is the name of the Secret that holds pull-secret
+	// merged with any GlobalPullCredential instances. It is owned by the
+	// global-pull-secret controller and never modified directly.
+	GlobalPullSecretMergedName = "pull-secret-merged"
+
+	// MultiSecretGlobalPullConfig gates GlobalPullCredential reconciliation.
+	MultiSecretGlobalPullConfig = "MultiSecretGlobalPullConfig"
+
 	// OpenshiftConfigNamespace is the namespace that has the global pull secret
 	OpenshiftConfigNamespace = "openshift-config"
 
