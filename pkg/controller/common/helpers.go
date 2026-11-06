@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1287,6 +1288,15 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
 // If profile is nil, returns config defined by the Intermediate TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	profileSpec := getTLSProfileSpec(profile)
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// getTLSProfileSpec resolves a TLSSecurityProfile to the effective TLSProfileSpec,
+// falling back to the Intermediate profile when nothing usable is configured.
+func getTLSProfileSpec(profile *configv1.TLSSecurityProfile) *configv1.TLSProfileSpec {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
 		profileType = configv1.TLSProfileIntermediateType
@@ -1308,15 +1318,102 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 	}
 
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return profileSpec
 }
 
-// Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
+// GetSecurityProfileGroups extracts the TLS supported groups from a
+// TLSSecurityProfile and converts them to the numeric curve IDs understood by
+// the kubelet's tlsCurvePreferences field. Returns nil when no groups apply.
+// fipsEnabled is whether the nodes this configuration is being rendered for run
+// in FIPS mode. It is deliberately a parameter rather than something derived
+// here from crypto.IsFIPSEnabled(): that reports the FIPS state of the process
+// doing the rendering, which is not always the state of the target nodes. Under
+// HyperShift the rendering happens in a management cluster for nodes in a hosted
+// cluster, and in unit tests the test binary is built without the FIPS flags at
+// all. Keeping it an input makes the rendered output a function of the target
+// alone, which is the property that matters.
+func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile, fipsEnabled bool) []int32 {
+	if profile == nil || profile.Type != configv1.TLSProfileCustomType || profile.Custom == nil {
+		return nil
+	}
+	return convertTLSGroups(profile.Custom.Groups, fipsEnabled)
+}
+
+// GetSecurityProfileGroupsFromAPIServer extracts the TLS supported groups from
+// an apiServer object. If no apiServer object exists, the defaults apply.
+// fipsEnabled carries the target's FIPS state; see GetSecurityProfileGroups.
+func GetSecurityProfileGroupsFromAPIServer(apiServer *configv1.APIServer, fipsEnabled bool) []int32 {
+	if apiServer == nil {
+		return nil
+	}
+	return GetSecurityProfileGroups(apiServer.Spec.TLSSecurityProfile, fipsEnabled)
+}
+
+// GetServerTLSGroups extracts TLS groups from a TLSSecurityProfile for use
+// with Go TLS servers (MCS) and kube-rbac-proxy. Unlike GetSecurityProfileGroups,
+// which only propagates groups from Custom profiles (consistent with the kubelet
+// path), this applies groups from all profile types — consistent with how
+// GetSecurityProfileCiphers propagates ciphers for all profiles.
+// If profile is nil, returns groups from the Intermediate TLS Profile.
+// fipsEnabled carries the target's FIPS state; see GetSecurityProfileGroups.
+func GetServerTLSGroups(profile *configv1.TLSSecurityProfile, fipsEnabled bool) []int32 {
+	return convertTLSGroups(getTLSProfileSpec(profile).Groups, fipsEnabled)
+}
+
+// GetServerTLSGroupsFromAPIServer extracts TLS groups for use with Go TLS
+// servers (MCS) and kube-rbac-proxy. If apiServer is nil, returns groups from
+// the Intermediate TLS Profile.
+// fipsEnabled carries the target's FIPS state; see GetServerTLSGroups.
+func GetServerTLSGroupsFromAPIServer(apiServer *configv1.APIServer, fipsEnabled bool) []int32 {
+	if apiServer == nil {
+		return GetServerTLSGroups(nil, fipsEnabled)
+	}
+	return GetServerTLSGroups(apiServer.Spec.TLSSecurityProfile, fipsEnabled)
+}
+
+// convertTLSGroups applies FIPS filtering and converts TLSGroup names to the
+// int32 curve IDs used by Go's tls.Config and kube-rbac-proxy.
+func convertTLSGroups(groups []configv1.TLSGroup, fipsEnabled bool) []int32 {
+	if len(groups) == 0 {
+		return nil
+	}
+	if fipsEnabled {
+		approved := crypto.FIPSApprovedTLSGroups(groups)
+		if len(approved) != len(groups) {
+			klog.Warningf("Dropping non-FIPS-approved TLS groups for a FIPS target: configured %v, approved %v", groups, approved)
+		}
+		groups = approved
+	}
+	curveIDs, unrecognized := crypto.TLSGroupsToCurvePreferences(groups)
+	for _, group := range unrecognized {
+		klog.Warningf("Dropping TLS group %q: not supported by the Go version in use", group)
+	}
+	if len(curveIDs) == 0 {
+		klog.Warningf("All configured TLS groups were filtered out, falling back to platform defaults")
+		return nil
+	}
+	return curveIDs
+}
+
+// IsFIPSEnabledForMachineConfigs reports whether FIPS is on for the target
+// described by these MachineConfigs. It mirrors how MergeMachineConfigs resolves
+// the field: any MachineConfig setting fips: true turns it on for the pool.
+//
+// This is the target-side signal that belongs in GetSecurityProfileGroups, as
+// opposed to crypto.IsFIPSEnabled(), which describes the renderer.
+func IsFIPSEnabledForMachineConfigs(configs []*mcfgv1.MachineConfig) bool {
+	for _, cfg := range configs {
+		if cfg != nil && cfg.Spec.FIPS {
+			return true
+		}
+	}
+	return false
+}
+
+// Converts tlsMinVersion, tlscipherSuites, and curvePreferences flags to a tlsConfig object that is used
 // by the http.Server() call used in apiserver.NewAPIServer() & apiserver.Serve()
 //
-//nolint:gosec
-func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config {
+func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string, curvePreferences []int32) *tls.Config {
 	// Create tlsConfig from arguments, using k8sapiflag for the uint16 translation
 	tlsMinVersionID, tlsMinVersionErr := k8sapiflag.TLSVersion(tlsMinVersion)
 	tlscipherSuiteIDs, tlscipherSuiteIDsErr := k8sapiflag.TLSCipherSuites(tlscipherSuites)
@@ -1326,8 +1423,15 @@ func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config 
 		tlsMinVersionID, _ = k8sapiflag.TLSVersion(string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion))
 		tlscipherSuiteIDs, _ = k8sapiflag.TLSCipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers)
 	}
-	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
-	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs}
+	var tlsCurvePreferences []tls.CurveID
+	for _, id := range curvePreferences {
+		if id < 0 || id > math.MaxUint16 {
+			klog.Warningf("Ignoring out-of-range TLS curve preference %d", id)
+			continue
+		}
+		tlsCurvePreferences = append(tlsCurvePreferences, tls.CurveID(id)) //nolint:gosec // bounds-checked above
+	}
+	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs, CurvePreferences: tlsCurvePreferences} //nolint:gosec // G402: MinVersion is set at runtime from API validation
 }
 
 func GetBootstrapAPIServer() (*configv1.APIServer, error) {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	features "github.com/openshift/api/features"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
@@ -30,6 +32,7 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -67,6 +70,14 @@ type Controller struct {
 
 	ccLister mcfglistersv1.ControllerConfigLister
 
+	// mcLister supplies the target's FIPS state. The rendered curve preferences
+	// must follow the nodes being configured, not the process doing the
+	// rendering, so this is read rather than crypto.IsFIPSEnabled().
+	mcLister       mcfglistersv1.MachineConfigLister
+	mcListerSynced cache.InformerSynced
+
+	fgHandler ctrlcommon.FeatureGatesHandler
+
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
@@ -86,12 +97,14 @@ type Controller struct {
 func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	secretsInformer coreinformersv1.SecretInformer,
 	iriSecretsInformer coreinformersv1.SecretInformer,
 	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -101,6 +114,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
+		fgHandler:     fgHandler,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -112,6 +126,8 @@ func New(
 
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.mcLister = mcInformer.Lister()
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
@@ -306,7 +322,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.secretsInformerSynced, ctrl.apiserverListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -594,7 +610,20 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		klog.Warningf("Clearing MCs URLs has failed: %v", clearErr)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer)
+	// The target's FIPS state, not this process's. See GetSecurityProfileGroups.
+	fipsEnabled, err := ctrl.targetFIPSEnabled()
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, err)
+	}
+
+	var serverTLSGroups []string
+	if ctrl.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences) {
+		for _, id := range ctrlcommon.GetServerTLSGroupsFromAPIServer(apiServer, fipsEnabled) {
+			serverTLSGroups = append(serverTLSGroups, strconv.FormatInt(int64(id), 10))
+		}
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, fipsEnabled, serverTLSGroups)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -646,17 +675,32 @@ func (ctrl *Controller) clearImageURLs() error {
 	return err
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
+// targetFIPSEnabled reports whether the nodes this controller renders for run in
+// FIPS mode, read from the MachineConfigs rather than from this process's own
+// crypto runtime. FIPS is chosen at install and applies cluster-wide, and
+// reconcile refuses to change it afterwards, so one value covers every role.
+func (ctrl *Controller) targetFIPSEnabled() (bool, error) {
+	mcs, err := ctrl.mcLister.List(labels.Everything())
+	if err != nil {
+		return false, fmt.Errorf("listing MachineConfigs to determine FIPS mode: %w", err)
+	}
+	return ctrlcommon.IsFIPSEnabledForMachineConfigs(mcs), nil
+}
+
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool, serverTLSGroups []string) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
 	}
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
+	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer, fipsEnabled)
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
+		TLSCurvePreferences:  tlsCurvePreferences,
+		ServerTLSGroups:      serverTLSGroups,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -672,7 +716,19 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	return mcs, nil
 }
 
-// RunBootstrap runs the template controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer)
+// RunBootstrap runs the template controller in boostrap mode. fipsEnabled is the
+// FIPS state of the cluster being installed, which the bootstrapper derives from
+// the MachineConfig manifests on disk rather than from its own process: under
+// HyperShift the renderer runs in a management cluster whose FIPS state need not
+// match the hosted cluster's nodes. tlsGroupsEnabled mirrors the
+// FeatureGateTLSGroupPreferences gate state read from the bootstrap featuregate
+// manifest so that the rendered MCs match what the live controller will produce.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool, tlsGroupsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
+	var serverTLSGroups []string
+	if tlsGroupsEnabled {
+		for _, id := range ctrlcommon.GetServerTLSGroupsFromAPIServer(apiServer, fipsEnabled) {
+			serverTLSGroups = append(serverTLSGroups, strconv.FormatInt(int64(id), 10))
+		}
+	}
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled, serverTLSGroups)
 }

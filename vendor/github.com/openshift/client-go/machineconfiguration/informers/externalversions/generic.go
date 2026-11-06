@@ -62,6 +62,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1().PinnedImageSets().Informer()}, nil
 
 		// Group=machineconfiguration.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("bgpvipconfigs"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().BGPVIPConfigs().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("internalreleaseimages"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Machineconfiguration().V1alpha1().InternalReleaseImages().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("osimagestreams"):

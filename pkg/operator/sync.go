@@ -965,7 +965,20 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	mcs, err := optr.mcLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("listing MachineConfigs to determine FIPS mode: %w", err)
+	}
+	fipsEnabled := ctrlcommon.IsFIPSEnabledForMachineConfigs(mcs)
+
+	var tlsGroups []string
+	if optr.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences) {
+		for _, id := range ctrlcommon.GetServerTLSGroupsFromAPIServer(apiServer, fipsEnabled) {
+			tlsGroups = append(tlsGroups, strconv.FormatInt(int64(id), 10))
+		}
+	}
+
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), tlsGroups)
 
 	return nil
 }
@@ -2477,7 +2490,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string, tlsGroups []string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2491,6 +2504,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		TLSGroups:              tlsGroups,
 		LogLevel:               logLevel,
 	}
 }
