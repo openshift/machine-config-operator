@@ -99,6 +99,29 @@ func (s *sequenceDecs) initialize(br *bitReader, hist *history, out []byte) erro
 	return nil
 }
 
+// consumeSyncLen accounts for n bytes of frame output produced outside
+// decodeSync. maxSyncLen bounds how much the frame may still produce and
+// decodeSyncSimple compares it with the output buffer's slack to decide
+// whether the extended 16-byte copies are safe. Blocks with sequences
+// subtracted their output; raw blocks, RLE blocks and compressed blocks
+// holding only literals did not, so a frame that opened with a raw block
+// overstated its remaining size for every block after it and ran the
+// bounds-exact copies for the rest of the frame.
+//
+// Zero means "no bound" and selects the conservative paths, so a block that
+// meets or exceeds the bound lands there; the frame-size checks in
+// runDecoder reject the excess afterwards.
+func (s *sequenceDecs) consumeSyncLen(n int) {
+	if s.maxSyncLen == 0 {
+		return
+	}
+	if uint64(n) >= s.maxSyncLen {
+		s.maxSyncLen = 0
+		return
+	}
+	s.maxSyncLen -= uint64(n)
+}
+
 func (s *sequenceDecs) freeDecoders() {
 	if f := s.litLengths.fse; f != nil && !f.preDefined {
 		fseDecoderPool.Put(f)
@@ -231,18 +254,18 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 	llTable, mlTable, ofTable := s.litLengths.fse.dt[:maxTablesize], s.matchLengths.fse.dt[:maxTablesize], s.offsets.fse.dt[:maxTablesize]
 	llState, mlState, ofState := s.litLengths.state.state, s.matchLengths.state.state, s.offsets.state.state
 	out := s.out
-	maxBlockSize := maxCompressedBlockSize
-	if s.windowSize < maxBlockSize {
-		maxBlockSize = s.windowSize
-	}
+	maxBlockSize := min(s.windowSize, maxCompressedBlockSize)
 
+	if debugDecoder {
+		println("decodeSync: decoding", seqs, "sequences", br.remain(), "bits remain on stream")
+	}
 	for i := seqs - 1; i >= 0; i-- {
 		if br.overread() {
-			printf("reading sequence %d, exceeded available data\n", seqs-i)
+			printf("reading sequence %d, exceeded available data. Overread by %d\n", seqs-i, -br.remain())
 			return io.ErrUnexpectedEOF
 		}
 		var ll, mo, ml int
-		if br.off > 4+((maxOffsetBits+16+16)>>3) {
+		if br.cursor > 4+((maxOffsetBits+16+16)>>3) {
 			// inlined function:
 			// ll, mo, ml = s.nextFast(br, llState, mlState, ofState)
 
@@ -314,9 +337,6 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 		}
 		size := ll + ml + len(out)
 		if size-startSize > maxBlockSize {
-			if size-startSize == 424242 {
-				panic("here")
-			}
 			return fmt.Errorf("output bigger than max block size (%d)", maxBlockSize)
 		}
 		if size > cap(out) {
@@ -427,8 +447,7 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 		}
 	}
 
-	// Check if space for literals
-	if size := len(s.literals) + len(s.out) - startSize; size > maxBlockSize {
+	if size := len(s.literals) + len(out) - startSize; size > maxBlockSize {
 		return fmt.Errorf("output bigger than max block size (%d)", maxBlockSize)
 	}
 
@@ -453,18 +472,13 @@ func (s *sequenceDecs) next(br *bitReader, llState, mlState, ofState decSymbol) 
 
 	// extra bits are stored in reverse order.
 	br.fill()
-	if s.maxBits <= 32 {
-		mo += br.getBits(moB)
-		ml += br.getBits(mlB)
-		ll += br.getBits(llB)
-	} else {
-		mo += br.getBits(moB)
+	mo += br.getBits(moB)
+	if s.maxBits > 32 {
 		br.fill()
-		// matchlength+literal length, max 32 bits
-		ml += br.getBits(mlB)
-		ll += br.getBits(llB)
-
 	}
+	// matchlength+literal length, max 32 bits
+	ml += br.getBits(mlB)
+	ll += br.getBits(llB)
 	mo = s.adjustOffset(mo, ll, moB)
 	return
 }
