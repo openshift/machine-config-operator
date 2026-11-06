@@ -328,15 +328,15 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// verify that an invalid ignition config (here a config with content and an empty version,
 	// will fail validation
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcs[1].Spec.Config.Raw)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	ignCfg.Ignition.Version = ""
 	rawIgnCfg, err := json.Marshal(ignCfg)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	mcs[1].Spec.Config.Raw = rawIgnCfg
 
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
@@ -345,11 +345,11 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	// verify that a machine config with no ignition content will not fail validation
 	emptyIgnCfg := ctrlcommon.NewIgnConfig()
 	rawEmptyIgnCfg, err := json.Marshal(emptyIgnCfg)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	mcs[1].Spec.Config.Raw = rawEmptyIgnCfg
 	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
@@ -462,7 +462,7 @@ func TestVersionSkew(t *testing.T) {
 	// Now the same thing without overriding the version
 	cc = newControllerConfig(ctrlcommon.ControllerConfigName)
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotNil(t, gmc)
 }
 
@@ -482,7 +482,7 @@ func TestGenerateRenderedConfigOnLatestControllerVersionOnly(t *testing.T) {
 		helpers.NewMachineConfigWithAnnotation("99-user-conf", map[string]string{"node-role/master": ""}, map[string]string{ctrlcommon.GeneratedByControllerVersionAnnotationKey: ""}, "user-data", []ign3types.File{}),
 	}
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestDoNothing(t *testing.T) {

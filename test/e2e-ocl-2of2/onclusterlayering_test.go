@@ -355,12 +355,12 @@ func TestSSHKeyAndPasswordForOSBuilder(t *testing.T) {
 
 	// wait for rendered config to finish creating
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, layeredMCPName, testConfig.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Finished rendering config")
 
 	// wait for mcp to complete updating
 	err = helpers.WaitForPoolComplete(t, cs, layeredMCPName, renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Pool completed updating")
 
 	// Validate the SSH key and password

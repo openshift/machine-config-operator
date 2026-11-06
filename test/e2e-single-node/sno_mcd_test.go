@@ -37,13 +37,13 @@ func TestMCDToken(t *testing.T) {
 	}
 
 	mcdList, err := cs.Pods(ctrlcommon.MCONamespace).List(context.TODO(), listOptions)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	for _, pod := range mcdList.Items {
 		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
 		}).DoRaw(context.TODO())
-		require.Nil(t, err)
+		require.NoError(t, err)
 		for _, line := range strings.Split(string(res), "\n") {
 			if strings.Contains(line, "Unable to rotate token") {
 				t.Fatalf("found token rotation failure message: %s", line)
@@ -57,7 +57,7 @@ func TestKernelArguments(t *testing.T) {
 
 	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
 	// create kargs MC
@@ -75,12 +75,12 @@ func TestKernelArguments(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", kargsMC.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kargsMC.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
@@ -100,7 +100,7 @@ func TestKernelArguments(t *testing.T) {
 	}
 	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
 	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node = helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
@@ -121,7 +121,7 @@ func TestKernelType(t *testing.T) {
 
 	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
 	// create kernel type MC and roll out
@@ -139,12 +139,12 @@ func TestKernelType(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kernelType.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
@@ -165,7 +165,7 @@ func TestKernelType(t *testing.T) {
 
 	// Wait for the mcp to rollback to previous config
 	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node = helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
@@ -183,7 +183,7 @@ func TestExtensions(t *testing.T) {
 
 	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
 	// Apply extensions
@@ -201,12 +201,12 @@ func TestExtensions(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", extensions.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", extensions.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
@@ -231,7 +231,7 @@ func TestExtensions(t *testing.T) {
 
 	// Wait for the mcp to rollback to previous config
 	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	node = helpers.GetSingleNodeByRole(t, cs, "master")
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
@@ -253,7 +253,7 @@ func TestNoReboot(t *testing.T) {
 
 	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldMasterRenderedConfig := mcp.Status.Configuration.Name
 
 	node := helpers.GetSingleNodeByRole(t, cs, "master")
@@ -286,14 +286,14 @@ func TestNoReboot(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), addAuthorizedKey, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
+	require.NoError(t, err, "failed to create MC")
 	t.Logf("Created %s", addAuthorizedKey.Name)
 
 	// grab the latest worker- MC
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", addAuthorizedKey.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Re-fetch the master node for updated annotations
 	node = helpers.GetSingleNodeByRole(t, cs, "master")
@@ -316,10 +316,10 @@ func TestNoReboot(t *testing.T) {
 
 	// To ensure we didn't reboot, new uptime should be greater than old uptime
 	uptimeOld, err := strconv.ParseFloat(oldTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	uptimeNew, err := strconv.ParseFloat(newTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	if uptimeOld > uptimeNew {
 		t.Fatalf("Node %s rebooted uptime decreased from %f to %f", node.Name, uptimeOld, uptimeNew)
@@ -359,7 +359,7 @@ func TestNoReboot(t *testing.T) {
 	newTime = strings.Split(output, " ")[0]
 
 	uptimeNew, err = strconv.ParseFloat(newTime, 64)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	if uptimeOld > uptimeNew {
 		t.Fatalf("Node %s rebooted during rollback, uptime decreased from %f to %f", node.Name, uptimeOld, uptimeNew)
@@ -387,14 +387,14 @@ func TestRunShared(t *testing.T) {
 
 			// Wait for the config to be rendered
 			renderedConfigName, err := helpers.WaitForRenderedConfig(t, cs, mcpName, mc.Name)
-			require.Nil(t, err)
+			require.NoError(t, err)
 
 			// Wait for the config to be rolled out
-			require.Nil(t, waitForSingleNodePoolComplete(t, cs, mcpName, renderedConfigName))
+			require.NoError(t, waitForSingleNodePoolComplete(t, cs, mcpName, renderedConfigName))
 
 			cleanupFuncs.Add(func() {
 				// Wait for the pool to catch up
-				require.Nil(t, waitForSingleNodePoolComplete(t, cs, mcpName, oldWorkerMCName))
+				require.NoError(t, waitForSingleNodePoolComplete(t, cs, mcpName, oldWorkerMCName))
 			})
 		},
 		TeardownFunc: func() {

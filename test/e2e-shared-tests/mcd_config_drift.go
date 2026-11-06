@@ -118,7 +118,7 @@ func (c *configDriftTest) Setup(t *testing.T) {
 	c.SetupFunc(c.mc)
 
 	mcp, err := c.ClientSet.MachineConfigPools().Get(context.TODO(), c.MCPName, metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	c.mcp = *mcp
 
 	// Get the target node
@@ -126,17 +126,17 @@ func (c *configDriftTest) Setup(t *testing.T) {
 
 	// Get the MCD pod
 	pod, err := helpers.MCDForNode(c.ClientSet, &c.node)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	c.pod = *pod
 }
 
 func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 	compressedFile, err := helpers.CreateGzippedIgn3File(configDriftCompressedFilename, configDriftFileContents, 420)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	compressedFileTwo, err := helpers.CreateGzippedIgn3File(configDriftCompressedFilenameTwo, configDriftFileContentsTwo, 420)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	return helpers.NewMachineConfigExtended(
 		fmt.Sprintf("%s-%s", configDriftMCPrefix, string(uuid.NewUUID())),
@@ -276,14 +276,14 @@ func (c configDriftTest) Run(t *testing.T) {
 				assertNodeAndMCPIsDegraded(t, c.ClientSet, c.node, c.mcp, configDriftFilename)
 
 				node, err := c.ClientSet.CoreV1Interface.Nodes().Get(ctx, c.node.Name, metav1.GetOptions{})
-				require.Nil(t, err)
+				require.NoError(t, err)
 
 				assert.Contains(t, node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey], expectedReason)
 
 				assertPoolReachesState(t, c.ClientSet, c.mcp, isPoolDegraded)
 
 				mcp, err := c.ClientSet.MachineConfigPools().Get(ctx, c.mcp.Name, metav1.GetOptions{})
-				require.Nil(t, err)
+				require.NoError(t, err)
 				for _, condition := range mcp.Status.Conditions {
 					if condition.Type == mcfgv1.MachineConfigPoolNodeDegraded {
 						assert.Contains(t, condition.Message, configDriftFilename)
@@ -386,7 +386,7 @@ func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node core
 	})
 
 	mcdPod, err := helpers.MCDForNode(cs, &node)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	helpers.AssertMCDLogsContain(t, cs, mcdPod, &node, logEntry)
 

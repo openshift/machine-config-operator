@@ -108,10 +108,10 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	// create default mc to have something to verify we successfully rolled back
 	defaultMCConfig := helpers.CreateMC(mcName, poolName)
 	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
-		require.Nil(t, err, "machine config deletion failed")
+		require.NoError(t, err, "machine config deletion failed")
 	})
 	defaultTarget := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
 
@@ -119,7 +119,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	cleanupCtrcfgFunc1 := createCtrcfgWithConfig(t, cs, ctrcfgName1, poolName, cfg1.Spec.ContainerRuntimeConfig, "")
 	// wait for the first ctrcfg to show up
 	ctrcfgMCName1, err := getMCFromCtrcfg(cs, ctrcfgName1)
-	require.Nil(t, err, "failed to render machine config from first container runtime config")
+	require.NoError(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first ctrcfg update rolls out to the pool
 	ctrcfg1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName1)
 	// verify value was changed to match that of the first ctrcfg
@@ -130,7 +130,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	cleanupCtrcfgFunc2 := createCtrcfgWithConfig(t, cs, ctrcfgName2, poolName, cfg2.Spec.ContainerRuntimeConfig, "1")
 	// wait for the second ctrcfg to show up
 	ctrcfgMCName2, err := getMCFromCtrcfg(cs, ctrcfgName2)
-	require.Nil(t, err, "failed to render machine config from second container runtime config")
+	require.NoError(t, err, "failed to render machine config from second container runtime config")
 	// ensure the second ctrcfg update rolls out to the pool
 	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName2)
 	// verify value was changed to match that of the first ctrcfg
@@ -139,7 +139,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 
 	// cleanup the second ctrcfg and make sure it doesn't error
 	err = cleanupCtrcfgFunc2()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName2)
 	// ensure config rolls back to the previous ctrcfg as expected
 	helpers.WaitForPoolComplete(t, cs, poolName, ctrcfg1Target)
@@ -149,7 +149,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 
 	// cleanup the first ctrcfg and make sure it doesn't error
 	err = cleanupCtrcfgFunc1()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName1)
 	// ensure config rolls back as expected
 	helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
@@ -161,7 +161,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	overrideFileName := arr[len(arr)-1]
 	if fileExists(t, cs, node, overrideFileName) {
 		err := fmt.Errorf("override file still exists in crio.conf.d")
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -190,7 +190,7 @@ func createCtrcfgWithConfig(t *testing.T, cs *framework.ClientSet, name, key str
 	}
 
 	_, err := cs.ContainerRuntimeConfigs().Create(context.TODO(), ctrcfg, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return func() error {
 		return cs.ContainerRuntimeConfigs().Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}
@@ -292,18 +292,18 @@ func runTestWithICSP(t *testing.T, testName, expectedVal string, icspRule *apiop
 	// wait for the icsp to show up
 	// ensure the first icsp update rolls out to the cluster
 	err := helpers.WaitForPoolCompleteAny(t, cs, poolName)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	// verify value was changed to match that of the icsp
 	confVal := getValueFromRegistriesConfig(t, cs, node, searchKey, registriesConfigPath)
 	require.Equal(t, expectedVal, confVal, "value in registries config not updated as expected")
 
 	// cleanup the icsp and make sure it doesn't error
 	err = cleanupICSPFunc()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Deleted icsp %s", icspObjName)
 	// ensure config rolls back as expected
 	err = helpers.WaitForPoolCompleteAny(t, cs, poolName)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func createICSPWithConfig(t *testing.T, cs *framework.ClientSet, name string, config []apioperatorsv1alpha1.RepositoryDigestMirrors) func() error {
@@ -313,7 +313,7 @@ func createICSPWithConfig(t *testing.T, cs *framework.ClientSet, name string, co
 	}
 	icspRule.Spec.RepositoryDigestMirrors = config
 	_, err := cs.ImageContentSourcePolicies().Create(context.TODO(), icspRule, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return func() error {
 		return cs.ImageContentSourcePolicies().Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}

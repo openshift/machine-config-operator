@@ -37,14 +37,14 @@ func TestExtensions(t *testing.T) {
 			t.Fatal(err)
 		}
 		delete()
-		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
+		require.NoError(t, cs.MachineConfigs().Delete(context.TODO(), oldInfraConfig.Name, metav1.DeleteOptions{}))
 
 	})
 
 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	// Apply extensions
 	extensions := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -60,10 +60,10 @@ func TestExtensions(t *testing.T) {
 	}
 
 	_, err = cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Logf("Created %s", extensions.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", extensions.Name)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
 	isOKD, err := helpers.IsOKDCluster(cs)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	var installedPackages string
 	var expectedPackages []string
@@ -132,10 +132,10 @@ func TestExtensions(t *testing.T) {
 	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
 		}
@@ -144,5 +144,5 @@ func TestExtensions(t *testing.T) {
 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
