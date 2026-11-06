@@ -29,6 +29,7 @@ var (
 		promMetricsListenAddress string
 		tlsCipherSuites          []string
 		tlsMinVersion            string
+		tlsCurvePreferences      []int32
 	}
 )
 
@@ -38,6 +39,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
+	startCmd.PersistentFlags().Int32SliceVar(&startOpts.tlsCurvePreferences, "tls-curve-preferences", nil, "TLS curve preferences as numeric curve IDs for the metrics server")
 }
 
 func runStartCmd(_ *cobra.Command, _ []string) {
@@ -68,7 +70,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 		ctrlCtx := ctrlcommon.CreateControllerContext(ctx, cb)
 
 		// Start the metrics listener for OCL telemetry
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlCtx.Stop, build.RegisterOCLMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlCtx.Stop, build.RegisterOCLMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites, startOpts.tlsCurvePreferences)
 
 		ctrl := build.NewOSBuildControllerFromControllerContext(ctrlCtx)
 

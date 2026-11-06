@@ -53,7 +53,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	}
 
 	klog.Infof("Launching server with tls min version: %v & cipher suites %v", rootOpts.tlsminversion, rootOpts.tlsciphersuites)
-	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites)
+	tlsConfig := ctrlcommon.GetGoTLSConfig(rootOpts.tlsminversion, rootOpts.tlsciphersuites, rootOpts.tlscurvepreferences)
 
 	apiHandler := server.NewServerAPIHandler(cs)
 	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)

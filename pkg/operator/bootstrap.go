@@ -200,7 +200,7 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 	}
 
 	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
-		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
+		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2", nil)
 	// The resolved peers file is only rendered into the bootstrap node's own
 	// frr-peers.json; the ControllerConfig above carries the references.
 	config.BGPVIPPeersFileJSON = dependencies.BGPVIPPeersFileJSON

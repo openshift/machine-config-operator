@@ -22,12 +22,13 @@ var (
 	}
 
 	rootOpts struct {
-		sport           int
-		isport          int
-		cert            string
-		key             string
-		tlsciphersuites []string
-		tlsminversion   string
+		sport                int
+		isport               int
+		cert                 string
+		key                  string
+		tlsciphersuites      []string
+		tlsminversion        string
+		tlscurvepreferences  []int32
 	}
 )
 
@@ -38,6 +39,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
 	rootCmd.PersistentFlags().StringSliceVar(&rootOpts.tlsciphersuites, "tls-cipher-suites", nil, "ciphers suites for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.tlsminversion, "tls-min-version", "VersionTLS12", "min version for TLS")
+	rootCmd.PersistentFlags().Int32SliceVar(&rootOpts.tlscurvepreferences, "tls-curve-preferences", nil, "TLS curve preferences as numeric curve IDs")
 	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", server.InsecurePort, "insecure port to serve ignition configs")
 	rootCmd.PersistentFlags().StringVar(&version.ReleaseVersion, "payload-version", version.ReleaseVersion, "Version of the openshift release")
 }

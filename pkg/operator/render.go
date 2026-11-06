@@ -51,6 +51,7 @@ type renderConfig struct {
 	PointerConfig          string
 	TLSMinVersion          string
 	TLSCipherSuites        []string
+	TLSGroups              []string
 	LogLevel               string
 	// BGPVIPPeersFileJSON is the bootstrap node's frr-peers.json content: the
 	// BGP VIP peers with their passwordSecret references resolved. Bootstrap
