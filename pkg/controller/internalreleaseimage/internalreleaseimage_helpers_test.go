@@ -27,8 +27,8 @@ func verifyInternalReleaseMasterMachineConfig(t *testing.T, mc *mcfgv1.MachineCo
 
 	assert.Len(t, ignCfg.Systemd.Units, 1)
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "docker-registry-image-pullspec")
-	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
-	assert.NotContains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_REALM")
+	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_AUTH_HTPASSWD_PATH")
 	assert.Contains(t, *ignCfg.Systemd.Units[0].Contents, "REGISTRY_HTTP_TLS_MINIMUMTLS=tls1.2")
 
 	assert.Len(t, ignCfg.Storage.Files, 5, "Found an unexpected file")
