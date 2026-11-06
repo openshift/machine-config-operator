@@ -3,6 +3,8 @@ package zstd
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/bits"
 	"runtime"
 	"strings"
 )
@@ -12,21 +14,23 @@ type EOption func(*encoderOptions) error
 
 // options retains accumulated state of multiple options.
 type encoderOptions struct {
-	concurrent      int
-	level           EncoderLevel
-	single          *bool
-	pad             int
-	blockSize       int
-	windowSize      int
-	crc             bool
-	fullZero        bool
-	noEntropy       bool
-	allLitEntropy   bool
-	customWindow    bool
-	customALEntropy bool
-	customBlockSize bool
-	lowMem          bool
-	dict            *dict
+	resetOpt         bool
+	concurrent       int
+	level            EncoderLevel
+	single           *bool
+	pad              int
+	blockSize        int
+	windowSize       int
+	crc              bool
+	fullZero         bool
+	noEntropy        bool
+	allLitEntropy    bool
+	customWindow     bool
+	customALEntropy  bool
+	customBlockSize  bool
+	lowMem           bool
+	dict             *dict
+	concurrentBlocks bool
 }
 
 func (o *encoderOptions) setDefault() {
@@ -37,8 +41,9 @@ func (o *encoderOptions) setDefault() {
 		blockSize:     maxCompressedBlockSize,
 		windowSize:    8 << 20,
 		level:         SpeedDefault,
-		allLitEntropy: true,
+		allLitEntropy: false,
 		lowMem:        false,
+		fullZero:      true,
 	}
 }
 
@@ -47,41 +52,50 @@ func (o encoderOptions) encoder() encoder {
 	switch o.level {
 	case SpeedFastest:
 		if o.dict != nil {
-			return &fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}}
+			return &fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
 		}
-		return &fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}
+		return &fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
 
 	case SpeedDefault:
 		if o.dict != nil {
-			return &doubleFastEncoderDict{fastEncoderDict: fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}}}
+			return &doubleFastEncoderDict{fastEncoderDict: fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}}
 		}
-		return &doubleFastEncoder{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}}
+		return &doubleFastEncoder{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
 	case SpeedBetterCompression:
 		if o.dict != nil {
-			return &betterFastEncoderDict{betterFastEncoder: betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}}
+			return &betterFastEncoderDict{betterFastEncoder: betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
 		}
-		return &betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}
+		return &betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
 	case SpeedBestCompression:
-		return &bestFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), lowMem: o.lowMem}}
+		return &bestFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
 	}
 	panic("unknown compression level")
 }
 
 // WithEncoderCRC will add CRC value to output.
 // Output will be 4 bytes larger.
+// Can be changed with ResetWithOptions.
 func WithEncoderCRC(b bool) EOption {
 	return func(o *encoderOptions) error { o.crc = b; return nil }
 }
 
 // WithEncoderConcurrency will set the concurrency,
 // meaning the maximum number of encoders to run concurrently.
-// The value supplied must be at least 1.
+// The value supplied must be at least 0.
+// When a value of 0 is provided GOMAXPROCS will be used.
 // For streams, setting a value of 1 will disable async compression.
 // By default this will be set to GOMAXPROCS.
+// Cannot be changed with ResetWithOptions.
 func WithEncoderConcurrency(n int) EOption {
 	return func(o *encoderOptions) error {
-		if n <= 0 {
-			return fmt.Errorf("concurrency must be at least 1")
+		if n < 0 {
+			return errors.New("concurrency must at least 0")
+		}
+		if n == 0 {
+			n = runtime.GOMAXPROCS(0)
+		}
+		if o.resetOpt && n != o.concurrent {
+			return errors.New("WithEncoderConcurrency cannot be changed on Reset")
 		}
 		o.concurrent = n
 		return nil
@@ -92,7 +106,8 @@ func WithEncoderConcurrency(n int) EOption {
 // The value must be a power of two between MinWindowSize and MaxWindowSize.
 // A larger value will enable better compression but allocate more memory and,
 // for above-default values, take considerably longer.
-// The default value is determined by the compression level.
+// The default value is determined by the compression level and max 8MB.
+// Cannot be changed with ResetWithOptions.
 func WithWindowSize(n int) EOption {
 	return func(o *encoderOptions) error {
 		switch {
@@ -102,6 +117,9 @@ func WithWindowSize(n int) EOption {
 			return fmt.Errorf("window size must be at most %d", MaxWindowSize)
 		case (n & (n - 1)) != 0:
 			return errors.New("window size must be a power of 2")
+		}
+		if o.resetOpt && n != o.windowSize {
+			return errors.New("WithWindowSize cannot be changed on Reset")
 		}
 
 		o.windowSize = n
@@ -120,6 +138,7 @@ func WithWindowSize(n int) EOption {
 // n must be > 0 and <= 1GB, 1<<30 bytes.
 // The padded area will be filled with data from crypto/rand.Reader.
 // If `EncodeAll` is used with data already in the destination, the total size will be multiple of this.
+// Can be changed with ResetWithOptions.
 func WithEncoderPadding(n int) EOption {
 	return func(o *encoderOptions) error {
 		if n <= 0 {
@@ -127,7 +146,7 @@ func WithEncoderPadding(n int) EOption {
 		}
 		// No need to waste our time.
 		if n == 1 {
-			o.pad = 0
+			n = 0
 		}
 		if n > 1<<30 {
 			return fmt.Errorf("padding must less than 1GB (1<<30 bytes) ")
@@ -213,11 +232,15 @@ func (e EncoderLevel) String() string {
 }
 
 // WithEncoderLevel specifies a predefined compression level.
+// Cannot be changed with ResetWithOptions.
 func WithEncoderLevel(l EncoderLevel) EOption {
 	return func(o *encoderOptions) error {
 		switch {
 		case l <= speedNotSet || l >= speedLast:
 			return fmt.Errorf("unknown encoder level")
+		}
+		if o.resetOpt && l != o.level {
+			return errors.New("WithEncoderLevel cannot be changed on Reset")
 		}
 		o.level = l
 		if !o.customWindow {
@@ -230,13 +253,13 @@ func WithEncoderLevel(l EncoderLevel) EOption {
 			case SpeedDefault:
 				o.windowSize = 8 << 20
 			case SpeedBetterCompression:
-				o.windowSize = 16 << 20
+				o.windowSize = 8 << 20
 			case SpeedBestCompression:
-				o.windowSize = 32 << 20
+				o.windowSize = 8 << 20
 			}
 		}
 		if !o.customALEntropy {
-			o.allLitEntropy = l > SpeedFastest
+			o.allLitEntropy = l > SpeedDefault
 		}
 
 		return nil
@@ -246,6 +269,7 @@ func WithEncoderLevel(l EncoderLevel) EOption {
 // WithZeroFrames will encode 0 length input as full frames.
 // This can be needed for compatibility with zstandard usage,
 // but is not needed for this package.
+// Can be changed with ResetWithOptions.
 func WithZeroFrames(b bool) EOption {
 	return func(o *encoderOptions) error {
 		o.fullZero = b
@@ -257,6 +281,7 @@ func WithZeroFrames(b bool) EOption {
 // Disabling this will skip incompressible data faster, but in cases with no matches but
 // skewed character distribution compression is lost.
 // Default value depends on the compression level selected.
+// Can be changed with ResetWithOptions.
 func WithAllLitEntropyCompression(b bool) EOption {
 	return func(o *encoderOptions) error {
 		o.customALEntropy = true
@@ -268,6 +293,7 @@ func WithAllLitEntropyCompression(b bool) EOption {
 // WithNoEntropyCompression will always skip entropy compression of literals.
 // This can be useful if content has matches, but unlikely to benefit from entropy
 // compression. Usually the slight speed improvement is not worth enabling this.
+// Can be changed with ResetWithOptions.
 func WithNoEntropyCompression(b bool) EOption {
 	return func(o *encoderOptions) error {
 		o.noEntropy = b
@@ -285,6 +311,7 @@ func WithNoEntropyCompression(b bool) EOption {
 // This is only a recommendation, each decoder is free to support higher or lower limits, depending on local limitations.
 // If this is not specified, block encodes will automatically choose this based on the input size and the window size.
 // This setting has no effect on streamed encodes.
+// Can be changed with ResetWithOptions.
 func WithSingleSegment(b bool) EOption {
 	return func(o *encoderOptions) error {
 		o.single = &b
@@ -296,15 +323,62 @@ func WithSingleSegment(b bool) EOption {
 // slower encoding speed.
 // This will not change the window size which is the primary function for reducing
 // memory usage. See WithWindowSize.
+// Cannot be changed with ResetWithOptions.
 func WithLowerEncoderMem(b bool) EOption {
 	return func(o *encoderOptions) error {
+		if o.resetOpt && b != o.lowMem {
+			return errors.New("WithLowerEncoderMem cannot be changed on Reset")
+		}
 		o.lowMem = b
 		return nil
 	}
 }
 
+// WithConcurrentBlocks enables job-based parallel compression for streams.
+// When enabled and concurrent > 1, input is split into large sections (jobs)
+// that are compressed simultaneously by multiple goroutines.
+// Each non-first job receives an overlap prefix from the previous job for match context.
+// Output is flushed in order, producing a valid single-frame zstd stream.
+//
+// Currently disabled when used with dictionary encoding.
+// Cannot be changed with ResetWithOptions.
+func WithConcurrentBlocks(b bool) EOption {
+	return func(o *encoderOptions) error {
+		if o.resetOpt && b != o.concurrentBlocks {
+			return errors.New("WithConcurrentBlocks cannot be changed on Reset")
+		}
+		o.concurrentBlocks = b
+		return nil
+	}
+}
+
+// jobSize returns the input section size per parallel job.
+func (o *encoderOptions) jobSize() int {
+	s := max(o.windowSize*4, 512<<10)
+	return s
+}
+
+// overlapSize returns the overlap prefix size for parallel jobs.
+func (o *encoderOptions) overlapSize() int {
+	switch o.level {
+	case SpeedBestCompression:
+		return o.windowSize / 2
+	case SpeedBetterCompression:
+		return o.windowSize / 4
+	default:
+		return o.windowSize / 8
+	}
+}
+
 // WithEncoderDict allows to register a dictionary that will be used for the encode.
+//
+// The slice dict must be in the [dictionary format] produced by
+// "zstd --train" from the Zstandard reference implementation.
+//
 // The encoder *may* choose to use no dictionary instead for certain payloads.
+// Can be changed with ResetWithOptions.
+//
+// [dictionary format]: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#dictionary-format
 func WithEncoderDict(dict []byte) EOption {
 	return func(o *encoderOptions) error {
 		d, err := loadDict(dict)
@@ -312,6 +386,30 @@ func WithEncoderDict(dict []byte) EOption {
 			return err
 		}
 		o.dict = d
+		return nil
+	}
+}
+
+// WithEncoderDictRaw registers a dictionary that may be used by the encoder.
+//
+// The slice content may contain arbitrary data. It will be used as an initial
+// history.
+// Can be changed with ResetWithOptions.
+func WithEncoderDictRaw(id uint32, content []byte) EOption {
+	return func(o *encoderOptions) error {
+		if bits.UintSize > 32 && uint(len(content)) > dictMaxLength {
+			return fmt.Errorf("dictionary of size %d > 2GiB too large", len(content))
+		}
+		o.dict = &dict{id: id, content: content, offsets: [3]int{1, 4, 8}}
+		return nil
+	}
+}
+
+// WithEncoderDictDelete clears the dictionary, so no dictionary will be used.
+// Should be used with ResetWithOptions.
+func WithEncoderDictDelete() EOption {
+	return func(o *encoderOptions) error {
+		o.dict = nil
 		return nil
 	}
 }

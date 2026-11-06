@@ -7,19 +7,19 @@ package flate
 // dictDecoder implements the LZ77 sliding dictionary as used in decompression.
 // LZ77 decompresses data through sequences of two forms of commands:
 //
-//	* Literal insertions: Runs of one or more symbols are inserted into the data
-//	stream as is. This is accomplished through the writeByte method for a
-//	single symbol, or combinations of writeSlice/writeMark for multiple symbols.
-//	Any valid stream must start with a literal insertion if no preset dictionary
-//	is used.
+//   - Literal insertions: Runs of one or more symbols are inserted into the data
+//     stream as is. This is accomplished through the writeByte method for a
+//     single symbol, or combinations of writeSlice/writeMark for multiple symbols.
+//     Any valid stream must start with a literal insertion if no preset dictionary
+//     is used.
 //
-//	* Backward copies: Runs of one or more symbols are copied from previously
-//	emitted data. Backward copies come as the tuple (dist, length) where dist
-//	determines how far back in the stream to copy from and length determines how
-//	many bytes to copy. Note that it is valid for the length to be greater than
-//	the distance. Since LZ77 uses forward copies, that situation is used to
-//	perform a form of run-length encoding on repeated runs of symbols.
-//	The writeCopy and tryWriteCopy are used to implement this command.
+//   - Backward copies: Runs of one or more symbols are copied from previously
+//     emitted data. Backward copies come as the tuple (dist, length) where dist
+//     determines how far back in the stream to copy from and length determines how
+//     many bytes to copy. Note that it is valid for the length to be greater than
+//     the distance. Since LZ77 uses forward copies, that situation is used to
+//     perform a form of run-length encoding on repeated runs of symbols.
+//     The writeCopy and tryWriteCopy are used to implement this command.
 //
 // For performance reasons, this implementation performs little to no sanity
 // checks about the arguments. As such, the invariants documented for each
@@ -28,9 +28,10 @@ type dictDecoder struct {
 	hist []byte // Sliding window history
 
 	// Invariant: 0 <= rdPos <= wrPos <= len(hist)
-	wrPos int  // Current output position in buffer
-	rdPos int  // Have emitted hist[:rdPos] already
-	full  bool // Has a full window length been written yet?
+	wrPos   int   // Current output position in buffer
+	rdPos   int   // Have emitted hist[:rdPos] already
+	flushed int64 // Total bytes returned by readFlush since init
+	full    bool  // Has a full window length been written yet?
 }
 
 // init initializes dictDecoder to have a sliding window dictionary of the given
@@ -104,10 +105,7 @@ func (dd *dictDecoder) writeCopy(dist, length int) int {
 	dstBase := dd.wrPos
 	dstPos := dstBase
 	srcPos := dstPos - dist
-	endPos := dstPos + length
-	if endPos > len(dd.hist) {
-		endPos = len(dd.hist)
-	}
+	endPos := min(dstPos+length, len(dd.hist))
 
 	// Copy non-overlapping section after destination position.
 	//
@@ -170,15 +168,32 @@ loop:
 	return dstPos - dstBase
 }
 
+// appendWindow appends the current sliding window (up to len(hist) most recent
+// bytes, oldest first) to dst.
+func (dd *dictDecoder) appendWindow(dst []byte) []byte {
+	if dd.full {
+		dst = append(dst, dd.hist[dd.wrPos:]...)
+		return append(dst, dd.hist[:dd.wrPos]...)
+	}
+	return append(dst, dd.hist[:dd.wrPos]...)
+}
+
 // readFlush returns a slice of the historical buffer that is ready to be
 // emitted to the user. The data returned by readFlush must be fully consumed
 // before calling any other dictDecoder methods.
 func (dd *dictDecoder) readFlush() []byte {
 	toRead := dd.hist[dd.rdPos:dd.wrPos]
+	dd.flushed += int64(len(toRead))
 	dd.rdPos = dd.wrPos
 	if dd.wrPos == len(dd.hist) {
 		dd.wrPos, dd.rdPos = 0, 0
 		dd.full = true
 	}
 	return toRead
+}
+
+// decoded reports the total number of bytes written into the dictionary since
+// init (i.e. excluding any preset dict bytes).
+func (dd *dictDecoder) decoded() int64 {
+	return dd.flushed + int64(dd.wrPos-dd.rdPos)
 }
