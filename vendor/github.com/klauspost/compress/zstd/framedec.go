@@ -49,13 +49,16 @@ const (
 )
 
 func newFrameDec(o decoderOptions) *frameDec {
+	d := frameDec{}
+	d.setOptions(o)
+	return &d
+}
+
+func (d *frameDec) setOptions(o decoderOptions) {
 	if o.maxWindowSize > o.maxDecodedSize {
 		o.maxWindowSize = o.maxDecodedSize
 	}
-	d := frameDec{
-		o: o,
-	}
-	return &d
+	d.o = o
 }
 
 // reset will read the frame header and prepare for block decoding.
@@ -73,20 +76,20 @@ func (d *frameDec) reset(br byteBuffer) error {
 		switch err {
 		case io.EOF, io.ErrUnexpectedEOF:
 			return io.EOF
-		default:
-			return err
 		case nil:
 			signature[0] = b[0]
+		default:
+			return err
 		}
 		// Read the rest, don't allow io.ErrUnexpectedEOF
 		b, err = br.readSmall(3)
 		switch err {
 		case io.EOF:
 			return io.EOF
-		default:
-			return err
 		case nil:
 			copy(signature[1:], b)
+		default:
+			return err
 		}
 
 		if string(signature[1:4]) != skippableFrameMagic || signature[0]&0xf0 != 0x50 {
@@ -146,7 +149,9 @@ func (d *frameDec) reset(br byteBuffer) error {
 			}
 			return err
 		}
-		printf("raw: %x, mantissa: %d, exponent: %d\n", wd, wd&7, wd>>3)
+		if debugDecoder {
+			printf("raw: %x, mantissa: %d, exponent: %d\n", wd, wd&7, wd>>3)
+		}
 		windowLog := 10 + (wd >> 3)
 		windowBase := uint64(1) << windowLog
 		windowAdd := (windowBase / 8) * uint64(wd&0x7)
@@ -236,10 +241,7 @@ func (d *frameDec) reset(br byteBuffer) error {
 
 	if d.WindowSize == 0 && d.SingleSegment {
 		// We may not need window in this case.
-		d.WindowSize = d.FrameContentSize
-		if d.WindowSize < MinWindowSize {
-			d.WindowSize = MinWindowSize
-		}
+		d.WindowSize = max(d.FrameContentSize, MinWindowSize)
 		if d.WindowSize > d.o.maxDecodedSize {
 			if debugDecoder {
 				printf("window size %d > max %d\n", d.WindowSize, d.o.maxWindowSize)
@@ -293,22 +295,14 @@ func (d *frameDec) next(block *blockDec) error {
 	return nil
 }
 
-// checkCRC will check the checksum if the frame has one.
+// checkCRC will check the checksum, assuming the frame has one.
 // Will return ErrCRCMismatch if crc check failed, otherwise nil.
 func (d *frameDec) checkCRC() error {
-	if !d.HasCheckSum {
-		return nil
-	}
-
 	// We can overwrite upper tmp now
 	buf, err := d.rawInput.readSmall(4)
 	if err != nil {
 		println("CRC missing?", err)
 		return err
-	}
-
-	if d.o.ignoreChecksum {
-		return nil
 	}
 
 	want := binary.LittleEndian.Uint32(buf[:4])
@@ -326,17 +320,13 @@ func (d *frameDec) checkCRC() error {
 	return nil
 }
 
-// consumeCRC reads the checksum data if the frame has one.
+// consumeCRC skips over the checksum, assuming the frame has one.
 func (d *frameDec) consumeCRC() error {
-	if d.HasCheckSum {
-		_, err := d.rawInput.readSmall(4)
-		if err != nil {
-			println("CRC missing?", err)
-			return err
-		}
+	_, err := d.rawInput.readSmall(4)
+	if err != nil {
+		println("CRC missing?", err)
 	}
-
-	return nil
+	return err
 }
 
 // runDecoder will run the decoder for the remainder of the frame.
@@ -415,15 +405,8 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 			if d.o.ignoreChecksum {
 				err = d.consumeCRC()
 			} else {
-				var n int
-				n, err = d.crc.Write(dst[crcStart:])
-				if err == nil {
-					if n != len(dst)-crcStart {
-						err = io.ErrShortWrite
-					} else {
-						err = d.checkCRC()
-					}
-				}
+				d.crc.Write(dst[crcStart:])
+				err = d.checkCRC()
 			}
 		}
 	}
