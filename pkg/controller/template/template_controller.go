@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
 	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
+	features "github.com/openshift/api/features"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"k8s.io/klog/v2"
@@ -74,6 +76,8 @@ type Controller struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
+	fgHandler ctrlcommon.FeatureGatesHandler
+
 	apiserverLister       configlistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
@@ -100,6 +104,7 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -109,6 +114,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
+		fgHandler:     fgHandler,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -610,7 +616,14 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, fipsEnabled)
+	var serverTLSGroups []string
+	if ctrl.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences) {
+		for _, id := range ctrlcommon.GetServerTLSGroupsFromAPIServer(apiServer, fipsEnabled) {
+			serverTLSGroups = append(serverTLSGroups, strconv.FormatInt(int64(id), 10))
+		}
+	}
+
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, fipsEnabled, serverTLSGroups)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -674,7 +687,7 @@ func (ctrl *Controller) targetFIPSEnabled() (bool, error) {
 	return ctrlcommon.IsFIPSEnabledForMachineConfigs(mcs), nil
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool, serverTLSGroups []string) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -687,6 +700,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
 		TLSCurvePreferences:  tlsCurvePreferences,
+		ServerTLSGroups:      serverTLSGroups,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -708,5 +722,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 // HyperShift the renderer runs in a management cluster whose FIPS state need not
 // match the hosted cluster's nodes.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, fipsEnabled bool) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled)
+	// Bootstrap runs outside of a live controller: no feature gate handler is available,
+	// so ServerTLSGroups is left nil and groups are not injected into bootstrap MCs.
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, fipsEnabled, nil)
 }

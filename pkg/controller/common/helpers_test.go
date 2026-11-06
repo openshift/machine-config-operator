@@ -2273,6 +2273,56 @@ func assertTLSGroupsForTargetFIPS(t *testing.T, targetFIPS bool) {
 // TestIsFIPSEnabledForMachineConfigs covers the target-side signal that feeds
 // the parameter above. It mirrors MergeMachineConfigs: any MachineConfig setting
 // fips: true turns FIPS on for the pool.
+// TestGetServerTLSGroups verifies that GetServerTLSGroups applies groups for all
+// profile types, unlike GetSecurityProfileGroups which is Custom-only (kubelet path).
+func TestGetServerTLSGroups(t *testing.T) {
+	intermediateGroups := getNamedProfileGroups(configv1.TLSProfileIntermediateType)
+
+	// nil profile falls back to Intermediate.
+	require.Equal(t, intermediateGroups, GetServerTLSGroups(nil, false))
+
+	// Named profiles produce their defined groups.
+	require.Equal(t, getNamedProfileGroups(configv1.TLSProfileModernType),
+		GetServerTLSGroups(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, false))
+	require.Equal(t, intermediateGroups,
+		GetServerTLSGroups(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType}, false))
+
+	// Custom profile propagates its groups.
+	profile := customProfileWithGroups(configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1)
+	got := GetServerTLSGroups(profile, false)
+	require.Equal(t, []int32{23, 24}, got)
+}
+
+func TestGetServerTLSGroupsFromAPIServer(t *testing.T) {
+	intermediateGroups := getNamedProfileGroups(configv1.TLSProfileIntermediateType)
+
+	// nil APIServer falls back to Intermediate (unlike GetSecurityProfileGroupsFromAPIServer which returns nil).
+	require.Equal(t, intermediateGroups, GetServerTLSGroupsFromAPIServer(nil, false))
+
+	// APIServer with no TLS profile also falls back to Intermediate.
+	require.Equal(t, intermediateGroups, GetServerTLSGroupsFromAPIServer(&configv1.APIServer{}, false))
+
+	// APIServer with a named profile.
+	apiServer := &configv1.APIServer{
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
+		},
+	}
+	require.Equal(t, getNamedProfileGroups(configv1.TLSProfileModernType), GetServerTLSGroupsFromAPIServer(apiServer, false))
+
+	// APIServer with a Custom profile.
+	apiServer.Spec.TLSSecurityProfile = customProfileWithGroups(configv1.TLSGroupSecP256r1)
+	require.Equal(t, []int32{23}, GetServerTLSGroupsFromAPIServer(apiServer, false))
+}
+
+// getNamedProfileGroups converts the named profile's group list to the int32 curve IDs
+// that GetServerTLSGroups / GetServerTLSGroupsFromAPIServer return.
+func getNamedProfileGroups(profileType configv1.TLSProfileType) []int32 {
+	spec := configv1.TLSProfiles[profileType]
+	ids, _ := cryptolib.TLSGroupsToCurvePreferences(spec.Groups)
+	return ids
+}
+
 func TestIsFIPSEnabledForMachineConfigs(t *testing.T) {
 	mc := func(name string, fips bool) *mcfgv1.MachineConfig {
 		return &mcfgv1.MachineConfig{

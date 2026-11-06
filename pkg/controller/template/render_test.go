@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	configv1 "github.com/openshift/api/config/v1"
+	crypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -82,7 +83,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -143,7 +144,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -236,14 +237,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -254,7 +255,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -431,7 +432,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}
@@ -607,7 +608,7 @@ func TestIsBGPVIPManagement(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, c.name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, c.name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error, got: %v", err)
 			}
@@ -661,7 +662,7 @@ func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
 			bm.APIServerInternalIPs = tc.apiVIPs
 			bm.IngressIPs = tc.ingressVIPs
 
-			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, nil}, templateDir)
 			if err != nil {
 				t.Fatalf("failed to generate machine configs: %v", err)
 			}
@@ -744,7 +745,7 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 		}
 
 		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
-			[]byte(`{"dummy":"dummy"}`), apiServer, fipsEnabled)
+			[]byte(`{"dummy":"dummy"}`), apiServer, fipsEnabled, nil)
 		require.NoError(t, err)
 
 		want := fmt.Sprintf("01-%s-kubelet", role)
@@ -779,6 +780,77 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 			require.Equal(t, fips, renderFor(t, role, true))
 			require.Equal(t, nonFIPS, renderFor(t, role, false))
 			require.NotEqual(t, fips, nonFIPS, "the target's FIPS state must change the output")
+		})
+	}
+}
+
+// TestCrioMetricsProxyTLSPropagation verifies that all three TLS fields
+// (cipher suites, min version, curve preferences) are rendered correctly in
+// criometricsproxy.yaml for all three roles.
+func TestCrioMetricsProxyTLSPropagation(t *testing.T) {
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+						MinTLSVersion: configv1.VersionTLS13,
+					},
+				},
+			},
+		},
+	}
+
+	groupIDs, _ := crypto.TLSGroupsToCurvePreferences([]configv1.TLSGroup{
+		configv1.TLSGroupSecP256r1,
+		configv1.TLSGroupSecP384r1,
+	})
+	groups := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		groups[i] = fmt.Sprintf("%d", id)
+	}
+
+	renderFor := func(t *testing.T, role string, serverTLSGroups []string) string {
+		t.Helper()
+		cc, err := controllerConfigFromFile("./test_data/controller_config_aws.yaml")
+		require.NoError(t, err)
+		if role == arbiterRole {
+			cc.Spec.Infra.Status.ControlPlaneTopology = configv1.HighlyAvailableArbiterMode
+		}
+		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
+			[]byte(`{"dummy":"dummy"}`), apiServer, false, serverTLSGroups)
+		require.NoError(t, err)
+
+		want := fmt.Sprintf("01-%s-kubelet", role)
+		for _, mc := range mcs {
+			if mc.Name != want {
+				continue
+			}
+			ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+			require.NoError(t, err)
+			data, err := ctrlcommon.GetIgnitionFileDataByPath(&ign, "/etc/kubernetes/manifests/criometricsproxy.yaml")
+			require.NoError(t, err)
+			return string(data)
+		}
+		t.Fatalf("%s was not rendered", want)
+		return ""
+	}
+
+	for _, role := range []string{"master", "worker", "arbiter"} {
+		t.Run(role, func(t *testing.T) {
+			withGroups := renderFor(t, role, groups)
+			withoutGroups := renderFor(t, role, nil)
+
+			// Cipher suite and min-version must always appear.
+			// GetSecurityProfileCiphers converts to IANA names before storing in RenderConfig.
+			require.Contains(t, withGroups, "tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+			require.Contains(t, withGroups, "tls-min-version=VersionTLS13")
+
+			// Curve preferences appear only when ServerTLSGroups is set.
+			require.Contains(t, withGroups, "tls-curve-preferences="+strings.Join(groups, ","))
+			require.NotContains(t, withoutGroups, "tls-curve-preferences")
 		})
 	}
 }

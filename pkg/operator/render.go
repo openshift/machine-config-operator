@@ -51,6 +51,7 @@ type renderConfig struct {
 	PointerConfig          string
 	TLSMinVersion          string
 	TLSCipherSuites        []string
+	TLSGroups              []string
 	LogLevel               string
 }
 

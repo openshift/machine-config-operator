@@ -47,6 +47,7 @@ type RenderConfig struct {
 	TLSMinVersion       string
 	TLSCipherSuites     []string
 	TLSCurvePreferences []int32
+	ServerTLSGroups     []string
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string

@@ -149,7 +149,7 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func
 	}
 
 	// Get TLS config from provided settings, or use defaults
-	tlsConfig := GetGoTLSConfig(tlsMinVersion, tlsCipherSuites)
+	tlsConfig := GetGoTLSConfig(tlsMinVersion, tlsCipherSuites, nil)
 
 	klog.Infof("Starting metrics listener on %s with TLS min version: %s", addr, tlsMinVersion)
 	mux := http.NewServeMux()
