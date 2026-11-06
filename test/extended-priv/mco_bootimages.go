@@ -70,7 +70,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		var (
 			duplicatedMachinesetName = fmt.Sprintf("cloned-tc-%s", GetCurrentTestPolarionIDNumber())
-			firstMachineSet          = GetValidManagedMachineResource(oc)
+			firstMachineSet          = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			backdatedImageName       = getBackdatedBootImage(oc.AsAdmin(), firstMachineSet)
 			fakeImageNameNoUpdate    = getFakeNoUpdateBootImage(oc.AsAdmin(), "81403")
 		)
@@ -141,7 +141,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet                 = GetValidManagedMachineResource(oc)
+			machineSet                 = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), "74240")
 			clonedMSName               = "cloned-tc-74240"
@@ -254,7 +254,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
-			machineSet             = GetValidManagedMachineResource(oc)
+			machineSet             = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
 			clonedMSLabelName      = "cloned-tc-74239-label"
@@ -352,7 +352,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
-			machineSet                  = GetValidManagedMachineResource(oc)
+			machineSet                  = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			backdatedImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
@@ -536,7 +536,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = GetValidManagedMachineResource(oc)
+			machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 			labelName            = "test"
 			labelValue           = "update"
@@ -629,7 +629,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			fakeImageName = "fake-image" // not updateable
 
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = GetValidManagedMachineResource(oc)
+			machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			labelName            = "test"
 			labelValue           = "update"
 
@@ -688,7 +688,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
 		var (
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
-			machineSet           = GetValidManagedMachineResource(oc)
+			machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 			arch                 = machineSet.GetArchitectureOrFail()
 		)
@@ -800,8 +800,22 @@ func getCoreOsBootImageFromConfigMapForStream(platform, region string, arch arch
 		return path.Base(baseImageURL), nil
 	case AzurePlatform:
 		coreOsBootImagePath = fmt.Sprintf(`architectures.%s.rhel-coreos-extensions.marketplace.%s.no-purchase-plan.hyperVGen2`, stringArch, "azure")
+	case BaremetalPlatform:
+		rawPath := fmt.Sprintf(`architectures.%s.artifacts.metal.formats.raw\.gz.disk`, stringArch)
+		rawDisk := streamData.Get(rawPath)
+		if !rawDisk.Exists() {
+			return "", fmt.Errorf("metal raw.gz not found for stream '%s', arch %s (path: %s)", streamName, stringArch, rawPath)
+		}
+		url := rawDisk.Get("location").String()
+		sha256 := rawDisk.Get("sha256").String()
+		if url == "" || sha256 == "" {
+			return "", fmt.Errorf("metal raw.gz url or sha256 empty for stream '%s', arch %s", streamName, stringArch)
+		}
+		bootImage := fmt.Sprintf(`{"url":"%s","checksum":"%s"}`, url, sha256)
+		logger.Infof("Boot image for stream %s: %s", streamName, bootImage)
+		return bootImage, nil
 	default:
-		return "", fmt.Errorf("getCoreOsBootImageFromConfigMapForStream is only supported for GCP, Vsphere, Azure, and AWS platforms")
+		return "", fmt.Errorf("getCoreOsBootImageFromConfigMapForStream is only supported for GCP, Vsphere, Azure, AWS and Baremetal platforms")
 	}
 
 	bootImage := streamData.Get(coreOsBootImagePath).String()
@@ -826,6 +840,8 @@ func getCoreOsBootImageURLFromConfigMapForStream(platform string, arch architect
 		platformKey, format = "gcp", "tar.gz"
 	case VspherePlatform:
 		platformKey, format = "vmware", "ova"
+	case BaremetalPlatform:
+		platformKey, format = "metal", "raw.gz"
 	default:
 		return "", fmt.Errorf("getCoreOsBootImageURLFromConfigMapForStream is not supported for platform %s", platform)
 	}
@@ -871,7 +887,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 
 	var (
 		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
-		machineSet             = GetValidManagedMachineResource(oc)
+		machineSet             = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 		backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
 		labelName              = "test"
 		labelValue             = "update"

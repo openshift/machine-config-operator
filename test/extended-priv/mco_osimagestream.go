@@ -119,38 +119,49 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	// AI-assisted: Test case to validate real-time kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87095][OTP] Realtime kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.AMD64)
+		logger.Infof("OK!\n")
 
 		testID := GetCurrentTestPolarionIDNumber()
 		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.AMD64)
 
+		exutil.By(fmt.Sprintf("Create custom MCP %s on %s stream via MachineSet", createdCustomPoolName, OSImageStreamRHEL9))
 		customMcp, _, cleanup, err := CreateCustomMCPWithMachineSetForArchitecture(oc.AsAdmin(), createdCustomPoolName, OSImageStreamRHEL9, 1, architecture.AMD64)
 		defer cleanup()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP with MachineSet for %s", createdCustomPoolName)
+		logger.Infof("OK!\n")
 
 		testKernelTypeAcrossOSImageStreams(oc, osis, customMcp, testID, KernelTypeRealtime, "set-realtime-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate 64k-pages kernel configuration across OS image streams (rhel9 -> rhel10)
 	g.It("[PolarionID:87096][OTP] 64k pages kernel from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", g.Label("NoPlatform:gce"), func() {
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
 		architecture.SkipIfNoNodeWithArchitectures(oc.AsAdmin(), architecture.ARM64)
 		skipTestIfNotSupportedPlatform(oc.AsAdmin(), GCPPlatform)
+		logger.Infof("OK!\n")
 
 		testID := GetCurrentTestPolarionIDNumber()
 		createdCustomPoolName := fmt.Sprintf("tc-%s-%s", testID, architecture.ARM64)
 
+		exutil.By(fmt.Sprintf("Create custom MCP %s on %s stream via MachineSet", createdCustomPoolName, OSImageStreamRHEL9))
 		customMcp, _, cleanup, err := CreateCustomMCPWithMachineSetForArchitecture(oc.AsAdmin(), createdCustomPoolName, OSImageStreamRHEL9, 1, architecture.ARM64)
 		defer cleanup()
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating custom MCP with MachineSet for %s", createdCustomPoolName)
+		logger.Infof("OK!\n")
 
 		testKernelTypeAcrossOSImageStreams(oc, osis, customMcp, testID, KernelType64kPages, "set-64k-pages-kernel.yaml", OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
 	// AI-assisted: Test case to validate extensions configuration survives osImageStream changes (rhel9 -> rhel10)
 	g.It("[PolarionID:87259][OTP] Extensions from rhel9 stream to rhel10 stream [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
+
 		testExtensionsAcrossOSImageStreams(oc, osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})
 
@@ -266,7 +277,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	// AI-assisted: Test case to validate osImageStream inheritance for custom MachineConfigPools
 	g.It("[PolarionID:88122][OTP] Validate osImageStream inheritance for custom MachineConfigPools [Disruptive] [apigroup:machineconfiguration.openshift.io] [apigroup:machine.openshift.io]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
 
 		defaultStream := exutil.OrFail[string](GetDefaultOSImageStream(oc.AsAdmin()))
 		nonDefaultStream := OSImageStreamRHEL9
@@ -278,7 +291,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:88203][OTP] In image-mode, verify the MOSB is triggered when osImageStream is patched [Disruptive] [apigroup:machineconfiguration.openshift.io]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())
-		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		exutil.By("Check preconditions for MachineSet scale-up")
+		SkipOrPrepareForMachineSetScaleUp(oc.AsAdmin(), 1)
+		logger.Infof("OK!\n")
 
 		testMOSBTriggeredOnStreamChange(oc.AsAdmin(), osis, OSImageStreamRHEL9, OSImageStreamRHEL10)
 	})

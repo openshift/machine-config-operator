@@ -289,8 +289,8 @@ func (mcp *MachineConfigPool) GetDegradedMachineCountStatusAsInt() (int, error) 
 
 func (mcp *MachineConfigPool) WaitForPoolToBeSettled(expectedCount int) error {
 	timeout := mcp.estimateWaitDuration()
-	if timeout < 15*time.Minute {
-		timeout = 15 * time.Minute
+	if timeout < 20*time.Minute {
+		timeout = 20 * time.Minute
 	}
 	logger.Infof("Waiting %s for MCP %s to be settled with %d nodes", timeout, mcp.GetName(), expectedCount)
 	var lastReadErr error
@@ -1881,7 +1881,7 @@ func (mcp MachineConfigPool) IsOCL() (bool, error) {
 // new nodes by cloning a ready ManagedMachineResource picked automatically.
 // See CreateCustomMCPFromSource for details.
 func CreateCustomMCPWithMachineSet(oc *exutil.CLI, mcpName, osstream string, numNodes int) (*MachineConfigPool, ManagedMachineResource, func() error, error) {
-	source := GetValidManagedMachineResource(oc)
+	source := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 	return CreateCustomMCPFromSource(oc, mcpName, osstream, numNodes, source)
 }
 
@@ -1895,6 +1895,72 @@ func CreateCustomMCPWithMachineSetForArchitecture(oc *exutil.CLI, mcpName, osstr
 		return nil, nil, noopCleanup, fmt.Errorf("cannot create MCP %s for architecture %s: %w", mcpName, arch, err)
 	}
 	return CreateCustomMCPFromSource(oc, mcpName, osstream, numNodes, source)
+}
+
+// SkipOrPrepareForMachineSetScaleUp checks that the cluster can create new nodes via MachineSet.
+// On baremetal, it checks that there are enough worker nodes to keep at least 2 after
+// freeing numNodes BareMetalHost(s), and scales down a source MachineSet accordingly.
+// The restore is registered via g.DeferCleanup so it runs even if the test fails.
+// Skips the test if the preconditions are not met.
+func SkipOrPrepareForMachineSetScaleUp(oc *exutil.CLI, numNodes int) {
+	source, err := GetValidManagedMachineResource(oc)
+	if err != nil {
+		g.Skip(fmt.Sprintf("Cannot scale up nodes: %s", err))
+	}
+
+	if exutil.CheckPlatform(oc) != BaremetalPlatform {
+		return
+	}
+
+	// Check if there are already free BareMetalHosts
+	availableBMHs := NewNamespacedResourceList(oc, "baremetalhost.metal3.io", MachineAPINamespace)
+	availableBMHs.SetItemsFilter(`?(@.status.provisioning.state=="available")`)
+	freeBMHs, err := availableBMHs.GetAll()
+	if err != nil {
+		logger.Infof("Could not list available BareMetalHosts: %v", err)
+	}
+
+	if len(freeBMHs) >= numNodes {
+		logger.Infof("Baremetal: %d free BareMetalHost(s) available, no need to scale down", len(freeBMHs))
+		return
+	}
+
+	wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+	workerNodes, err := wMcp.GetNodes()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting worker nodes")
+
+	needed := numNodes - len(freeBMHs)
+	minWorkers := needed + 2
+	if len(workerNodes) < minWorkers {
+		g.Skip(fmt.Sprintf("Baremetal cluster has %d worker nodes and %d free BareMetalHost(s), need at least %d more workers to free %d host(s) and keep 2 workers",
+			len(workerNodes), len(freeBMHs), minWorkers, needed))
+	}
+
+	originalReplicas, err := strconv.Atoi(OrFail[string](source.GetReplicaOfSpec()))
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error parsing replicas for %s", source.GetName())
+	if originalReplicas < needed {
+		g.Skip(fmt.Sprintf("Baremetal source %s has %d replicas, need at least %d to scale down", source.GetName(), originalReplicas, needed))
+	}
+
+	g.DeferCleanup(SafeCleanup, func() {
+		logger.Infof("Baremetal: restoring %s to %d replicas", source.GetName(), originalReplicas)
+		o.Expect(source.ScaleTo(originalReplicas)).To(o.Succeed(),
+			"Error restoring scale on %s", source.GetName())
+		wMcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
+		o.Expect(wMcp.WaitForPoolToBeSettled(len(workerNodes))).To(o.Succeed(),
+			"Worker pool did not settle after restoring %s", source.GetName())
+	})
+
+	expectedWorkers := len(workerNodes) - needed
+	logger.Infof("Baremetal: scaling down %s by %d to free BareMetalHost(s) (%d already free)", source.GetName(), needed, len(freeBMHs))
+	o.Expect(source.AddToScale(-needed)).To(o.Succeed(),
+		"Error scaling down %s to free BareMetalHost(s)", source.GetName())
+	o.Expect(wMcp.WaitForPoolToBeSettled(expectedWorkers)).To(o.Succeed(),
+		"Worker pool did not settle after scaling down %s", source.GetName())
+
+	logger.Infof("Baremetal: waiting for %d available BareMetalHost(s)", numNodes)
+	o.Eventually(availableBMHs.GetAll, "20m", "30s").Should(o.HaveLen(numNodes),
+		"Timed out waiting for %d BareMetalHost(s) to become available after deprovisioning", numNodes)
 }
 
 // CreateCustomMCPFromSource creates a custom MCP with the given osImageStream and provisions
