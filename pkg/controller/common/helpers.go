@@ -37,6 +37,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/tools/reference"
@@ -1287,6 +1288,15 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
 // If profile is nil, returns config defined by the Intermediate TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	profileSpec := getTLSProfileSpec(profile)
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// getTLSProfileSpec resolves a TLSSecurityProfile to the effective TLSProfileSpec,
+// falling back to the Intermediate profile when nothing usable is configured.
+func getTLSProfileSpec(profile *configv1.TLSSecurityProfile) *configv1.TLSProfileSpec {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
 		profileType = configv1.TLSProfileIntermediateType
@@ -1308,8 +1318,98 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 	}
 
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return profileSpec
+}
+
+// TLSGroupsOptions describes the target cluster's TLS group policy.
+type TLSGroupsOptions struct {
+	// FIPSEnabled is the target cluster's FIPS state from its MachineConfigs.
+	FIPSEnabled bool
+
+	// Enabled is the target cluster's TLSGroupPreferences feature gate.
+	Enabled bool
+}
+
+// GetSecurityProfileGroups converts profile groups to kubelet curve IDs using the
+// target's FIPS policy. Nil means tlsCurvePreferences should be omitted.
+func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile, opts TLSGroupsOptions) []int32 {
+	if !opts.Enabled {
+		return nil
+	}
+	groups := getTLSProfileSpec(profile).Groups
+	if len(groups) == 0 {
+		return nil
+	}
+
+	curveIDs, unrecognized := crypto.TLSGroupsToCurvePreferences(groups)
+	for _, group := range unrecognized {
+		klog.Warningf("Dropping TLS group %q: not supported by the Go version in use", group)
+	}
+	if opts.FIPSEnabled {
+		curveIDs = FilterFIPSApprovedCurvePreferences(curveIDs)
+	}
+	if len(curveIDs) == 0 {
+		klog.Warningf("All configured TLS groups were filtered out, falling back to platform defaults")
+		return nil
+	}
+	return curveIDs
+}
+
+// FilterFIPSApprovedCurvePreferences drops curve IDs that are not approved under FIPS,
+// preserving order. It returns nil when the input was non-empty and nothing survives, so
+// the tlsCurvePreferences key is omitted rather than rendered as an empty list.
+func FilterFIPSApprovedCurvePreferences(curveIDs []int32) []int32 {
+	if len(curveIDs) == 0 {
+		return nil
+	}
+
+	// Derive the allowlist from library-go
+	approvedIDs, _ := crypto.TLSGroupsToCurvePreferences(crypto.FIPSApprovedTLSGroups(crypto.ValidTLSGroups()))
+	approvedSet := make(map[int32]struct{}, len(approvedIDs))
+	for _, id := range approvedIDs {
+		approvedSet[id] = struct{}{}
+	}
+
+	approved := make([]int32, 0, len(curveIDs))
+	for _, id := range curveIDs {
+		if _, ok := approvedSet[id]; ok {
+			approved = append(approved, id)
+		}
+	}
+	if len(approved) != len(curveIDs) {
+		klog.Warningf("Dropping non-FIPS-approved TLS curve preferences for a FIPS target: configured %v, approved %v", curveIDs, approved)
+	}
+	if len(approved) == 0 {
+		return nil
+	}
+	return approved
+}
+
+// GetSecurityProfileGroupsFromAPIServer resolves groups from the cluster TLS profile.
+func GetSecurityProfileGroupsFromAPIServer(apiServer *configv1.APIServer, opts TLSGroupsOptions) []int32 {
+	if apiServer == nil {
+		return GetSecurityProfileGroups(nil, opts)
+	}
+	return GetSecurityProfileGroups(apiServer.Spec.TLSSecurityProfile, opts)
+}
+
+// IsFIPSEnabledForMachineConfigs reports whether any supplied MachineConfig enables FIPS
+func IsFIPSEnabledForMachineConfigs(configs []*mcfgv1.MachineConfig) bool {
+	for _, cfg := range configs {
+		if cfg != nil && cfg.Spec.FIPS {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFIPSEnabledForCluster reports whether the cluster is a FIPS target.
+func IsFIPSEnabledForCluster(lister mcfglistersv1.MachineConfigLister) (bool, error) {
+	mcs, err := lister.List(labels.Everything())
+	if err != nil {
+		return false, fmt.Errorf("listing MachineConfigs to determine FIPS mode: %w", err)
+	}
+	return IsFIPSEnabledForMachineConfigs(mcs), nil
 }
 
 // Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used

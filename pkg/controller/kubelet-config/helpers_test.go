@@ -176,7 +176,7 @@ func TestReserveSystemCPUs(t *testing.T) {
 				Spec: mcfgv1.KubeletConfigSpec{},
 			}
 
-			kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+			kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 			require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 			require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -232,7 +232,7 @@ func TestCGroupKubeletConfigSpec(t *testing.T) {
 	}
 
 	// Execute: Generate the kubelet ignition files
-	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -290,7 +290,7 @@ func TestEmptyStringOverride(t *testing.T) {
 		},
 	}
 
-	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -343,7 +343,7 @@ func TestPartialUserConfig(t *testing.T) {
 		},
 	}
 
-	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+	kubeletIgnition, _, _, _, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 	require.NoError(t, err, "generateKubeletIgnFiles should not return an error")
 	require.NotNil(t, kubeletIgnition, "kubelet ignition file should not be nil")
 
@@ -391,7 +391,7 @@ func TestSystemCgroupsMismatch(t *testing.T) {
 		},
 	}
 
-	_, _, _, _, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+	_, _, _, _, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 	require.Error(t, err, "generateKubeletIgnFiles should return an error for mismatched cgroups")
 	require.Contains(t, err.Error(), "systemReservedCgroup (/system.slice) must match systemCgroups (/foo.slice)",
 		"error message should indicate cgroup mismatch")
@@ -447,7 +447,7 @@ func TestSystemGomaxprocsGenerateKubeletIgnFiles(t *testing.T) {
 	}
 
 	// systemGomaxprocsBehavior must not override the pool's node-sizing settings.
-	_, _, nodeSizingIgn, systemGomaxprocsIgn, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, mcfgv1.GomaxprocsBehaviorAutosize)
+	_, _, nodeSizingIgn, systemGomaxprocsIgn, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, mcfgv1.GomaxprocsBehaviorAutosize, false)
 	require.NoError(t, err)
 	require.Nil(t, nodeSizingIgn)
 	require.NotNil(t, systemGomaxprocsIgn)
@@ -457,7 +457,7 @@ func TestSystemGomaxprocsGenerateKubeletIgnFiles(t *testing.T) {
 	require.Equal(t, "SYSTEM_GOMAXPROCS_BEHAVIOR=Autosize\n", string(contents))
 
 	// Without systemGomaxprocsBehavior and no autoSizingReserved, no env files are generated.
-	_, _, nodeSizingIgn, systemGomaxprocsIgn, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "")
+	_, _, nodeSizingIgn, systemGomaxprocsIgn, err = generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, "", false)
 	require.NoError(t, err)
 	require.Nil(t, nodeSizingIgn)
 	require.Nil(t, systemGomaxprocsIgn)
@@ -472,7 +472,7 @@ func TestSystemGomaxprocsGenerateKubeletIgnFiles(t *testing.T) {
 			AutoSizingReserved: &autoSize,
 		},
 	}
-	_, _, nodeSizingIgn, systemGomaxprocsIgn, err = generateKubeletIgnFiles(kubeletConfigBoth, originalKubeConfig, mcfgv1.GomaxprocsBehaviorAutosize)
+	_, _, nodeSizingIgn, systemGomaxprocsIgn, err = generateKubeletIgnFiles(kubeletConfigBoth, originalKubeConfig, mcfgv1.GomaxprocsBehaviorAutosize, false)
 	require.NoError(t, err)
 	require.NotNil(t, nodeSizingIgn)
 	require.NotNil(t, systemGomaxprocsIgn)

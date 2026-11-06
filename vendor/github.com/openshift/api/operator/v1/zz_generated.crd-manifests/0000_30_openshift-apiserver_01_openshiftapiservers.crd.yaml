@@ -6,7 +6,6 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: Default
   name: openshiftapiservers.operator.openshift.io
 spec:
   group: operator.openshift.io
@@ -140,6 +139,162 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              encryptionStatus:
+                description: encryptionStatus contains status reports for the KMS
+                  plugin health and its key rotation.
+                minProperties: 1
+                properties:
+                  healthReports:
+                    description: |-
+                      healthReports contains all KMS plugin health reports.
+                      When omitted, no health reports are available.
+                      Each entry must have a unique combination of nodeName and keyID.
+                    items:
+                      properties:
+                        detail:
+                          description: |-
+                            detail contains additional error/health information for the respective KMS plugin.
+                            When omitted, no additional error or health information is provided.
+                            When set, the value must be between 1 and 1024 characters.
+                          maxLength: 1024
+                          minLength: 1
+                          type: string
+                        keyID:
+                          description: |-
+                            keyID is the encryption-key-secret id (kms-{keyID}.sock), a unique identifier of the plugin on that node.
+                            This is not a cryptographic key used to encrypt/decrypt any resources.
+                            The value must be between 1 and 512 characters.
+                          maxLength: 512
+                          minLength: 1
+                          type: string
+                        lastCheckedTime:
+                          description: lastCheckedTime is a timestamp of when the
+                            probe was last checked.
+                          format: date-time
+                          type: string
+                        nodeName:
+                          description: |-
+                            nodeName is the name of the node this instance of the plugin runs on.
+                            The combination of nodeName and keyID makes this health report unique.
+                            The value must be a valid Kubernetes node name: a lowercase RFC 1123 subdomain
+                            consisting of lowercase alphanumeric characters, '-' or '.', starting and ending with
+                            an alphanumeric character, and be at most 253 characters in length.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: nodeName must be a lowercase RFC 1123 subdomain
+                              consisting of lowercase alphanumeric characters, '-'
+                              or '.', and must start and end with an alphanumeric
+                              character
+                            rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                        remoteKeyID:
+                          description: |-
+                            remoteKeyID refers to the remote key identifier from KMS v2 StatusResponse.key_id.
+                            This is not a cryptographic key, but a unique representation of the KEK.
+                            The value must be between 1 and 1024 characters.
+                          maxLength: 1024
+                          minLength: 1
+                          type: string
+                        status:
+                          description: |-
+                            status contains a health indicator for the respective KMS plugin
+                            The field can have three states: healthy, unhealthy, error.
+                            With error and unhealthy containing additional information in Detail.
+                          enum:
+                          - Healthy
+                          - Unhealthy
+                          - Error
+                          maxLength: 512
+                          minLength: 1
+                          type: string
+                      required:
+                      - keyID
+                      - lastCheckedTime
+                      - nodeName
+                      - remoteKeyID
+                      - status
+                      type: object
+                    maxItems: 200
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - nodeName
+                    - keyID
+                    x-kubernetes-list-type: map
+                  preflight:
+                    description: |-
+                      preflight contains the state of KMS preflight validation for this operator.
+                      The preflight validates the KMS provider configuration before it is used
+                      to create a new encryption key, catching configuration issues early such
+                      as incorrect login credentials or an unreachable Vault service.
+                      When omitted, no preflight validation is in progress.
+                    minProperties: 1
+                    properties:
+                      observedConfigHash:
+                        description: |-
+                          observedConfigHash is a hash of the KMS provider configuration and
+                          its referenced resources that has been observed and requires preflight
+                          validation before a new encryption key can be created.
+                          The value must be exactly 8 characters.
+                        maxLength: 8
+                        minLength: 8
+                        type: string
+                        x-kubernetes-validations:
+                        - message: must be a valid base64url encoded value
+                          rule: self.matches('^[A-Za-z0-9_-]*={0,2}$')
+                      result:
+                        description: |-
+                          result contains the outcome of the most recent preflight check.
+                          Preflight is considered passed when result.status is Succeeded and
+                          result.configHash matches observedConfigHash.
+                          When omitted, no preflight check result has been reported yet.
+                        properties:
+                          configHash:
+                            description: |-
+                              configHash is the hash of the configuration that was validated.
+                              This is compared against observedConfigHash to confirm the result
+                              corresponds to the current configuration.
+                              The value must be exactly 8 characters.
+                            maxLength: 8
+                            minLength: 8
+                            type: string
+                            x-kubernetes-validations:
+                            - message: must be a valid base64url encoded value
+                              rule: self.matches('^[A-Za-z0-9_-]*={0,2}$')
+                          remoteKeyID:
+                            description: |-
+                              remoteKeyID is the remote key encryption key identifier from KMS v2
+                              StatusResponse.key_id. This is not a cryptographic key, but a unique
+                              representation of the remote key used to encrypt data.
+                              When omitted, no remote key identifier is available. This is expected
+                              when status is Failed, for example when the KMS provider could not be
+                              reached. When status is Succeeded, remoteKeyID is required.
+                              When set, the value must be between 1 and 1024 characters.
+                            maxLength: 1024
+                            minLength: 1
+                            type: string
+                          status:
+                            description: |-
+                              status indicates the outcome of the preflight check.
+                              Succeeded means the KMS plugin responded to Status, Encrypt, and
+                              Decrypt calls successfully.
+                              Failed means the validation did not pass.
+                            enum:
+                            - Succeeded
+                            - Failed
+                            type: string
+                        required:
+                        - configHash
+                        - status
+                        type: object
+                        x-kubernetes-validations:
+                        - message: remoteKeyID is required when status is Succeeded
+                          rule: self.status != 'Succeeded' || has(self.remoteKeyID)
+                    required:
+                    - observedConfigHash
+                    type: object
+                type: object
               generations:
                 description: generations are used to determine when an item needs
                   to be reconciled or has changed in a way that needs a reaction.
