@@ -965,7 +965,21 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	fipsEnabled, err := ctrlcommon.IsFIPSEnabledForCluster(optr.mcLister)
+	if err != nil {
+		return fmt.Errorf("determining FIPS mode for TLS group filtering: %w", err)
+	}
+
+	groupOpts := ctrlcommon.TLSGroupsOptions{
+		FIPSEnabled: fipsEnabled,
+		Enabled:     optr.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences),
+	}
+	var tlsGroups []string
+	for _, id := range ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer, groupOpts) {
+		tlsGroups = append(tlsGroups, strconv.FormatInt(int64(id), 10))
+	}
+
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), tlsGroups)
 
 	return nil
 }
@@ -2477,7 +2491,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string, tlsGroups []string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2491,6 +2505,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,
 		TLSCipherSuites:        tlsCipherSuites,
+		TLSGroups:              tlsGroups,
 		LogLevel:               logLevel,
 	}
 }

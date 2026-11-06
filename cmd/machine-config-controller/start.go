@@ -46,6 +46,7 @@ var (
 		resourceLockNamespace    string
 		tlsCipherSuites          []string
 		tlsMinVersion            string
+		tlsCurvePreferences      []int32
 		streamsCache             string
 	}
 )
@@ -57,6 +58,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
+	startCmd.PersistentFlags().Int32SliceVar(&startOpts.tlsCurvePreferences, "tls-curve-preferences", nil, "TLS curve preferences as numeric curve IDs for the metrics server")
 	startCmd.PersistentFlags().StringVar(&startOpts.streamsCache, "streams-cache", "/var/cache/mcc", "Directory to use as cache for streams discovery")
 }
 
@@ -149,7 +151,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 			inspectionCache.RegisterEvicter(cacheWarmer)
 		}
 
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctx.Done(), ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites)
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctx.Done(), ctrlcommon.RegisterMCCMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites, startOpts.tlsCurvePreferences)
 
 		controllers := createControllers(ctrlctx, inspectionCache, inspectorFactory, cacheWarmer)
 		draincontroller := drain.New(

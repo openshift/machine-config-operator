@@ -57,7 +57,11 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	// If apiServer==nil, this call will default to the intermediate profile
 	tlsminversion, tlsciphersuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	klog.Infof("Launching bootstrap server with tls min version: %v & cipher suites %v", tlsminversion, tlsciphersuites)
-	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites)
+	// TODO(MCO-2664): call GetSecurityProfileGroupsFromAPIServer here once the TLSGroupPreferences feature gate
+	// is removed. The FeatureGate object is not written to the bootstrap directory, so the gate state
+	// cannot be determined in this process. This only affects fresh installs with a custom TLS profile;
+	// upgrades use the in-cluster MCS which fully respects the profile.
+	tlsConfig := ctrlcommon.GetGoTLSConfig(tlsminversion, tlsciphersuites, nil)
 
 	apiHandler := server.NewServerAPIHandler(bs)
 	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tlsConfig)

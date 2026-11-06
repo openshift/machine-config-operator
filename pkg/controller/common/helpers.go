@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1330,8 +1331,9 @@ type TLSGroupsOptions struct {
 	Enabled bool
 }
 
-// GetSecurityProfileGroups converts profile groups to kubelet curve IDs using the
-// target's FIPS policy. Nil means tlsCurvePreferences should be omitted.
+// GetSecurityProfileGroups converts profile groups to curve IDs for use with
+// kubelet, Go TLS servers (MCS), and kube-rbac-proxy. Nil means the preference
+// list should be omitted, letting the runtime use its built-in defaults.
 func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile, opts TLSGroupsOptions) []int32 {
 	if !opts.Enabled {
 		return nil
@@ -1412,11 +1414,9 @@ func IsFIPSEnabledForCluster(lister mcfglistersv1.MachineConfigLister) (bool, er
 	return IsFIPSEnabledForMachineConfigs(mcs), nil
 }
 
-// Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used
+// Converts tlsMinVersion, tlscipherSuites, and curvePreferences flags to a tlsConfig object that is used
 // by the http.Server() call used in apiserver.NewAPIServer() & apiserver.Serve()
-//
-//nolint:gosec
-func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config {
+func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string, curvePreferences []int32) *tls.Config {
 	// Create tlsConfig from arguments, using k8sapiflag for the uint16 translation
 	tlsMinVersionID, tlsMinVersionErr := k8sapiflag.TLSVersion(tlsMinVersion)
 	tlscipherSuiteIDs, tlscipherSuiteIDsErr := k8sapiflag.TLSCipherSuites(tlscipherSuites)
@@ -1426,8 +1426,15 @@ func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string) *tls.Config 
 		tlsMinVersionID, _ = k8sapiflag.TLSVersion(string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion))
 		tlscipherSuiteIDs, _ = k8sapiflag.TLSCipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers)
 	}
-	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
-	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs}
+	var tlsCurvePreferences []tls.CurveID
+	for _, id := range curvePreferences {
+		if id < 0 || id > math.MaxUint16 {
+			klog.Warningf("Ignoring out-of-range TLS curve preference %d", id)
+			continue
+		}
+		tlsCurvePreferences = append(tlsCurvePreferences, tls.CurveID(id)) //nolint:gosec // bounds-checked above
+	}
+	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs, CurvePreferences: tlsCurvePreferences} //nolint:gosec // G402: MinVersion is set at runtime from API validation
 }
 
 func GetBootstrapAPIServer() (*configv1.APIServer, error) {
