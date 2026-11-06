@@ -167,7 +167,7 @@ func TestNodeDisruptionPolicySpecialAction(t *testing.T) {
 	helpers.AssertMCDLogsContain(t, cs, mcdPod, &nodeUnderTest, fmt.Sprintf("Performing post config change action: Special for config %s", renderedMC))
 
 	// Remove test config, this is the equivalent of deleting a registry
-	cs.MachineconfigurationV1Interface.MachineConfigs().Delete(context.TODO(), testMC.Name, metav1.DeleteOptions{})
+	err = cs.MachineconfigurationV1Interface.MachineConfigs().Delete(context.TODO(), testMC.Name, metav1.DeleteOptions{})
 	require.NoError(t, err, "deleting test machine config failed")
 
 	// Wait for pool to return to old MC before checking actions
