@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1412,7 +1413,6 @@ func IsFIPSEnabledForMachineConfigs(configs []*mcfgv1.MachineConfig) bool {
 // Converts tlsMinVersion, tlscipherSuites, and curvePreferences flags to a tlsConfig object that is used
 // by the http.Server() call used in apiserver.NewAPIServer() & apiserver.Serve()
 //
-//nolint:gosec
 func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string, curvePreferences []int32) *tls.Config {
 	// Create tlsConfig from arguments, using k8sapiflag for the uint16 translation
 	tlsMinVersionID, tlsMinVersionErr := k8sapiflag.TLSVersion(tlsMinVersion)
@@ -1425,10 +1425,13 @@ func GetGoTLSConfig(tlsMinVersion string, tlscipherSuites []string, curvePrefere
 	}
 	var tlsCurvePreferences []tls.CurveID
 	for _, id := range curvePreferences {
-		tlsCurvePreferences = append(tlsCurvePreferences, tls.CurveID(id))
+		if id < 0 || id > math.MaxUint16 {
+			klog.Warningf("Ignoring out-of-range TLS curve preference %d", id)
+			continue
+		}
+		tlsCurvePreferences = append(tlsCurvePreferences, tls.CurveID(id)) //nolint:gosec // bounds-checked above
 	}
-	// This causes a G402: TLS MinVersion too low. (gosec) verify error, possibly because the version is determined at runtime?
-	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs, CurvePreferences: tlsCurvePreferences}
+	return &tls.Config{MinVersion: tlsMinVersionID, CipherSuites: tlscipherSuiteIDs, CurvePreferences: tlsCurvePreferences} //nolint:gosec // G402: MinVersion is set at runtime from API validation
 }
 
 func GetBootstrapAPIServer() (*configv1.APIServer, error) {
