@@ -328,9 +328,9 @@ func validateMCNTransitions(oc *exutil.CLI, machineConfigClient *machineconfigcl
 	ValidateTransitionThroughConditions(oc, machineConfigClient, nodeToTestName, isImageUpdate)
 	logger.Infof("OK!\n")
 
-	// When an update is complete, all conditions other than `Updated` must be false
-	logger.Infof("Checking all conditions other than 'Updated' are False.")
-	o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTestName)).Should(o.BeTrue(), "Error, all conditions must be 'False' when Updated=True.")
+	// When an update is complete, no update-progress condition should remain active.
+	logger.Infof("Checking the MCN has no active update-progress conditions.")
+	o.Expect(ConfirmUpdatedMCNStatus(machineConfigClient, nodeToTestName)).Should(o.BeTrue(), "Error, the MCN has active update-progress conditions while Updated=True.")
 	logger.Infof("OK!\n")
 
 	return

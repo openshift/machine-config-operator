@@ -793,25 +793,13 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	if node.Annotations[constants.MachineConfigDaemonPostConfigAction] == constants.MachineConfigDaemonStateRebooting {
-		klog.Info("Detected Rebooting Annotation, applying MCN.")
-		err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
-			&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
-			nil,
-			metav1.ConditionTrue,
-			metav1.ConditionFalse,
-			node,
-			dn.mcfgClient,
-			dn.fgHandler,
-			pool,
-		)
+		complete, err := dn.reportCompletedReboot(node, pool)
 		if err != nil {
-			klog.Errorf("Error making MCN for Rebooted: %v", err)
+			klog.Errorf("Error reporting completed reboot for node %s: %v", node.Name, err)
 		}
-		removeRebooting := make(map[string]string)
-		removeRebooting[constants.MachineConfigDaemonPostConfigAction] = ""
-		_, err = dn.nodeWriter.SetAnnotations(removeRebooting)
-		if err != nil {
-			klog.Errorf("Could not unset rebooting Anno: %v", err)
+		if !complete {
+			// Retry without degrading the node or blocking daemon startup.
+			dn.queue.AddAfter(key, 10*time.Second)
 		}
 	}
 
@@ -948,6 +936,43 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 	klog.V(4).Infof("Node %s is already synced", node.Name)
 	return nil
+}
+
+// reportCompletedReboot records an MCO reboot only after kubelet reports this boot.
+// It leaves the rebooting annotation in place until the status and marker are written.
+func (dn *Daemon) reportCompletedReboot(node *corev1.Node, pool string) (bool, error) {
+	if dn.bootID == "" || node.Status.NodeInfo.BootID != dn.bootID {
+		klog.V(2).Infof("Waiting for node %s to report the daemon's boot ID", node.Name)
+		return false, nil
+	}
+	// The upgrade monitor does not create an MCN for a pending or provisioning
+	// node, so a nil error in those phases does not guarantee status was written.
+	if node.Status.Phase == corev1.NodePending || node.Status.Phase == corev1.NodePhase("Provisioning") {
+		return false, nil
+	}
+
+	klog.Info("Detected Rebooting Annotation, applying MCN.")
+	if err := upgrademonitor.GenerateAndApplyMachineConfigNodes(
+		&upgrademonitor.Condition{State: mcfgv1.MachineConfigNodeUpdateRebooted, Reason: string(mcfgv1.MachineConfigNodeUpdateRebooted), Message: "Node has rebooted"},
+		nil,
+		metav1.ConditionTrue,
+		metav1.ConditionFalse,
+		node,
+		dn.mcfgClient,
+		dn.fgHandler,
+		pool,
+	); err != nil {
+		return false, fmt.Errorf("updating rebooted MCN condition: %w", err)
+	}
+
+	_, err := dn.nodeWriter.SetAnnotations(map[string]string{
+		constants.MachineConfigDaemonPostConfigAction:                "",
+		constants.MachineConfigDaemonLastObservedBootIDAnnotationKey: dn.bootID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("recording rebooted boot ID: %w", err)
+	}
+	return true, nil
 }
 
 // Validates that the on-disk state matches the currently applied machineconfig
