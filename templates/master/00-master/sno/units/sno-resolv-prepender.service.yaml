@@ -1,0 +1,21 @@
+{{- if isSNOCoreDNSEnabled }}
+name: sno-resolv-prepender.service
+# Started on demand by sno-resolv-prepender.path.
+enabled: false
+contents: |
+  [Unit]
+  Description=Reconcile host DNS with SNO CoreDNS
+  # NetworkManager does not own resolv.conf; image pulls by nodeip-configuration
+  # and kubelet depend on this service, so it must not wait for them.
+  After=NetworkManager.service
+  Wants=NetworkManager.service
+  ConditionPathExists=/etc/kubernetes/manifests/sno-coredns.yaml
+  StartLimitIntervalSec=0
+
+  [Service]
+  Type=oneshot
+  Restart=on-failure
+  RestartSec=5s
+  TimeoutStartSec=90s
+  ExecStart=/usr/local/bin/sno-resolv-prepender.sh
+{{- end }}
