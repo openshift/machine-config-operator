@@ -4,7 +4,7 @@ import "time"
 
 const (
 	// Ignition default version
-	IgnitionDefaultVersion = "3.5.0"
+	IgnitionDefaultVersion = "3.6.0"
 
 	// MachineConfigNamespace mco namespace
 	MachineConfigNamespace = "openshift-machine-config-operator"

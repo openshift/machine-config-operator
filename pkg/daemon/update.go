@@ -22,7 +22,7 @@ import (
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
 	systemddbus "github.com/coreos/go-systemd/v22/dbus"
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"

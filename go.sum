@@ -203,8 +203,8 @@ github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf/go.mod h1:F5haX7
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/coreos/go-systemd/v22 v22.7.0 h1:LAEzFkke61DFROc7zNLX/WA2i5J8gYqe0rSj9KI28KA=
 github.com/coreos/go-systemd/v22 v22.7.0/go.mod h1:xNUYtjHu2EDXbsxz1i41wouACIwT7Ybq9o0BQhMwD0w=
-github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81 h1:uz0f9dymW/05AsgIOxFQDsMp/qpqxh3mOvDf7xeXd+w=
-github.com/coreos/ign-converter v0.0.0-20241125185625-2f773079ca81/go.mod h1:Q7SbzjFkayIfwm+b+nXedvIcP2SFAndA7ET/JPNNc1I=
+github.com/coreos/ign-converter v0.0.0-20260420141348-5351d3e16080 h1:ivROluonEHaBVxpeReCKF+NXrEY4x94ruDPBDpm816M=
+github.com/coreos/ign-converter v0.0.0-20260420141348-5351d3e16080/go.mod h1:55Yc2kROku5woO92UOWCzeBmE94TihthqsZucqetN9k=
 github.com/coreos/ignition v0.35.0 h1:UFodoYq1mOPrbEjtxIsZbThcDyQwAI1owczRDqWmKkQ=
 github.com/coreos/ignition v0.35.0/go.mod h1:WJQapxzEn9DE0ryxsGvm8QnBajm/XsS/PkrDqSpz+bA=
 github.com/coreos/ignition/v2 v2.1.1/go.mod h1:RqmqU64zxarUJa3l4cHtbhcSwfQLpUhv0WVziZwoXvE=
