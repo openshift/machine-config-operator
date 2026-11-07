@@ -36,7 +36,7 @@ var allMarketplaceProducts = []marketplaceProduct{
 	{"34850061-abaf-402d-92df-94325c9e947f", "ROSA"},
 }
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO AWS Marketplace Boot Image Updates", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO AWS Marketplace Boot Image Updates", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -63,7 +63,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 	g.It("[PolarionID:89828][OTP] MCO updates marketplace boot images to the correct product line", g.Label("Platform:aws"), func() {
 		var (
-			testMS = GetValidManagedMachineResource(oc)
+			testMS = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 
 			region = getCurrentRegionOrFail(oc.AsAdmin())
 		)

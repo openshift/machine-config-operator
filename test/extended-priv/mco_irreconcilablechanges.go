@@ -106,7 +106,7 @@ func discoverNVMeByPathDisks(node *Node) []string {
 	return paths
 }
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -197,7 +197,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 2: Create duplicate machineset with custom disks")
-		machineset := GetValidManagedMachineResource(oc.AsAdmin())
+		machineset := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())

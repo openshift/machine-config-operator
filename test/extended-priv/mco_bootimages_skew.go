@@ -16,7 +16,7 @@ const (
 	ocpVersionExceedsSkew   = "4.12.0"
 )
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:BootImageSkewEnforcement]", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive][OCPFeatureGate:BootImageSkewEnforcement]", func() {
 	defer g.GinkgoRecover()
 
 	var (
@@ -104,7 +104,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
 		// Pick a valid managed machine set to test
-		machineSetUnderTest := GetValidManagedMachineResource(oc)
+		machineSetUnderTest := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify
@@ -144,7 +144,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		machineConfiguration.WaitForBootImageSkewEnforcementStatusMode(SkewEnforcementAutomaticMode)
 
 		// Pick a valid managed machine set to test
-		machineSetUnderTest := GetValidManagedMachineResource(oc)
+		machineSetUnderTest := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
 		logger.Infof("MachineSet under test: %s", machineSetUnderTest.GetName())
 
 		// Save and restore full spec to ensure cleanup regardless of what we modify
