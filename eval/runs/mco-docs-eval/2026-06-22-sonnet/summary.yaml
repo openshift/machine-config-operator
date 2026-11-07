@@ -1,0 +1,541 @@
+judges:
+  anti_pattern_rejection:
+    mean: null
+    pass_rate: null
+  authoring_quality:
+    mean: null
+    pass_rate: null
+  budget_check:
+    mean: 0.0
+    pass_rate: 0.0
+  consulted_docs:
+    mean: 1.0
+    pass_rate: 1.0
+  has_response:
+    mean: 1.0
+    pass_rate: 1.0
+  mentions_expected_keywords:
+    mean: null
+    pass_rate: null
+  response_accuracy:
+    mean: null
+    pass_rate: null
+per_case:
+  case-001:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 3578 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-002:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 1790 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-003:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 3720 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-004:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 12569 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-005:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2138 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-006:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 3702 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-007:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 1805 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-008:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 8001 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-009:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 7510 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-010:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 4149 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+  case-011:
+    anti_pattern_rejection:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2726 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+  case-012:
+    anti_pattern_rejection:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2851 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+  case-013:
+    anti_pattern_rejection:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 135 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+  case-014:
+    anti_pattern_rejection:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    authoring_quality:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''authoring''''
+        is false'
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2485 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+  case-015:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2087 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+  case-016:
+    anti_pattern_rejection:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') == ''anti-pattern''''
+        is false'
+      value: null
+    authoring_quality:
+      error: '''str object'' has no attribute ''get'''
+      judge_type: llm
+      value: null
+    budget_check:
+      judge_type: builtin
+      rationale: Cost $11.14 exceeds budget $2.00
+      value: false
+    consulted_docs:
+      judge_type: builtin
+      rationale: No expected_files specified — nothing to verify
+      value: true
+    has_response:
+      judge_type: check
+      rationale: 'Response length: 2882 chars'
+      value: true
+    mentions_expected_keywords:
+      judge_type: check
+      rationale: 'Skipped: condition ''annotations.get(''expected_mentions'')'' is
+        false'
+      value: null
+    response_accuracy:
+      judge_type: llm
+      rationale: 'Skipped: condition ''annotations.get(''category'') in (''navigation'',
+        ''component-usage'', ''architecture'')'' is false'
+      value: null
+run_id: 2026-06-22-sonnet
+run_metrics:
+  cache_hit_rate: 0.940552
+  cost_per_mtok_usd: 0.4064
+  cost_per_turn_usd: 0.030027
+  output_tokens_per_turn: 410.41
