@@ -2,6 +2,10 @@
 
 package v1alpha1
 
+// BGPVIPConfigListerExpansion allows custom methods to be added to
+// BGPVIPConfigLister.
+type BGPVIPConfigListerExpansion interface{}
+
 // InternalReleaseImageListerExpansion allows custom methods to be added to
 // InternalReleaseImageLister.
 type InternalReleaseImageListerExpansion interface{}

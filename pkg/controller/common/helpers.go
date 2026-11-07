@@ -1287,6 +1287,15 @@ func GetSecurityProfileCiphersFromAPIServer(apiServer *configv1.APIServer) (stri
 // Converts the ciphers to IANA names as supported by Kube ServingInfo config.
 // If profile is nil, returns config defined by the Intermediate TLS Profile
 func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	profileSpec := getTLSProfileSpec(profile)
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// getTLSProfileSpec resolves a TLSSecurityProfile to the effective TLSProfileSpec,
+// falling back to the Intermediate profile when nothing usable is configured.
+func getTLSProfileSpec(profile *configv1.TLSSecurityProfile) *configv1.TLSProfileSpec {
 	var profileType configv1.TLSProfileType
 	if profile == nil {
 		profileType = configv1.TLSProfileIntermediateType
@@ -1308,8 +1317,75 @@ func GetSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
 	}
 
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return profileSpec
+}
+
+// GetSecurityProfileGroups extracts the TLS supported groups from a
+// TLSSecurityProfile and converts them to the numeric curve IDs understood by
+// the kubelet's tlsCurvePreferences field. Returns nil when no groups apply.
+// fipsEnabled is whether the nodes this configuration is being rendered for run
+// in FIPS mode. It is deliberately a parameter rather than something derived
+// here from crypto.IsFIPSEnabled(): that reports the FIPS state of the process
+// doing the rendering, which is not always the state of the target nodes. Under
+// HyperShift the rendering happens in a management cluster for nodes in a hosted
+// cluster, and in unit tests the test binary is built without the FIPS flags at
+// all. Keeping it an input makes the rendered output a function of the target
+// alone, which is the property that matters.
+func GetSecurityProfileGroups(profile *configv1.TLSSecurityProfile, fipsEnabled bool) []int32 {
+	if profile == nil || profile.Type != configv1.TLSProfileCustomType || profile.Custom == nil {
+		return nil
+	}
+	groups := profile.Custom.Groups
+	if len(groups) == 0 {
+		return nil
+	}
+
+	if fipsEnabled {
+		// Use library-go's allowlist rather than a local copy so the MCO agrees
+		// with the other operands about what is FIPS-approved. Note it is an
+		// allowlist, so groups added to the API later are excluded until they
+		// are explicitly approved there.
+		approved := crypto.FIPSApprovedTLSGroups(groups)
+		if len(approved) != len(groups) {
+			klog.Warningf("Dropping non-FIPS-approved TLS groups for a FIPS target: configured %v, approved %v", groups, approved)
+		}
+		groups = approved
+	}
+
+	curveIDs, unrecognized := crypto.TLSGroupsToCurvePreferences(groups)
+	for _, group := range unrecognized {
+		klog.Warningf("Dropping TLS group %q: not supported by the Go version in use", group)
+	}
+	if len(curveIDs) == 0 {
+		klog.Warningf("All configured TLS groups were filtered out, falling back to platform defaults")
+		return nil
+	}
+	return curveIDs
+}
+
+// GetSecurityProfileGroupsFromAPIServer extracts the TLS supported groups from
+// an apiServer object. If no apiServer object exists, the defaults apply.
+// fipsEnabled carries the target's FIPS state; see GetSecurityProfileGroups.
+func GetSecurityProfileGroupsFromAPIServer(apiServer *configv1.APIServer, fipsEnabled bool) []int32 {
+	if apiServer == nil {
+		return nil
+	}
+	return GetSecurityProfileGroups(apiServer.Spec.TLSSecurityProfile, fipsEnabled)
+}
+
+// IsFIPSEnabledForMachineConfigs reports whether FIPS is on for the target
+// described by these MachineConfigs. It mirrors how MergeMachineConfigs resolves
+// the field: any MachineConfig setting fips: true turns it on for the pool.
+//
+// This is the target-side signal that belongs in GetSecurityProfileGroups, as
+// opposed to crypto.IsFIPSEnabled(), which describes the renderer.
+func IsFIPSEnabledForMachineConfigs(configs []*mcfgv1.MachineConfig) bool {
+	for _, cfg := range configs {
+		if cfg != nil && cfg.Spec.FIPS {
+			return true
+		}
+	}
+	return false
 }
 
 // Converts tlsMinVersion and tlscipherSuites flags to a tlsConfig object that is used

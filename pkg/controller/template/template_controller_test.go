@@ -126,6 +126,7 @@ func (f *fixture) newController() *Controller {
 
 	c := New(templateDir,
 		i.Machineconfiguration().V1().ControllerConfigs(),
+		i.Machineconfiguration().V1().MachineConfigs(),
 		cinformer.Core().V1().Secrets(),
 		cinformer.Core().V1().Secrets(), // iriSecretsInformer: reuse same factory in tests; not exercised here
 		iriInformers.Machineconfiguration().V1().InternalReleaseImages(),
@@ -309,7 +310,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +340,7 @@ func TestDoNothing(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +376,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +414,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +433,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +470,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := []byte(`{"dummy": "dummy"}`)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +534,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 
 func TestSystemGomaxprocsDropins(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +566,7 @@ func TestSystemGomaxprocsDropins(t *testing.T) {
 
 func TestSystemGomaxprocsCPUQuantities(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

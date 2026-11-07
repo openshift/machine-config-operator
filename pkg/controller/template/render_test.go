@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -80,7 +82,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -141,7 +143,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -234,14 +236,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -252,7 +254,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -429,7 +431,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}
@@ -605,7 +607,7 @@ func TestIsBGPVIPManagement(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, c.name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, c.name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error, got: %v", err)
 			}
@@ -659,7 +661,7 @@ func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
 			bm.APIServerInternalIPs = tc.apiVIPs
 			bm.IngressIPs = tc.ingressVIPs
 
-			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, templateDir)
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
 			if err != nil {
 				t.Fatalf("failed to generate machine configs: %v", err)
 			}
@@ -701,6 +703,82 @@ func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
 			// the ingress instance is rendered for every role (templates/common)
 			checkFile(masterRole, tc.wantIngPath, tc.wantIngAddr)
 			checkFile(workerRole, tc.wantIngPath, tc.wantIngAddr)
+		})
+	}
+}
+
+// TestTLSCurvePreferencesFollowTargetFIPS covers the template rendering layer of
+// the property in ctrlcommon.TestGetSecurityProfileGroupsIndependentOfRenderer:
+// the kubelet.conf written for a role depends on the target's FIPS state, which
+// arrives as an argument, and on nothing about the process doing the rendering.
+func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+						MinTLSVersion: configv1.VersionTLS12,
+						Groups: []configv1.TLSGroup{
+							configv1.TLSGroupX25519MLKEM768,
+							configv1.TLSGroupSecP256r1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// All three roles carry their own copy of the tlsCurvePreferences block in
+	// separate template files, so each is checked: a change applied to one and
+	// missed on the others is exactly the kind of drift worth catching.
+	renderFor := func(t *testing.T, role string, fipsEnabled bool) string {
+		t.Helper()
+		cc, err := controllerConfigFromFile("./test_data/controller_config_aws.yaml")
+		require.NoError(t, err)
+		if role == arbiterRole {
+			// 01-arbiter-kubelet is only rendered for arbiter deployments.
+			cc.Spec.Infra.Status.ControlPlaneTopology = configv1.HighlyAvailableArbiterMode
+		}
+
+		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
+			[]byte(`{"dummy":"dummy"}`), apiServer, fipsEnabled)
+		require.NoError(t, err)
+
+		want := fmt.Sprintf("01-%s-kubelet", role)
+		for _, mc := range mcs {
+			if mc.Name != want {
+				continue
+			}
+			ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+			require.NoError(t, err)
+			data, err := ctrlcommon.GetIgnitionFileDataByPath(&ign, "/etc/kubernetes/kubelet.conf")
+			require.NoError(t, err)
+			return string(data)
+		}
+		t.Fatalf("%s was not rendered", want)
+		return ""
+	}
+
+	for _, role := range []string{"master", "worker", "arbiter"} {
+		t.Run(role, func(t *testing.T) {
+			nonFIPS := renderFor(t, role, false)
+			fips := renderFor(t, role, true)
+
+			// 4588 is X25519MLKEM768, which library-go's allowlist excludes; 23 is
+			// secp256r1, which it permits.
+			require.Contains(t, nonFIPS, "4588", "a non-FIPS target keeps the post-quantum group")
+			require.Contains(t, nonFIPS, "23")
+			require.NotContains(t, fips, "4588", "a FIPS target drops the non-approved group")
+			require.Contains(t, fips, "23", "a FIPS target keeps the approved group")
+
+			// Same target, rendered twice, byte-identical. The renderer contributes
+			// nothing of its own.
+			require.Equal(t, fips, renderFor(t, role, true))
+			require.Equal(t, nonFIPS, renderFor(t, role, false))
+			require.NotEqual(t, fips, nonFIPS, "the target's FIPS state must change the output")
 		})
 	}
 }

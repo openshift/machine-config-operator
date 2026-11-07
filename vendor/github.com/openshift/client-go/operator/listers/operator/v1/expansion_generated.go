@@ -34,6 +34,10 @@ type DNSListerExpansion interface{}
 // EtcdLister.
 type EtcdListerExpansion interface{}
 
+// IngressListerExpansion allows custom methods to be added to
+// IngressLister.
+type IngressListerExpansion interface{}
+
 // IngressControllerListerExpansion allows custom methods to be added to
 // IngressControllerLister.
 type IngressControllerListerExpansion interface{}
