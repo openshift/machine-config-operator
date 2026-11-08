@@ -1,8 +1,61 @@
 package extended
 
 import (
+	"context"
+
+	o "github.com/onsi/gomega"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	machineconfigclient "github.com/openshift/client-go/machineconfiguration/clientset/versioned"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
+	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// ConfirmUpdatedMCNStatus checks for Updated=True and no active update phase.
+// Resumed=True means normal operations have resumed; manually observed actions
+// such as Cordoned=True can also coexist with an updated node.
+func ConfirmUpdatedMCNStatus(clientSet *machineconfigclient.Clientset, mcnName string) bool {
+	mcn, err := clientSet.MachineconfigurationV1().MachineConfigNodes().Get(context.TODO(), mcnName, metav1.GetOptions{})
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	updated := false
+	for _, condition := range mcn.Status.Conditions {
+		if condition.Type == string(mcfgv1.MachineConfigNodeUpdated) {
+			updated = condition.Status == metav1.ConditionTrue
+			continue
+		}
+		if condition.Status != metav1.ConditionFalse && !isCompletedMCNCondition(condition) {
+			logger.Infof("Node '%s' has active or unknown condition '%s' with status '%s'", mcnName, condition.Type, condition.Status)
+			return false
+		}
+	}
+	return updated
+}
+
+// isCompletedMCNCondition identifies true conditions that do not indicate an active update.
+func isCompletedMCNCondition(condition metav1.Condition) bool {
+	return condition.Status == metav1.ConditionTrue &&
+		(condition.Type == string(mcfgv1.MachineConfigNodeResumed) || isObservedNodeActionCondition(condition))
+}
+
+// isObservedNodeActionCondition distinguishes manual node actions from update phases.
+func isObservedNodeActionCondition(condition metav1.Condition) bool {
+	if condition.Status != metav1.ConditionTrue {
+		return false
+	}
+	switch mcfgv1.StateProgress(condition.Type) {
+	case mcfgv1.MachineConfigNodeUpdateCordoned:
+		return condition.Reason == "NodeUnschedulable"
+	case mcfgv1.MachineConfigNodeUpdateDrained:
+		return condition.Reason == "NoDrainablePods"
+	case mcfgv1.MachineConfigNodeUpdateUncordoned:
+		return condition.Reason == "NodeUncordoned"
+	case mcfgv1.MachineConfigNodeUpdateRebooted:
+		return condition.Reason == "BootIDChanged"
+	default:
+		return false
+	}
+}
 
 // MachineConfigNode resource type declaration
 type MachineConfigNode struct {
