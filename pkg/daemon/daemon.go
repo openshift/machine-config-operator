@@ -946,12 +946,8 @@ func (dn *Daemon) syncNode(ctx context.Context, key string) error {
 	return nil
 }
 
-// reportCompletedReboot records an MCO reboot only after kubelet reports this boot.
+// reportCompletedRebootWithContext records an MCO reboot only after kubelet reports this boot.
 // It leaves the rebooting annotation in place until the status and marker are written.
-func (dn *Daemon) reportCompletedReboot(node *corev1.Node, pool string) (bool, error) {
-	return dn.reportCompletedRebootWithContext(context.Background(), node, pool)
-}
-
 func (dn *Daemon) reportCompletedRebootWithContext(ctx context.Context, node *corev1.Node, pool string) (bool, error) {
 	if dn.bootID == "" || node.Status.NodeInfo.BootID != dn.bootID {
 		klog.V(2).Infof("Waiting for node %s to report the daemon's boot ID", node.Name)
