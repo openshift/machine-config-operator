@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime/debug"
 	"time"
 
+	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	bootimagecontroller "github.com/openshift/machine-config-operator/pkg/controller/bootimage"
@@ -70,6 +72,8 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+
+	logFIPSProbe()
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
@@ -282,6 +286,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 		template.New(
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.KubeInformerFactory.Core().V1().Secrets(),
 			ctx.InformerFactory.Machineconfiguration().V1().InternalReleaseImages(),
@@ -293,6 +298,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 		kubeletconfig.New(
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
@@ -360,4 +366,33 @@ func createControllers(ctx *ctrlcommon.ControllerContext, inspectionCache *image
 	)
 
 	return controllers
+}
+
+// DO NOT MERGE -- temporary FIPS probe, revert before merging.
+//
+// Answers whether library-go's FIPS filtering would actually engage in this
+// process. crypto.IsFIPSEnabled() is crypto/fips140.Enabled(), which reports only
+// the Go-native FIPS mode (GODEBUG=fips140=on). crypto/tls enforces FIPS from a
+// second, independent trigger too: crypto/tls/fipsonly imported in a Go+BoringCrypto
+// build calls fips140tls.Force() directly, leaving fips140.Enabled() false while TLS
+// enforcement is on.
+//
+// So on a FIPS cluster, IsFIPSEnabled()=false together with a GOEXPERIMENT naming
+// boringcrypto or strictfipsruntime means the filter in
+// crypto.GetSecurityProfileGroups would silently never fire, and the TLS groups fix
+// needs a different FIPS signal.
+func logFIPSProbe() {
+	klog.Infof("FIPS probe: crypto.IsFIPSEnabled()=%t", crypto.IsFIPSEnabled())
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		klog.Infof("FIPS probe: build info unavailable")
+		return
+	}
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "GOEXPERIMENT", "CGO_ENABLED", "-tags", "GOFIPS140":
+			klog.Infof("FIPS probe: build %s=%q", setting.Key, setting.Value)
+		}
+	}
 }
