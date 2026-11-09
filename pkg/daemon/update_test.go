@@ -50,7 +50,7 @@ func setupTempDirWithEtc(t *testing.T) (string, func()) {
 	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
 	etcDir := filepath.Join(testDir, "etc")
 	err := os.MkdirAll(etcDir, 0o755)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	oldOrigParentDirPath := origParentDirPath
 	oldNoOrigParentDirPath := noOrigParentDirPath
