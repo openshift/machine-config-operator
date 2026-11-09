@@ -36,3 +36,9 @@ contents:
       {{- range .TLSCipherSuites }}
         - {{ . }}
       {{- end }}
+    {{- if .TLSCurvePreferences }}
+    tlsCurvePreferences:
+      {{- range .TLSCurvePreferences }}
+        - {{ . }}
+      {{- end }}
+    {{- end }}

@@ -40,3 +40,18 @@ contents:
       {{- range .TLSCipherSuites }}
         - {{ . }}
       {{- end }}
+    # DO NOT MERGE -- temporary FIPS probe, revert before merging.
+    #
+    # Replaces the templated block so exactly one tlsCurvePreferences key is
+    # emitted; two keys would make kubelet fail to parse the file, which would
+    # look like a curve rejection and give a false positive.
+    #
+    # Worker only, so the control plane stays up and must-gather still works.
+    # 4588 and 29 are absent from every FIPS curve allowlist, 23 is on all of
+    # them. If the kubelet skips non-approved curves it negotiates P-256 and the
+    # workers go Ready; if it hard-rejects them the workers stay NotReady and the
+    # reason should be in the worker kubelet journal in the gather artifacts.
+    tlsCurvePreferences:
+      - 4588   # X25519MLKEM768
+      - 29     # X25519
+      - 23     # P-256

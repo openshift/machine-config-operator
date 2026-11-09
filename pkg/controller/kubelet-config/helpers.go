@@ -34,6 +34,7 @@ const (
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
+	kubeletConfigPath             = "/etc/kubernetes/kubelet.conf"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -91,7 +92,7 @@ func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 
 func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
+	r := ctrlcommon.NewIgnFileBytesOverwriting(kubeletConfigPath, yamlConfig)
 	return &r
 }
 
@@ -198,7 +199,7 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
-		if c.Path == "/etc/kubernetes/kubelet.conf" {
+		if c.Path == kubeletConfigPath {
 			return &c, nil
 		}
 	}
@@ -357,6 +358,17 @@ func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string
 	return fmt.Sprintf("%s-%s-%s-kubelet", managedKubeletConfigKeyPrefix, pool.Name, pool.ObjectMeta.UID)
 }
 
+// hasCustomTLSGroups reports whether a profile carries TLS groups that the MCO
+// would actually act on. It mirrors the condition in
+// ctrlcommon.GetSecurityProfileGroups: groups outside a Custom profile are
+// ignored, so they cannot conflict with anything.
+func hasCustomTLSGroups(profile *osev1.TLSSecurityProfile) bool {
+	return profile != nil &&
+		profile.Type == osev1.TLSProfileCustomType &&
+		profile.Custom != nil &&
+		len(profile.Custom.Groups) > 0
+}
+
 // validates a KubeletConfig and returns an error if invalid
 // nolint:gocyclo
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
@@ -369,6 +381,11 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	kcDecoded, err := DecodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
 	if err != nil {
 		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
+	}
+
+	// Reject only the ambiguous case where tlsCurvePreferences intent is expressed both in the KubeletConfiguration and in the KubeletConfig CR's spec.
+	if len(kcDecoded.TLSCurvePreferences) > 0 && hasCustomTLSGroups(cfg.Spec.TLSSecurityProfile) {
+		return fmt.Errorf("KubeletConfiguration: tlsCurvePreferences may not be set together with spec.tlsSecurityProfile.custom.groups; remove one of them (tlsCurvePreferences contains: %v)", kcDecoded.TLSCurvePreferences)
 	}
 
 	// Check all the fields a user cannot set within the KubeletConfig CR.
