@@ -3,9 +3,21 @@ dropins:
   - name: 10-skip-on-first-join.conf
     contents: |
       # Only wait for chrony to sync when we're already a node.
-      # This reduces node bootstrapping by 10-24 seconds depending on the platform
-      # by allowing the Kubelet to start retrieving images that are required to achieve
-      # NodeReady. This also relies on the assumption that chrony sync'd during the first
-      # (previous) boot where rpm-ostree rebase takes 30+ seconds.
+      # This reduces node bootstrapping by 10-24 seconds depending on the
+      # platform by allowing the Kubelet to start retrieving images that are
+      # required to achieve NodeReady. This also relies on the assumption that
+      # chrony sync'd during the first (previous) boot where rpm-ostree rebase
+      # takes 30+ seconds.
       [Unit]
       ConditionPathExists=/var/lib/kubelet/pki/kubelet-client-current.pem
+  - name: 20-after-ovs-configuration.conf
+    contents: |
+      [Unit]
+      # configure-ovs.sh moves the node IP and default route onto br-ex. Until
+      # it finishes the NTP sources are unreachable and chrony-wait just burns
+      # its timeout, which on slower boots is enough to fail the unit and lose
+      # the time sync kubelet-dependencies.target waits for.
+      # Ordering only, no Wants=: ovs-configuration.service is not active on
+      # non-OVN clusters and must not be pulled in there.
+      # See https://issues.redhat.com/browse/OCPBUGS-128502
+      After=ovs-configuration.service
