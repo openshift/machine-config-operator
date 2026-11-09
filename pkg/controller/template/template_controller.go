@@ -61,6 +61,7 @@ type Controller struct {
 
 	client                  mcfgclientset.Interface
 	kubeClient              clientset.Interface
+	featureGateHandler      ctrlcommon.FeatureGatesHandler
 	eventRecorder           record.EventRecorder
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
@@ -92,16 +93,18 @@ func New(
 	apiserverInformer configinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	featureGateHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1clientset.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:  templatesDir,
-		client:        mcfgClient,
-		kubeClient:    kubeClient,
-		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
+		templatesDir:       templatesDir,
+		client:             mcfgClient,
+		kubeClient:         kubeClient,
+		featureGateHandler: featureGateHandler,
+		eventRecorder:      ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig[string](
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "machineconfigcontroller-templatecontroller"}),
@@ -178,6 +181,14 @@ func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
 		return
 	}
 
+	if ctrl.featureGateHandler.Enabled(ctrlcommon.MultiSecretGlobalPullConfig) &&
+		secret.Namespace == ctrlcommon.OpenshiftConfigNamespace &&
+		secret.Name == ctrlcommon.GlobalPullSecretMergedName {
+		ctrl.enqueueController()
+		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
+		return
+	}
+
 	// Check if this is the configured global pull secret
 	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -214,7 +225,7 @@ func (ctrl *Controller) updateSecret(old, newObj interface{}) {
 
 	// Only trigger resync if the secret data actually changed
 	// This prevents log spam from informer resyncs and watch reconnections
-	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) {
+	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) || oldSecret.Type != newSecret.Type {
 		ctrl.filterSecret(newSecret)
 	}
 }
@@ -235,15 +246,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	}
 
 	klog.V(4).Infof("Delete Secret %s/%s", secret.Namespace, secret.Name)
-
-	if secret.Name == "pull-secret" {
-		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-		if err != nil {
-			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#w", err))
-			return
-		}
-		klog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
-	}
+	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) filterAPIServer(apiServer *configv1.APIServer) {
@@ -559,14 +562,10 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	var clusterPullSecretRaw []byte
 
 	if cfg.Spec.PullSecret != nil {
-		clusterPullSecret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(context.TODO(), cfg.Spec.PullSecret.Name, metav1.GetOptions{})
+		clusterPullSecretRaw, err = ctrl.getClusterPullSecret(cfg)
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, err)
 		}
-		if clusterPullSecret.Type != corev1.SecretTypeDockerConfigJson {
-			return ctrl.syncFailingStatus(cfg, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, clusterPullSecret.Type))
-		}
-		clusterPullSecretRaw = clusterPullSecret.Data[corev1.DockerConfigJsonKey]
 	}
 
 	// If IRI is in use, merge its registry credentials into the pull secret so
@@ -611,6 +610,40 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 
 	return ctrl.syncCompletedStatus(cfg)
+}
+
+func (ctrl *Controller) getClusterPullSecret(cfg *mcfgv1.ControllerConfig) ([]byte, error) {
+	if !ctrl.featureGateHandler.Enabled(ctrlcommon.MultiSecretGlobalPullConfig) {
+		return ctrl.getValidatedPullSecret(cfg.Spec.PullSecret.Namespace, cfg.Spec.PullSecret.Name)
+	}
+
+	mergedPullSecret, err := ctrl.kubeClient.CoreV1().Secrets(ctrlcommon.OpenshiftConfigNamespace).Get(context.TODO(), ctrlcommon.GlobalPullSecretMergedName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return ctrl.getValidatedPullSecret(cfg.Spec.PullSecret.Namespace, cfg.Spec.PullSecret.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return validatedPullSecretData(mergedPullSecret)
+}
+
+func (ctrl *Controller) getValidatedPullSecret(namespace, name string) ([]byte, error) {
+	secret, err := ctrl.kubeClient.CoreV1().Secrets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return validatedPullSecretData(secret)
+}
+
+func validatedPullSecretData(secret *corev1.Secret) ([]byte, error) {
+	if secret.Type != corev1.SecretTypeDockerConfigJson {
+		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type)
+	}
+	data, ok := secret.Data[corev1.DockerConfigJsonKey]
+	if !ok || len(data) == 0 {
+		return nil, fmt.Errorf("expected secret %s/%s to contain %s", secret.Namespace, secret.Name, corev1.DockerConfigJsonKey)
+	}
+	return data, nil
 }
 
 // clearImageURLs clears OSImageURL and BaseOSExtensionsContainerImage from template-generated
