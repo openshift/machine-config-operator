@@ -29,6 +29,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
@@ -52,8 +53,11 @@ type fixture struct {
 	client    *fake.Clientset
 	oseclient *oseconfigfake.Clientset
 
-	ccLister        []*mcfgv1.ControllerConfig
-	mcpLister       []*mcfgv1.MachineConfigPool
+	ccLister  []*mcfgv1.ControllerConfig
+	mcpLister []*mcfgv1.MachineConfigPool
+	// mcLister supplies the MachineConfigs the controller reads the target's
+	// FIPS state from.
+	mcLister        []*mcfgv1.MachineConfig
 	mckLister       []*mcfgv1.KubeletConfig
 	featLister      []*osev1.FeatureGate
 	nodeLister      []*osev1.Node
@@ -222,6 +226,7 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
+		i.Machineconfiguration().V1().MachineConfigs(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
 		featinformer.Config().V1().FeatureGates(),
@@ -232,7 +237,10 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 		f.oseclient,
 		fgHandler,
 	)
+
+	c.tlsGroupPreferencesEnabled = fgHandler.Enabled(features.FeatureGateTLSGroupPreferences)
 	c.mcpListerSynced = alwaysReady
+	c.mcListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.featListerSynced = alwaysReady
@@ -250,6 +258,9 @@ func (f *fixture) newController(fgHandler ctrlcommon.FeatureGatesHandler) *Contr
 	}
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.mcLister {
+		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.mckLister {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(c)
@@ -1019,6 +1030,12 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 				MaxPods: 100,
 			},
 		},
+		{
+			name: "raw tlsCurvePreferences alone stays allowed",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				TLSCurvePreferences: []int32{4588},
+			},
+		},
 	}
 
 	// Failure Tests
@@ -1037,6 +1054,69 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+// TestValidateUserKubeletConfigTLSCurvePreferences pins the one case the raw
+// tlsCurvePreferences field is rejected in.
+// tlsCurvePreferences in the raw kubelet config may be set alongside any TLS profile: the raw
+// value overrides the profile at merge time, so the combination is accepted rather than rejected.
+func TestValidateUserKubeletConfigTLSCurvePreferences(t *testing.T) {
+	customProfile := func(groups ...osev1.TLSGroup) *osev1.TLSSecurityProfile {
+		return &osev1.TLSSecurityProfile{
+			Type: osev1.TLSProfileCustomType,
+			Custom: &osev1.CustomTLSProfile{
+				TLSProfileSpec: osev1.TLSProfileSpec{
+					Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					MinTLSVersion: osev1.VersionTLS12,
+					Groups:        groups,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		raw     []int32
+		profile *osev1.TLSSecurityProfile
+	}{
+		{
+			name: "neither set",
+		},
+		{
+			name: "raw only, as an upgraded cluster would have it",
+			raw:  []int32{23, 29},
+		},
+		{
+			name:    "groups only",
+			profile: customProfile(osev1.TLSGroupSecP256r1),
+		},
+		{
+			name:    "both set, raw wins at merge time",
+			raw:     []int32{23, 29},
+			profile: customProfile(osev1.TLSGroupSecP256r1),
+		},
+		{
+			name:    "raw with a Custom profile carrying no groups",
+			raw:     []int32{23},
+			profile: customProfile(),
+		},
+		{
+			name:    "raw with a predefined profile",
+			raw:     []int32{23},
+			profile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			kc := newKubeletConfig(test.name,
+				&kubeletconfigv1beta1.KubeletConfiguration{TLSCurvePreferences: test.raw},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+			kc.Spec.TLSSecurityProfile = test.profile
+
+			require.NoError(t, validateUserKubeletConfig(kc))
+		})
 	}
 }
 
@@ -1637,6 +1717,148 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 }
 
 // This test ensures that that the rendering works properly for all types of TLS security profiles
+func TestKubeletConfigTLSGroupsOverride(t *testing.T) {
+	custom := func(groups ...osev1.TLSGroup) *osev1.TLSSecurityProfile {
+		return &osev1.TLSSecurityProfile{
+			Type: osev1.TLSProfileCustomType,
+			Custom: &osev1.CustomTLSProfile{
+				TLSProfileSpec: osev1.TLSProfileSpec{
+					Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					MinTLSVersion: osev1.VersionTLS12,
+					Groups:        groups,
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		apiServer  *osev1.TLSSecurityProfile
+		kubelet    *osev1.TLSSecurityProfile
+		rawCurves  []int32
+		targetFIPS bool
+		want       []int32
+	}{
+		{
+			name: "default Intermediate groups apply with no profiles",
+			want: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:    "KubeletConfig groups apply with no cluster-wide profile",
+			kubelet: custom(osev1.TLSGroupSecP256r1, osev1.TLSGroupX25519),
+			want:    []int32{23, 29},
+		},
+		{
+			name:      "KubeletConfig groups win over APIServer groups",
+			apiServer: custom(osev1.TLSGroupX25519),
+			kubelet:   custom(osev1.TLSGroupSecP384r1),
+			want:      []int32{24},
+		},
+		{
+			name:      "a named KubeletConfig profile replaces inherited Custom groups",
+			apiServer: custom(osev1.TLSGroupX25519),
+			kubelet:   &osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType},
+			want:      []int32{4588, 29, 23, 24},
+		},
+		{
+			name:      "a Custom KubeletConfig profile without groups clears inherited groups",
+			apiServer: custom(osev1.TLSGroupX25519),
+			kubelet:   custom(),
+		},
+		{
+			name:      "APIServer groups survive when the KubeletConfig sets no profile",
+			apiServer: custom(osev1.TLSGroupX25519),
+			want:      []int32{29},
+		},
+		{
+			name:      "raw curves override APIServer groups",
+			apiServer: custom(osev1.TLSGroupX25519),
+			rawCurves: []int32{23},
+			want:      []int32{23},
+		},
+		{
+			name:      "non-FIPS target keeps raw curves",
+			rawCurves: []int32{4588},
+			want:      []int32{4588},
+		},
+		{
+			name:       "FIPS target drops non-approved raw curves",
+			rawCurves:  []int32{4588},
+			targetFIPS: true,
+			want:       nil,
+		},
+		{
+			name:       "FIPS target keeps only approved raw curves",
+			rawCurves:  []int32{23, 4588},
+			targetFIPS: true,
+			want:       []int32{23},
+		},
+	}
+
+	for _, gateEnabled := range []bool{false, true} {
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("gate=%t/%s", gateEnabled, test.name), func(t *testing.T) {
+				f := newFixture(t)
+				fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+				if gateEnabled {
+					fgHandler = ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{features.FeatureGateTLSGroupPreferences}, nil)
+				}
+
+				f.apiserverLister = []*osev1.APIServer{{
+					ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+					Spec:       osev1.APIServerSpec{TLSSecurityProfile: test.apiServer},
+				}}
+				f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType))
+				f.mcpLister = append(f.mcpLister, helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"))
+				if test.targetFIPS {
+					f.mcLister = append(f.mcLister, fipsMachineConfig("master"))
+				}
+
+				kc := newKubeletConfig("tls-groups", &kubeletconfigv1beta1.KubeletConfiguration{TLSCurvePreferences: test.rawCurves},
+					metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+				kc.Spec.TLSSecurityProfile = test.kubelet
+				f.mckLister = append(f.mckLister, kc)
+				f.objects = append(f.objects, kc)
+
+				ctrl := f.newController(fgHandler)
+				require.NoError(t, ctrl.syncHandler(getKey(kc, t)))
+
+				got := renderedKubeletConfig(t, ctrl, "99-master-generated-kubelet")
+				want := test.want
+				if !gateEnabled && len(test.rawCurves) == 0 {
+					want = nil
+				}
+				require.Equal(t, want, got.TLSCurvePreferences)
+			})
+		}
+	}
+}
+
+// renderedKubeletConfig pulls /etc/kubernetes/kubelet.conf back out of a generated
+// MachineConfig and decodes it.
+func renderedKubeletConfig(t *testing.T, ctrl *Controller, mcName string) *kubeletconfigv1beta1.KubeletConfiguration {
+	t.Helper()
+
+	mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
+	require.NoError(t, err)
+	ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	require.NoError(t, err)
+
+	for _, file := range ign.Storage.Files {
+		if file.Path != kubeletConfigPath {
+			continue
+		}
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
+		require.NoError(t, err)
+		decoded, err := DecodeKubeletConfig(contents)
+		require.NoError(t, err)
+		return decoded
+	}
+
+	t.Fatalf("%s does not contain /etc/kubernetes/kubelet.conf", mcName)
+	return nil
+}
+
 func TestKubeletConfigTLSRender(t *testing.T) {
 	TestCases := []struct {
 		name      string
@@ -1692,6 +1914,24 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Custom TLS profile with groups",
+			apiserver: &osev1.APIServer{
+				ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+				Spec: osev1.APIServerSpec{
+					TLSSecurityProfile: &osev1.TLSSecurityProfile{
+						Type: osev1.TLSProfileCustomType,
+						Custom: &osev1.CustomTLSProfile{
+							TLSProfileSpec: osev1.TLSProfileSpec{
+								Ciphers:       []string{"TLS_AES_128_GCM_SHA256"},
+								MinTLSVersion: osev1.VersionTLS13,
+								Groups:        []osev1.TLSGroup{osev1.TLSGroupX25519MLKEM768, osev1.TLSGroupX25519},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range TestCases {
@@ -1704,7 +1944,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 			ctrl := f.newController(fgHandler)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver, ctrlcommon.TLSGroupsOptions{})
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
@@ -1724,12 +1964,21 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 
 			require.Equal(t, originalKubeConfig.TLSCipherSuites, expectedTLSCipherSuites)
 			require.Equal(t, originalKubeConfig.TLSMinVersion, expectedTLSMinVersion)
+
+			var expectedTLSCurvePreferences []int32
+			if testCase.apiserver != nil {
+				expectedTLSCurvePreferences = ctrlcommon.GetSecurityProfileGroups(testCase.apiserver.Spec.TLSSecurityProfile, ctrlcommon.TLSGroupsOptions{})
+			}
+			require.Equal(t, expectedTLSCurvePreferences, originalKubeConfig.TLSCurvePreferences)
+			if expectedTLSCurvePreferences == nil {
+				require.NotContains(t, string(contents), "tlsCurvePreferences")
+			}
 		})
 	}
 }
 
-// This test ensures that a user defined kubeletConfiguration with a TLS profile will override
-// the TLS profile specified by the APIServer object
+// This test ensures that a user defined kubeletConfiguration overrides the TLS profile
+// specified by the APIServer object and the one under the KubeletConfig CR's own spec.
 func TestKubeletConfigTLSOverride(t *testing.T) {
 	f := newFixture(t)
 	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
@@ -1753,6 +2002,18 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	overrideTLSMinVersion, overrideTLSCiphers := ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType})
 	userDefinedKC := newKubeletConfig("tls-override", &kubeletconfigv1beta1.KubeletConfiguration{TLSCipherSuites: overrideTLSCiphers, TLSMinVersion: overrideTLSMinVersion}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
+	// The CR also asks for a different TLS profile under spec; the raw kubelet config must
+	// still win, exactly as mergo has always applied it to every other kubelet field.
+	userDefinedKC.Spec.TLSSecurityProfile = &osev1.TLSSecurityProfile{
+		Type: osev1.TLSProfileCustomType,
+		Custom: &osev1.CustomTLSProfile{
+			TLSProfileSpec: osev1.TLSProfileSpec{
+				Ciphers:       []string{"TLS_AES_256_GCM_SHA384"},
+				MinTLSVersion: osev1.VersionTLS13,
+			},
+		},
+	}
+
 	f.mckLister = append(f.mckLister, userDefinedKC)
 	f.objects = append(f.objects, userDefinedKC)
 
@@ -1770,7 +2031,7 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	require.NoError(t, err)
 	var kubeletConfigFile ign3types.File
 	for _, file := range generatedIgnConfig.Storage.Files {
-		if file.Path == "/etc/kubernetes/kubelet.conf" {
+		if file.Path == kubeletConfigPath {
 			kubeletConfigFile = file
 		}
 	}
@@ -1781,6 +2042,131 @@ func TestKubeletConfigTLSOverride(t *testing.T) {
 	require.NoError(t, err)
 	kc, err := DecodeKubeletConfig(contents)
 	require.NoError(t, err)
+
+	// The rendered config carries the raw values, not the ones from spec.tlsSecurityProfile.
+	specMinVersion, specCiphers := ctrlcommon.GetSecurityProfileCiphers(userDefinedKC.Spec.TLSSecurityProfile)
+	require.NotEqual(t, overrideTLSCiphers, specCiphers, "the spec profile must differ from the raw config for this assertion to be meaningful")
+	require.NotEqual(t, overrideTLSMinVersion, specMinVersion)
 	require.Equal(t, kc.TLSCipherSuites, overrideTLSCiphers)
 	require.Equal(t, kc.TLSMinVersion, overrideTLSMinVersion)
+}
+
+// TestKubeletConfigRawOverridesRenderedFields tests the general precedence between
+// spec.kubeletConfig (raw) and everything else: the raw config is merged last with
+// mergo.WithOverride, so it wins over values rendered from the templates and over values
+// derived from the CR's spec.tlsSecurityProfile. Fields it does not mention are untouched.
+func TestKubeletConfigRawOverridesRenderedFields(t *testing.T) {
+	f := newFixture(t)
+	fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
+
+	f.apiserverLister = []*osev1.APIServer{{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.APIServerInstanceName},
+		Spec:       osev1.APIServerSpec{TLSSecurityProfile: &osev1.TLSSecurityProfile{Type: osev1.TLSProfileOldType}},
+	}}
+	f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType))
+	f.mcpLister = append(f.mcpLister, helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"))
+
+	// The master template renders maxPods 250, containerLogMaxSize 50Mi, podPidsLimit 4096,
+	// kubeAPIQPS 50 and staticPodPath /etc/kubernetes/manifests.
+	podPidsLimit := int64(8192)
+	overrideTLSMinVersion, overrideTLSCiphers := ctrlcommon.GetSecurityProfileCiphers(&osev1.TLSSecurityProfile{Type: osev1.TLSProfileIntermediateType})
+	kc := newKubeletConfig("raw-wins", &kubeletconfigv1beta1.KubeletConfiguration{
+		MaxPods:             500,
+		ContainerLogMaxSize: "100Mi",
+		PodPidsLimit:        &podPidsLimit,
+		TLSCipherSuites:     overrideTLSCiphers,
+		TLSMinVersion:       overrideTLSMinVersion,
+	}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+	// The CR's spec asks for a different TLS profile; raw wins for TLS too, same as above.
+	kc.Spec.TLSSecurityProfile = &osev1.TLSSecurityProfile{
+		Type: osev1.TLSProfileCustomType,
+		Custom: &osev1.CustomTLSProfile{
+			TLSProfileSpec: osev1.TLSProfileSpec{
+				Ciphers:       []string{"TLS_AES_256_GCM_SHA384"},
+				MinTLSVersion: osev1.VersionTLS13,
+			},
+		},
+	}
+
+	f.mckLister = append(f.mckLister, kc)
+	f.objects = append(f.objects, kc)
+
+	ctrl := f.newController(fgHandler)
+	require.NoError(t, ctrl.syncHandler(getKey(kc, t)))
+
+	got := renderedKubeletConfig(t, ctrl, "99-master-generated-kubelet")
+
+	// Raw values win, whether their source was the template or spec.tlsSecurityProfile.
+	require.Equal(t, int32(500), got.MaxPods)
+	require.Equal(t, "100Mi", got.ContainerLogMaxSize)
+	require.NotNil(t, got.PodPidsLimit)
+	require.Equal(t, int64(8192), *got.PodPidsLimit)
+	require.Equal(t, overrideTLSCiphers, got.TLSCipherSuites)
+	require.Equal(t, overrideTLSMinVersion, got.TLSMinVersion)
+
+	// Fields raw does not mention keep the values rendered from the templates.
+	require.NotNil(t, got.KubeAPIQPS)
+	require.Equal(t, int32(50), *got.KubeAPIQPS)
+	require.Equal(t, "/etc/kubernetes/manifests", got.StaticPodPath)
+}
+
+// fipsMachineConfig models the installer's FIPS MachineConfig for a role.
+func fipsMachineConfig(role string) *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("99-%s-fips", role),
+			Labels: map[string]string{ctrlcommon.MachineConfigRoleLabel: role},
+		},
+		Spec: mcfgv1.MachineConfigSpec{FIPS: true},
+	}
+}
+
+// KubeletConfig overrides must follow the target MachineConfigs' FIPS setting.
+func TestKubeletConfigTLSGroupsFollowTargetFIPS(t *testing.T) {
+	profile := &osev1.TLSSecurityProfile{
+		Type: osev1.TLSProfileCustomType,
+		Custom: &osev1.CustomTLSProfile{
+			TLSProfileSpec: osev1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: osev1.VersionTLS12,
+				Groups: []osev1.TLSGroup{
+					osev1.TLSGroupX25519MLKEM768,
+					osev1.TLSGroupSecP256r1,
+				},
+			},
+		},
+	}
+
+	for _, test := range []struct {
+		name       string
+		targetFIPS bool
+		want       []int32
+	}{
+		{name: "non-FIPS target keeps the post-quantum group", targetFIPS: false, want: []int32{4588, 23}},
+		{name: "FIPS target drops it", targetFIPS: true, want: []int32{23}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{features.FeatureGateTLSGroupPreferences}, nil)
+
+			f.ccLister = append(f.ccLister, newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType))
+			f.mcpLister = append(f.mcpLister, helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"))
+			if test.targetFIPS {
+				f.mcLister = append(f.mcLister, fipsMachineConfig("master"))
+			}
+
+			kc := newKubeletConfig("tls-groups-fips", &kubeletconfigv1beta1.KubeletConfiguration{},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Spec.TLSSecurityProfile = profile
+			f.mckLister = append(f.mckLister, kc)
+			f.objects = append(f.objects, kc)
+
+			ctrl := f.newController(fgHandler)
+			require.NoError(t, ctrl.syncHandler(getKey(kc, t)))
+
+			got := renderedKubeletConfig(t, ctrl, "99-master-generated-kubelet")
+			require.Equal(t, test.want, got.TLSCurvePreferences)
+		})
+	}
 }

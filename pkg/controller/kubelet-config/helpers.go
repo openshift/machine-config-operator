@@ -34,6 +34,7 @@ const (
 	managedFeaturesKeyPrefix      = "98"
 	managedKubeletConfigKeyPrefix = "99"
 	protectKernelDefaultsStr      = "\"protectKernelDefaults\":false"
+	kubeletConfigPath             = "/etc/kubernetes/kubelet.conf"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -91,7 +92,7 @@ func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 
 func createNewKubeletIgnition(yamlConfig []byte) *ign3types.File {
 
-	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", yamlConfig)
+	r := ctrlcommon.NewIgnFileBytesOverwriting(kubeletConfigPath, yamlConfig)
 	return &r
 }
 
@@ -198,7 +199,7 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
-		if c.Path == "/etc/kubernetes/kubelet.conf" {
+		if c.Path == kubeletConfigPath {
 			return &c, nil
 		}
 	}
@@ -531,7 +532,7 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, systemGomaxprocsBehavior mcfgv1.GomaxprocsBehaviorType, fipsEnabled bool) (*ign3types.File, *ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
@@ -577,6 +578,12 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
+		}
+
+		// Raw kubelet config overrides the profile-derived curves, so re-apply the FIPS
+		// policy to the winning list.
+		if fipsEnabled {
+			originalKubeConfig.TLSCurvePreferences = ctrlcommon.FilterFIPSApprovedCurvePreferences(originalKubeConfig.TLSCurvePreferences)
 		}
 
 		// Empty strings are ignored by mergo, so we need to set them to empty string for SystemReservedCgroup explicitly

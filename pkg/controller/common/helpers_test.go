@@ -1,7 +1,10 @@
 package common
 
 import (
+	"os"
+	"os/exec"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,9 +22,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	informers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
+	cryptolib "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -2076,4 +2081,303 @@ func TestGetAllValidPackageSetsForExtension(t *testing.T) {
 			}
 		})
 	}
+}
+
+func customProfileWithGroups(groups ...configv1.TLSGroup) *configv1.TLSSecurityProfile {
+	return &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-ECDSA-AES128-GCM-SHA256"},
+				MinTLSVersion: configv1.VersionTLS12,
+				Groups:        groups,
+			},
+		},
+	}
+}
+
+func TestGetSecurityProfileGroups(t *testing.T) {
+	testCases := []struct {
+		name     string
+		profile  *configv1.TLSSecurityProfile
+		expected []int32
+	}{
+		{
+			name:     "nil profile",
+			profile:  nil,
+			expected: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:     "old profile",
+			profile:  &configv1.TLSSecurityProfile{Type: configv1.TLSProfileOldType},
+			expected: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:     "intermediate profile",
+			profile:  &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expected: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:     "modern profile",
+			profile:  &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
+			expected: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:     "custom type without a custom spec",
+			profile:  &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+			expected: []int32{4588, 29, 23, 24},
+		},
+		{
+			name:     "custom profile without groups",
+			profile:  customProfileWithGroups(),
+			expected: nil,
+		},
+		{
+			name:     "custom profile with groups is translated to IANA codepoints",
+			profile:  customProfileWithGroups(configv1.TLSGroupX25519MLKEM768, configv1.TLSGroupX25519),
+			expected: []int32{4588, 29},
+		},
+		{
+			name: "all known groups",
+			profile: customProfileWithGroups(
+				configv1.TLSGroupSecP256r1,
+				configv1.TLSGroupSecP384r1,
+				configv1.TLSGroupSecP521r1,
+				configv1.TLSGroupX25519,
+				configv1.TLSGroupSecP256r1MLKEM768,
+				configv1.TLSGroupX25519MLKEM768,
+				configv1.TLSGroupSecP384r1MLKEM1024,
+			),
+			expected: []int32{23, 24, 25, 29, 4587, 4588, 4589},
+		},
+		{
+			name:     "unknown group is dropped",
+			profile:  customProfileWithGroups(configv1.TLSGroup("NotAGroup"), configv1.TLSGroupX25519),
+			expected: []int32{29},
+		},
+		{
+			name:     "all groups filtered out falls back to defaults",
+			profile:  customProfileWithGroups(configv1.TLSGroup("NotAGroup")),
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, GetSecurityProfileGroups(tc.profile, TLSGroupsOptions{Enabled: true}))
+		})
+	}
+}
+
+func TestFilterFIPSApprovedCurvePreferences(t *testing.T) {
+	require.Nil(t, FilterFIPSApprovedCurvePreferences(nil), "empty input stays nil")
+
+	require.Equal(t, []int32{23, 24, 25}, FilterFIPSApprovedCurvePreferences([]int32{23, 24, 25}),
+		"approved curves are preserved in order")
+
+	require.Equal(t, []int32{23}, FilterFIPSApprovedCurvePreferences([]int32{4588, 29, 23}),
+		"non-approved curves are dropped")
+
+	require.Nil(t, FilterFIPSApprovedCurvePreferences([]int32{4588, 29}),
+		"nothing approved means the key is omitted, not rendered as an empty list")
+}
+
+func TestGetSecurityProfileGroupsFromAPIServer(t *testing.T) {
+	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(nil, TLSGroupsOptions{}))
+
+	apiServer := &configv1.APIServer{
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: customProfileWithGroups(configv1.TLSGroupSecP256r1),
+		},
+	}
+	require.Equal(t, []int32{23}, GetSecurityProfileGroupsFromAPIServer(apiServer, TLSGroupsOptions{Enabled: true}))
+
+	// With the gate disabled, an unset profile must not emit curves.
+	require.Nil(t, GetSecurityProfileGroupsFromAPIServer(&configv1.APIServer{}, TLSGroupsOptions{}))
+}
+
+func TestGetSecurityProfileGroupsFromAPIServerDefaultProfile(t *testing.T) {
+	for _, input := range []struct {
+		name      string
+		apiServer *configv1.APIServer
+	}{
+		{name: "missing APIServer"},
+		{name: "unset profile", apiServer: &configv1.APIServer{}},
+	} {
+		for _, test := range []struct {
+			name string
+			opts TLSGroupsOptions
+			want []int32
+		}{
+			{name: "gate disabled"},
+			{name: "gate disabled with FIPS target", opts: TLSGroupsOptions{FIPSEnabled: true}},
+			{name: "gate enabled", opts: TLSGroupsOptions{Enabled: true}, want: []int32{4588, 29, 23, 24}},
+			{name: "gate enabled with FIPS target", opts: TLSGroupsOptions{Enabled: true, FIPSEnabled: true}, want: []int32{23, 24}},
+		} {
+			t.Run(input.name+"/"+test.name, func(t *testing.T) {
+				require.Equal(t, test.want, GetSecurityProfileGroupsFromAPIServer(input.apiServer, test.opts))
+			})
+		}
+	}
+}
+
+// Ciphers and minTLSVersion must keep behaving exactly as before the groups
+// support was factored out into getTLSProfileSpec.
+func TestGetSecurityProfileCiphersUnchanged(t *testing.T) {
+	minVersion, ciphers := GetSecurityProfileCiphers(nil)
+	expectedMin, expectedCiphers := GetSecurityProfileCiphers(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType})
+	require.Equal(t, expectedMin, minVersion)
+	require.Equal(t, expectedCiphers, ciphers)
+
+	// Custom type with no custom spec falls back to intermediate.
+	minVersion, ciphers = GetSecurityProfileCiphers(&configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType})
+	require.Equal(t, expectedMin, minVersion)
+	require.Equal(t, expectedCiphers, ciphers)
+}
+
+// TestGetSecurityProfileGroupsIndependentOfRenderer verifies all four
+// renderer/target FIPS combinations in separate processes.
+// Subprocesses vary the renderer's FIPS state, which is fixed at process startup.
+// Only the target's FIPS state should affect the result.
+func TestGetSecurityProfileGroupsIndependentOfRenderer(t *testing.T) {
+	if os.Getenv("MCO_TLS_GROUPS_FIPS_HELPER") == "1" {
+		rendererFIPS, err := strconv.ParseBool(os.Getenv("MCO_RENDERER_FIPS"))
+		require.NoError(t, err)
+		targetFIPS, err := strconv.ParseBool(os.Getenv("MCO_TARGET_FIPS"))
+		require.NoError(t, err)
+
+		require.Equal(t, rendererFIPS, cryptolib.IsFIPSEnabled(),
+			"the subprocess must actually run with the requested renderer FIPS state")
+		assertTLSGroupsForTargetFIPS(t, targetFIPS)
+		return
+	}
+
+	for _, test := range []struct {
+		name     string
+		renderer bool
+		target   bool
+	}{
+		{name: "non-FIPS renderer, non-FIPS target", renderer: false, target: false},
+		{name: "FIPS renderer, non-FIPS target", renderer: true, target: false},
+		{name: "non-FIPS renderer, FIPS target", renderer: false, target: true},
+		{name: "FIPS renderer, FIPS target", renderer: true, target: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestGetSecurityProfileGroupsIndependentOfRenderer$")
+			env := make([]string, 0, len(os.Environ())+4)
+			for _, value := range os.Environ() {
+				if !strings.HasPrefix(value, "GODEBUG=") {
+					env = append(env, value)
+				}
+			}
+			cmd.Env = append(env,
+				"GODEBUG=fips140="+map[bool]string{false: "off", true: "on"}[test.renderer],
+				"MCO_TLS_GROUPS_FIPS_HELPER=1",
+				"MCO_RENDERER_FIPS="+strconv.FormatBool(test.renderer),
+				"MCO_TARGET_FIPS="+strconv.FormatBool(test.target),
+			)
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "subprocess failed:\n%s", output)
+		})
+	}
+}
+
+func assertTLSGroupsForTargetFIPS(t *testing.T, targetFIPS bool) {
+	t.Helper()
+
+	profile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+				MinTLSVersion: configv1.VersionTLS12,
+				Groups: []configv1.TLSGroup{
+					configv1.TLSGroupX25519MLKEM768, // not FIPS-approved by library-go
+					configv1.TLSGroupX25519,         // not FIPS-approved
+					configv1.TLSGroupSecP256r1,      // approved
+					configv1.TLSGroupSecP384r1,      // approved
+				},
+			},
+		},
+	}
+
+	want := []int32{4588, 29, 23, 24}
+	if targetFIPS {
+		want = []int32{23, 24}
+	}
+	require.Equal(t, want, GetSecurityProfileGroups(profile, TLSGroupsOptions{Enabled: true, FIPSEnabled: targetFIPS}))
+}
+
+// TestIsFIPSEnabledForMachineConfigs covers the target-side signal that feeds
+// the parameter above. It mirrors MergeMachineConfigs: any MachineConfig setting
+// fips: true turns FIPS on for the pool.
+func TestIsFIPSEnabledForMachineConfigs(t *testing.T) {
+	mc := func(name string, fips bool) *mcfgv1.MachineConfig {
+		return &mcfgv1.MachineConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       mcfgv1.MachineConfigSpec{FIPS: fips},
+		}
+	}
+
+	require.False(t, IsFIPSEnabledForMachineConfigs(nil), "no MachineConfigs means no FIPS")
+	require.False(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{mc("a", false), mc("b", false)}))
+	require.True(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{mc("a", false), mc("99-fips", true)}),
+		"one MachineConfig setting fips: true turns it on, as MergeMachineConfigs does")
+	require.False(t, IsFIPSEnabledForMachineConfigs([]*mcfgv1.MachineConfig{nil}), "a nil entry must not panic")
+}
+
+// TestGetSecurityProfileGroupsFeatureGate tests all profile-derived groups with TLSGroupPreferences.
+func TestGetSecurityProfileGroupsFeatureGate(t *testing.T) {
+	named := func(t configv1.TLSProfileType) *configv1.TLSSecurityProfile {
+		return &configv1.TLSSecurityProfile{Type: t}
+	}
+
+	// Every predefined profile declares the same four groups today.
+	allFour := []int32{4588, 29, 23, 24}
+
+	for _, test := range []struct {
+		name    string
+		profile *configv1.TLSSecurityProfile
+		gateOff []int32
+		gateOn  []int32
+	}{
+		{
+			name:    "no profile configured at all",
+			profile: nil,
+			gateOff: nil,
+			gateOn:  allFour,
+		},
+		{name: "Old", profile: named(configv1.TLSProfileOldType), gateOff: nil, gateOn: allFour},
+		{name: "Intermediate", profile: named(configv1.TLSProfileIntermediateType), gateOff: nil, gateOn: allFour},
+		{name: "Modern", profile: named(configv1.TLSProfileModernType), gateOff: nil, gateOn: allFour},
+		{
+			name:    "Custom with groups",
+			profile: customProfileWithGroups(configv1.TLSGroupSecP256r1),
+			gateOff: nil,
+			gateOn:  []int32{23},
+		},
+		{
+			name:    "Custom without groups",
+			profile: customProfileWithGroups(),
+			gateOff: nil,
+			gateOn:  nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.gateOff,
+				GetSecurityProfileGroups(test.profile, TLSGroupsOptions{Enabled: false}),
+				"with the gate off no profile contributes groups")
+			require.Equal(t, test.gateOn,
+				GetSecurityProfileGroups(test.profile, TLSGroupsOptions{Enabled: true}),
+				"with the gate on named and Custom profiles contribute groups")
+		})
+	}
+
+	// FIPS filtering also applies to named profiles.
+	t.Run("named profile groups are still FIPS filtered", func(t *testing.T) {
+		require.Equal(t, []int32{23, 24},
+			GetSecurityProfileGroups(named(configv1.TLSProfileModernType),
+				TLSGroupsOptions{Enabled: true, FIPSEnabled: true}),
+			"Modern's X25519MLKEM768 and X25519 are dropped for a FIPS target")
+	})
 }

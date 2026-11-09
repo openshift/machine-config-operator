@@ -11,6 +11,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -77,7 +78,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 			}
 
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgHandler, nil, pools, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, fgHandler, nil, pools, nil, ctrlcommon.TLSGroupsOptions{})
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -216,7 +217,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgHandler, nil, pools, nil)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, fgHandler, nil, pools, nil, ctrlcommon.TLSGroupsOptions{})
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 
@@ -239,6 +240,52 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			}
 			val := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			require.Equal(t, "", val)
+		})
+	}
+}
+
+// TestRunKubeletBootstrapTLSGroupsFollowTargetFIPS tests that bootstrap uses explicit target FIPS.
+func TestRunKubeletBootstrapTLSGroupsFollowTargetFIPS(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		targetFIPS bool
+		want       []int32
+	}{
+		{name: "non-FIPS target", targetFIPS: false, want: []int32{4588, 23}},
+		{name: "FIPS target", targetFIPS: true, want: []int32{23}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, osev1.AWSPlatformType)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			}
+			kc := newKubeletConfig("bootstrap-tls-groups", &kubeletconfigv1beta1.KubeletConfiguration{},
+				metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc.Spec.TLSSecurityProfile = &osev1.TLSSecurityProfile{
+				Type: osev1.TLSProfileCustomType,
+				Custom: &osev1.CustomTLSProfile{
+					TLSProfileSpec: osev1.TLSProfileSpec{
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+						MinTLSVersion: osev1.VersionTLS12,
+						Groups:        []osev1.TLSGroup{osev1.TLSGroupX25519MLKEM768, osev1.TLSGroupSecP256r1},
+					},
+				},
+			}
+			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{features.FeatureGateTLSGroupPreferences}, nil)
+
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc,
+				fgHandler, nil, pools, nil, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: test.targetFIPS})
+			require.NoError(t, err)
+			require.NotEmpty(t, mcs)
+
+			ign, err := ctrlcommon.ParseAndConvertConfig(mcs[0].Spec.Config.Raw)
+			require.NoError(t, err)
+			contents, err := ctrlcommon.GetIgnitionFileDataByPath(&ign, kubeletConfigPath)
+			require.NoError(t, err)
+			decoded, err := DecodeKubeletConfig(contents)
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, decoded.TLSCurvePreferences)
 		})
 	}
 }
