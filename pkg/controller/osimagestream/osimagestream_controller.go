@@ -60,6 +60,10 @@ type Controller struct {
 
 	secretListerSynced cache.InformerSynced
 
+	// IRI registry credentials live in the MCO namespace, not openshift-config.
+	mcoSecretListerSynced cache.InformerSynced
+	iriListerSynced       cache.InformerSynced
+
 	mcoCmLister       corelistersv1.ConfigMapLister
 	mcoCmListerSynced cache.InformerSynced
 
@@ -82,6 +86,8 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
 	secretInformer coreinformersv1.SecretInformer,
+	mcoSecretInformer coreinformersv1.SecretInformer,
+	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	cmInformer coreinformersv1.ConfigMapInformer,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	idmsInformer configinformersv1.ImageDigestMirrorSetInformer,
@@ -127,6 +133,13 @@ func New(
 
 	ctrl.secretListerSynced = secretInformer.Informer().HasSynced
 
+	// Both are needed to merge IRI registry credentials into the inspection
+	// authfile. They are waited on in Run: this controller gates MCC startup,
+	// so an unsynced cache here would silently skip the merge and reintroduce
+	// the 401 that the merge exists to prevent.
+	ctrl.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
+	ctrl.iriListerSynced = iriInformer.Informer().HasSynced
+
 	ctrl.mcoCmLister = cmInformer.Lister()
 	ctrl.mcoCmListerSynced = cmInformer.Informer().HasSynced
 
@@ -136,7 +149,9 @@ func New(
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
 
 	ctrl.sysCtxFactory = ctrlcommon.NewSysContextFactory(
-		ccInformer.Lister(), secretInformer.Lister(), imgInformer.Lister(),
+		ccInformer.Lister(), secretInformer.Lister(),
+		ctrlcommon.NewIRISecretMerger(mcoSecretInformer.Lister(), ccInformer.Lister(), iriInformer.Lister()),
+		imgInformer.Lister(),
 		icspInformer.Lister(), idmsInformer.Lister(), itmsInformer.Lister(),
 	)
 
@@ -152,6 +167,8 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 		ctrl.ccListerSynced,
 		ctrl.clusterVersionListerSynced,
 		ctrl.secretListerSynced,
+		ctrl.mcoSecretListerSynced,
+		ctrl.iriListerSynced,
 		ctrl.mcoCmListerSynced,
 		ctrl.icspListerSynced,
 		ctrl.idmsListerSynced,

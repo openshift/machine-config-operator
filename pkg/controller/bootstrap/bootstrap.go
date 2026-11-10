@@ -250,7 +250,21 @@ func (b *Bootstrap) Run(destDir string) error {
 		return fmt.Errorf("error filtering pools: %w", err)
 	}
 
-	sysCtxFactory := buildSysContextFactory(pullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
+	// Merge IRI registry credentials once, up front, so that both the image
+	// inspection below and the rendered node pull secret further down use the
+	// same credentials. Inspection happens against IRI-mirrored references too,
+	// and the IRI registry requires htpasswd auth, so building the sysContext
+	// from the unmerged secret would 401 on any cluster without a route to the
+	// upstream registries.
+	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, iri)
+	pullSecretBytes, err := merger.Merge(pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
+	}
+	mergedPullSecret := pullSecret.DeepCopy()
+	mergedPullSecret.Data[corev1.DockerConfigJsonKey] = pullSecretBytes
+
+	sysCtxFactory := buildSysContextFactory(mergedPullSecret, cconfig, imgCfg, icspRules, idmsRules, itmsRules)
 
 	// Enable OSImageStreams if the FeatureGate is active.
 	// Previously this also excluded ExternalTopologyMode (HyperShift) because
@@ -276,17 +290,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		osImageStream = nil
 	}
 
-	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-
-	// Merge IRI registry credentials into the pull secret for first-boot authentication.
-	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
-	// would otherwise fail to authenticate against the IRI registry.
-	// Merge is a no-op if the feature gate is off or the IRI resource is absent.
-	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, iri)
-	pullSecretBytes, err = merger.Merge(pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
-	}
+	// pullSecretBytes already carries the IRI registry credentials merged above,
+	// which first-boot machine-config-daemon-pull.service needs: the template
+	// controller has not run yet, so nothing else would supply them.
 
 	// FIPS state of the cluster being installed, taken from the MachineConfig
 	// manifests on disk rather than from this process.

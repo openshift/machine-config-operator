@@ -611,7 +611,10 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 			ctx.InformerFactory.Machineconfiguration().V1().OSImageStreams(),
-			nil, nil, nil, nil, nil,
+			// secret, mcoSecret, iri, icsp, idms, itms, img informers: only used
+			// to build the image-inspection sysContext, which is skipped when
+			// inspectorFactory is nil.
+			nil, nil, nil, nil, nil, nil, nil,
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.FeatureGatesHandler,

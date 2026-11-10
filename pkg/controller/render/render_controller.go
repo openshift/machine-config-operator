@@ -92,10 +92,13 @@ type Controller struct {
 	mcopListerSynced cache.InformerSynced
 
 	secretListerSynced cache.InformerSynced
-	icspListerSynced   cache.InformerSynced
-	idmsListerSynced   cache.InformerSynced
-	itmsListerSynced   cache.InformerSynced
-	imgListerSynced    cache.InformerSynced
+	// IRI registry credentials live in the MCO namespace, not openshift-config.
+	mcoSecretListerSynced cache.InformerSynced
+	iriListerSynced       cache.InformerSynced
+	icspListerSynced      cache.InformerSynced
+	idmsListerSynced      cache.InformerSynced
+	itmsListerSynced      cache.InformerSynced
+	imgListerSynced       cache.InformerSynced
 
 	fgHandler ctrlcommon.FeatureGatesHandler
 
@@ -114,6 +117,8 @@ func New(
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	osImageStreamInformer mcfginformersv1.OSImageStreamInformer,
 	secretInformer coreinformersv1.SecretInformer,
+	mcoSecretInformer coreinformersv1.SecretInformer,
+	iriInformer mcfginformersv1.InternalReleaseImageInformer,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	idmsInformer configinformersv1.ImageDigestMirrorSetInformer,
 	itmsInformer configinformersv1.ImageTagMirrorSetInformer,
@@ -168,12 +173,17 @@ func New(
 			ctrlcommon.NewSysContextFactory(
 				ccInformer.Lister(),
 				secretInformer.Lister(),
+				ctrlcommon.NewIRISecretMerger(mcoSecretInformer.Lister(), ccInformer.Lister(), iriInformer.Lister()),
 				imgInformer.Lister(),
 				icspInformer.Lister(),
 				idmsInformer.Lister(),
 				itmsInformer.Lister(),
 			))
 		ctrl.secretListerSynced = secretInformer.Informer().HasSynced
+		// IRI registry credentials come from the MCO namespace; without these
+		// synced the merge silently skips and image inspection 401s.
+		ctrl.mcoSecretListerSynced = mcoSecretInformer.Informer().HasSynced
+		ctrl.iriListerSynced = iriInformer.Informer().HasSynced
 		ctrl.icspListerSynced = icspInformer.Informer().HasSynced
 		ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
 		ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
@@ -199,7 +209,8 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 
 	if ctrl.secretListerSynced != nil {
 		listerCaches = append(listerCaches,
-			ctrl.secretListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced,
+			ctrl.secretListerSynced, ctrl.mcoSecretListerSynced, ctrl.iriListerSynced,
+			ctrl.icspListerSynced, ctrl.idmsListerSynced,
 			ctrl.itmsListerSynced, ctrl.imgListerSynced,
 		)
 	}

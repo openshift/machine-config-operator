@@ -86,7 +86,10 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(), oi.Operator().V1().MachineConfigurations(),
 		i.Machineconfiguration().V1().OSImageStreams(),
-		nil, nil, nil, nil, nil,
+		// secret, mcoSecret, iri, icsp, idms, itms, img informers: only used to
+		// build the image-inspection sysContext, which is skipped when
+		// inspectorFactory is nil.
+		nil, nil, nil, nil, nil, nil, nil,
 		k8sfake.NewSimpleClientset(), f.client, f.fgHandler,
 		nil)
 
