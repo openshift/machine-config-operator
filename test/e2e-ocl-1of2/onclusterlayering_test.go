@@ -15,6 +15,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+	mcoac "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 
 	"github.com/openshift/machine-config-operator/pkg/daemon/runtimeassets"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -113,8 +116,12 @@ func TestOnClusterLayering(t *testing.T) {
 }
 
 // Tests that an on-cluster build can be performed and that the resulting image
-// is rolled out to an opted-in node.
+// is rolled out to an opted-in node. Also includes a storage MC with
+// irreconcilable sections (disks, filesystems) to verify that the OCL revert
+// handles them correctly (regression test for OCPBUGS-139151).
 func TestOnClusterBuildRollsOutImage(t *testing.T) {
+	ctx := context.Background()
+
 	requiredKernelType := ctrlcommon.KernelTypeRealtime
 	if goruntime.GOARCH == "arm64" {
 		requiredKernelType = ctrlcommon.KernelType64kPages
@@ -122,6 +129,37 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 	node := helpers.GetRandomNode(t, cs, "worker")
+
+	// Set IrreconcilableValidationOverrides to allow a storage MC to be
+	// applied at runtime (simulating install-time storage sections).
+	// The overrides allow the forward transition; the revert path must handle
+	// the storage sections via stripping, since overrides are not loaded
+	// during firstboot.
+	opClient := mcopclientset.NewForConfigOrDie(cs.GetRestConfig())
+	overrides := mcoac.MachineConfiguration("cluster").
+		WithSpec(mcoac.MachineConfigurationSpec().
+			WithIrreconcilableValidationOverrides(mcoac.IrreconcilableValidationOverrides().
+				WithStorage(
+					opv1.IrreconcilableValidationOverridesStorageDisks,
+					opv1.IrreconcilableValidationOverridesStorageFileSystems,
+				),
+			),
+		)
+	_, err := opClient.OperatorV1().MachineConfigurations().Apply(ctx, overrides, metav1.ApplyOptions{FieldManager: "e2e-ocl-rollout-test"})
+	require.NoError(t, err, "failed to apply IrreconcilableValidationOverrides")
+	t.Log("Applied IrreconcilableValidationOverrides for Disks and FileSystems")
+
+	t.Cleanup(func() {
+		mcop, err := opClient.OperatorV1().MachineConfigurations().Get(ctx, "cluster", metav1.GetOptions{})
+		if err != nil {
+			t.Logf("Warning: failed to get MachineConfiguration for cleanup: %v", err)
+			return
+		}
+		mcop.Spec.IrreconcilableValidationOverrides = opv1.IrreconcilableValidationOverrides{}
+		if _, err := opClient.OperatorV1().MachineConfigurations().Update(ctx, mcop, metav1.UpdateOptions{}); err != nil {
+			t.Logf("Warning: failed to clear IrreconcilableValidationOverrides: %v", err)
+		}
+	})
 
 	dockerfile, err := ocltesthelper.GetCowsayDockerfileForCluster(t, cs)
 	require.NoError(t, err)
@@ -133,6 +171,7 @@ func TestOnClusterBuildRollsOutImage(t *testing.T) {
 		},
 		machineConfigs: []*mcfgv1.MachineConfig{
 			ocltesthelper.NewMachineConfigWithKernelType(fmt.Sprintf("%s-kernel-machineconfig", requiredKernelType), layeredMCPName, requiredKernelType),
+			ocltesthelper.NewMachineConfigWithStorageSections("storage-sections-mc", layeredMCPName),
 		},
 	})
 
