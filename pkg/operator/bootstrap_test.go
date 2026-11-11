@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -185,6 +186,7 @@ spec:
 	deps := &BootstrapDependencies{Infrastructure: infra}
 	require.NoError(t, deps.fillBGPVIPConfig(path), "fillBGPVIPConfig")
 	assert.Equal(t, expectedJSON, deps.BGPVIPPeersJSON, "BGPVIPPeersJSON must match the Dev Preview payload schema")
+	assert.Equal(t, expectedJSON, deps.BGPVIPPeersFileJSON, "without passwords the bootstrap peers file is the transport, byte for byte")
 
 	// Missing file is tolerated (optional dependency).
 	deps2 := &BootstrapDependencies{Infrastructure: infra}
@@ -207,9 +209,9 @@ spec:
 }
 
 // TestFillBGPVIPConfigPasswordSecret locks the bootstrap file-based password
-// resolver: a peer's passwordSecret reference is resolved from the
-// installer-copied Secret manifest bgp-vip-peer-secret-<name>.yaml sitting
-// next to the CR manifest.
+// handling: the ControllerConfig transport only references the Secret, and
+// the bootstrap node's peers file resolves it from the installer-copied
+// Secret manifest sitting next to the CR manifest.
 func TestFillBGPVIPConfigPasswordSecret(t *testing.T) {
 	crYAML := `apiVersion: machineconfiguration.openshift.io/v1alpha1
 kind: BGPVIPConfig
@@ -256,9 +258,9 @@ stringData:
 
 	deps := &BootstrapDependencies{Infrastructure: infra}
 	require.NoError(t, deps.fillBGPVIPConfig(path), "fillBGPVIPConfig")
-	assert.Equal(t,
-		`{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret"}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`,
-		deps.BGPVIPPeersJSON, "the resolved plaintext must land in the JSON password field")
+	assert.Equal(t, simplePeersTransport, deps.BGPVIPPeersJSON, "the ControllerConfig transport only carries the Secret reference")
+	assert.NotContains(t, deps.BGPVIPPeersJSON, "s3cret")
+	assert.Equal(t, legacySimplePeersFile, deps.BGPVIPPeersFileJSON, "the bootstrap peers file must be the pre-change payload, byte for byte")
 
 	// A referenced Secret whose manifest file is missing must error.
 	dir2 := t.TempDir()
@@ -268,7 +270,9 @@ stringData:
 	err := deps2.fillBGPVIPConfig(path2)
 	require.Error(t, err, "missing Secret manifest must error")
 	assert.Contains(t, err.Error(), "openshift-config/bgp-peer-pw")
+	assert.Contains(t, err.Error(), "defaultPeers[0]")
 	assert.Empty(t, deps2.BGPVIPPeersJSON)
+	assert.Empty(t, deps2.BGPVIPPeersFileJSON)
 
 	// A Secret of the wrong type must be rejected.
 	dir3 := t.TempDir()
@@ -279,6 +283,7 @@ stringData:
 	deps3 := &BootstrapDependencies{Infrastructure: infra}
 	assert.Error(t, deps3.fillBGPVIPConfig(path3), "non-basic-auth Secret must error")
 	assert.Empty(t, deps3.BGPVIPPeersJSON)
+	assert.Empty(t, deps3.BGPVIPPeersFileJSON)
 }
 
 // TestBuildSpecBGPImageValidation locks the bootstrap hard-fail: rendering a
@@ -325,4 +330,141 @@ func TestBuildSpecBGPImageValidation(t *testing.T) {
 	if _, err := buildSpec(deps(noVIPs), &ctrlcommon.Images{}, ""); err != nil {
 		t.Fatalf("unexpected error for VIP-less BGP without images: %v", err)
 	}
+}
+
+// TestBuildSpecBGPVIPPasswordOnlyInPeersFile locks where the resolved
+// password may appear in the bootstrap output: in the bootstrap node's
+// frr-peers.json only, never in the ControllerConfig manifest.
+func TestBuildSpecBGPVIPPasswordOnlyInPeersFile(t *testing.T) {
+	deps := &BootstrapDependencies{
+		Infrastructure: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.BareMetalPlatformType,
+					BareMetal: &configv1.BareMetalPlatformStatus{
+						VIPManagement:        configv1.VIPManagementTypeBGP,
+						APIServerInternalIPs: []string{"192.168.111.5"},
+						IngressIPs:           []string{"192.168.111.4"},
+					},
+				},
+				EtcdDiscoveryDomain: "tt.testing",
+			},
+		},
+		Network:             &configv1.Network{Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.0/24"}}},
+		DNS:                 &configv1.DNS{Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
+		BGPVIPPeersJSON:     simplePeersTransport,
+		BGPVIPPeersFileJSON: legacySimplePeersFile,
+	}
+	imgs := &ctrlcommon.Images{}
+	imgs.FRRK8s = "frr-k8s-image"
+	imgs.KubeVip = "kube-vip-image"
+	config, err := buildSpec(deps, imgs, "")
+	require.NoError(t, err)
+
+	cc, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
+	require.NoError(t, err)
+	assert.NotContains(t, string(cc), "s3cret", "the bootstrap ControllerConfig must not carry the password")
+	assert.Contains(t, string(cc), "passwordSecret")
+
+	peersFile, err := renderAsset(config, "manifests/on-prem/frr-peers.json.tmpl")
+	require.NoError(t, err)
+	assert.Equal(t, legacySimplePeersFile, string(peersFile), "the bootstrap node's peers file is the pre-change payload, byte for byte")
+}
+
+// TestBootstrapFRRPeersFileMode locks the mode of the bootstrap node's
+// frr-peers.json: 0600 like the MachineConfig-delivered file, while the other
+// bootstrap assets keep the default mode.
+func TestBootstrapFRRPeersFileMode(t *testing.T) {
+	var peers, sibling *manifest
+	for _, m := range getPlatformManifests(nil, "baremetal", configv1.LoadBalancerTypeOpenShiftManagedDefault, configv1.VIPManagementTypeBGP, false) {
+		switch m.filename {
+		case "baremetal/static-pod-resources/frr-k8s/frr-peers.json":
+			peers = &m
+		case "baremetal/static-pod-resources/frr-k8s/frr.conf.tmpl":
+			sibling = &m
+		}
+	}
+	require.NotNil(t, peers)
+	require.NotNil(t, sibling)
+	assert.Equal(t, os.FileMode(0o600), peers.mode)
+	assert.Zero(t, sibling.mode, "other assets use the default mode")
+
+	dir := t.TempDir()
+	require.NoError(t, writeManifest(dir, *peers, []byte(legacySimplePeersFile)))
+	require.NoError(t, writeManifest(dir, *sibling, []byte("frr")))
+	info, err := os.Stat(filepath.Join(dir, peers.filename))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	data, err := os.ReadFile(filepath.Join(dir, peers.filename))
+	require.NoError(t, err)
+	assert.Equal(t, legacySimplePeersFile, string(data))
+	info, err = os.Stat(filepath.Join(dir, sibling.filename))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644)&^currentUmask(t), info.Mode().Perm())
+
+	// A pre-existing, looser file (a re-run into a used directory) is
+	// tightened as well.
+	require.NoError(t, os.Chmod(filepath.Join(dir, peers.filename), 0o644))
+	require.NoError(t, writeManifest(dir, *peers, []byte(legacySimplePeersFile)))
+	info, err = os.Stat(filepath.Join(dir, peers.filename))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+// currentUmask reports the process umask, which os.WriteFile applies to the
+// default mode.
+func currentUmask(t *testing.T) os.FileMode {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "probe")
+	require.NoError(t, os.WriteFile(path, nil, 0o777))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	return 0o777 &^ info.Mode().Perm()
+}
+
+// TestFillBGPVIPConfigRejectsUnsafePassword: a password Secret manifest that
+// is not valid, printable UTF-8 fails the bootstrap render without echoing
+// the password.
+func TestFillBGPVIPConfigRejectsUnsafePassword(t *testing.T) {
+	crYAML := "apiVersion: machineconfiguration.openshift.io/v1alpha1\nkind: BGPVIPConfig\nmetadata:\n  name: cluster\nspec:\n  localASN: 64512\n  defaultPeers:\n  - peerAddress: 192.168.111.1\n    peerASN: 64513\n    passwordSecret:\n      name: bgp-peer-pw\n"
+	// base64 of "SYNTHETIC LEAK-\u0085-MARKER"
+	secretYAML := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: bgp-peer-pw\n  namespace: openshift-config\ntype: kubernetes.io/basic-auth\ndata:\n  password: U1lOVEhFVElDIExFQUstwoUtTUFSS0VS\n"
+	infra := &configv1.Infrastructure{Status: configv1.InfrastructureStatus{PlatformStatus: &configv1.PlatformStatus{
+		Type:      configv1.BareMetalPlatformType,
+		BareMetal: &configv1.BareMetalPlatformStatus{APIServerInternalIPs: []string{"192.168.111.5"}, IngressIPs: []string{"192.168.111.4"}},
+	}}}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-bgp-vip-02-config.yml")
+	require.NoError(t, os.WriteFile(path, []byte(crYAML), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bgp-peer-pw-secret.yaml"), []byte(secretYAML), 0o644))
+
+	deps := &BootstrapDependencies{Infrastructure: infra}
+	err := deps.fillBGPVIPConfig(path)
+	require.Error(t, err, "an unsafe password must fail the bootstrap render")
+	assert.NotContains(t, err.Error(), "SYNTHETIC LEAK")
+	assert.Empty(t, deps.BGPVIPPeersJSON)
+	assert.Empty(t, deps.BGPVIPPeersFileJSON)
+}
+
+// TestWriteManifestErrorPathsKeepPrimaryError: when the write, or the chmod
+// of an explicit mode, fails, writeManifest returns that error; the close
+// result is joined to it rather than replacing or hiding it.
+func TestWriteManifestErrorPathsKeepPrimaryError(t *testing.T) {
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skip("/dev/full is not available")
+	}
+	t.Run("write failure", func(t *testing.T) {
+		// Writes to /dev/full fail with ENOSPC.
+		err := writeManifest("/dev", manifest{filename: "full"}, []byte("data"))
+		require.Error(t, err)
+		assert.ErrorIs(t, err, syscall.ENOSPC)
+	})
+	t.Run("chmod failure", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("needs a non-root user, for whom changing /dev/full's mode fails")
+		}
+		err := writeManifest("/dev", manifest{filename: "full", mode: bgpVIPPeersFileMode}, []byte("data"))
+		require.Error(t, err)
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
 }

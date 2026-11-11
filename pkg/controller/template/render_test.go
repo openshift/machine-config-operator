@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestCloudProvider(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -143,7 +144,7 @@ func TestCredentialProviderConfigFlag(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -236,15 +237,36 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
+}
+
+// TestUnparseableRenderedFileErrorNamesMachineConfig: a rendered file that
+// does not parse fails the render with the MachineConfig name and the file's
+// index, never its contents or the decoder's error text.
+func TestUnparseableRenderedFileErrorNamesMachineConfig(t *testing.T) {
+	const marker = "SYNTHETIC-RENDER-LEAK-MARKER"
+	controllerConfig, err := controllerConfigFromFile(configs["aws"])
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	files := filepath.Join(dir, masterRole, "00-test", platformBase, filesDir)
+	require.NoError(t, os.MkdirAll(files, 0o755))
+	// Files are transpiled in name order: a.yaml (index 0) parses and
+	// b.yaml (index 1) does not.
+	require.NoError(t, os.WriteFile(filepath.Join(files, "a.yaml"), []byte("path: /etc/a\ncontents:\n  inline: ok\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(files, "b.yaml"), []byte("path: /etc/b\nnull: "+marker+"\n"), 0o644))
+
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, dir)
+	require.EqualError(t, err, "failed to create MachineConfig for role master: rendering MachineConfig 00-test: failed to unmarshal file 1 into struct")
+	require.NotContains(t, err.Error(), marker)
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
@@ -254,7 +276,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -431,7 +453,7 @@ func TestGetPaths(t *testing.T) {
 			}
 			c.res = append(c.res, platformBase)
 
-			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, config.Spec.Platform)
+			got := getPaths(&RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, config.Spec.Platform)
 			if reflect.DeepEqual(got, c.res) {
 				t.Fatalf("mismatch got: %s want: %s", got, c.res)
 			}
@@ -607,7 +629,7 @@ func TestIsBGPVIPManagement(t *testing.T) {
 				},
 			}
 
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, c.name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, c.name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error, got: %v", err)
 			}
@@ -661,7 +683,7 @@ func TestBGPVIPSecondaryFamilyRendering(t *testing.T) {
 			bm.APIServerInternalIPs = tc.apiVIPs
 			bm.IngressIPs = tc.ingressVIPs
 
-			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil}, templateDir)
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil, nil, ""}, templateDir)
 			if err != nil {
 				t.Fatalf("failed to generate machine configs: %v", err)
 			}
@@ -739,7 +761,7 @@ func TestTLSCurvePreferencesFollowTargetFIPS(t *testing.T) {
 		}
 
 		mcs, err := getMachineConfigsForControllerConfig("../../../templates", cc,
-			[]byte(`{"dummy":"dummy"}`), apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled})
+			[]byte(`{"dummy":"dummy"}`), "", apiServer, ctrlcommon.TLSGroupsOptions{Enabled: true, FIPSEnabled: fipsEnabled})
 		require.NoError(t, err)
 
 		want := fmt.Sprintf("01-%s-kubelet", role)

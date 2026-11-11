@@ -376,107 +376,49 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	return nil
 }
 
-// bgpVIPPeerJSON mirrors the Dev Preview per-peer schema of the
-// bgp-vip-config config.json payload consumed by templates and runtimecfg.
-// Field spellings and value encodings ("true"/"false" strings for the enum
-// knobs, bare decimal seconds such as "90" for the timers) must not change:
-// the rendered ControllerConfigSpec.BGPVIPPeersJSON has to stay
-// byte-compatible with the payload the installer used to publish via the
-// ConfigMap.
-type bgpVIPPeerJSON struct {
-	PeerAddress   string `json:"peerAddress"`
-	PeerASN       int64  `json:"peerASN"`
-	Password      string `json:"password,omitempty"`
-	Port          int32  `json:"port,omitempty"`
-	BFDEnabled    string `json:"bfdEnabled,omitempty"`
-	EBGPMultiHop  string `json:"ebgpMultiHop,omitempty"`
-	HoldTime      string `json:"holdTime,omitempty"`
-	KeepaliveTime string `json:"keepaliveTime,omitempty"`
-}
-
-// bgpVIPPeersJSONConfig mirrors the Dev Preview top-level schema of the
-// bgp-vip-config config.json payload.
-type bgpVIPPeersJSONConfig struct {
-	LocalASN      int64                       `json:"localASN"`
-	DefaultPeers  []bgpVIPPeerJSON            `json:"defaultPeers"`
-	Communities   []string                    `json:"communities,omitempty"`
-	APIVIPs       []string                    `json:"apiVIPs,omitempty"`
-	IngressVIPs   []string                    `json:"ingressVIPs,omitempty"`
-	HostOverrides map[string][]bgpVIPPeerJSON `json:"hostOverrides,omitempty"`
-}
-
 // bgpVIPFlagEnabled is the wire encoding of an enabled boolean knob in the
 // peers payload; disabled knobs are omitted.
 const bgpVIPFlagEnabled = "true"
 
-// bgpVIPPasswordResolver resolves a BGPVIPPasswordSecret reference (a Secret
-// name in the openshift-config namespace) to the plaintext TCP MD5 password.
-// The plaintext ends up in the internal transport JSON's "password" field:
-// that contract is unchanged, runtimecfg needs plaintext for the node-local
-// 0600 peers file.
-type bgpVIPPasswordResolver func(name string) (string, error)
+// bgpVIPPasswordSecretGetTimeout bounds the operator's read of a BGP VIP
+// password Secret, so a stalled API request cannot hold the sync loop.
+const bgpVIPPasswordSecretGetTimeout = 30 * time.Second
 
-// bgpVIPPasswordMaxBytes is the kernel's TCP MD5 password limit (RFC 2385,
-// TCP_MD5SIG_MAXKEYLEN).
-const bgpVIPPasswordMaxBytes = 80
-
-// bgpVIPPasswordFromSecret validates a resolved password Secret and extracts
-// the plaintext: type kubernetes.io/basic-auth, non-empty "password" key, at
-// most 80 bytes. Shared between the day-2 (API) and bootstrap (file)
-// resolvers.
-func bgpVIPPasswordFromSecret(secret *corev1.Secret) (string, error) {
-	if secret.Type != corev1.SecretTypeBasicAuth {
-		return "", fmt.Errorf("secret %q must be of type %q, got %q", secret.Name, corev1.SecretTypeBasicAuth, secret.Type)
-	}
-	password := secret.Data[corev1.BasicAuthPasswordKey]
-	if len(password) == 0 {
-		return "", fmt.Errorf("secret %q must carry a non-empty %q key", secret.Name, corev1.BasicAuthPasswordKey)
-	}
-	if len(password) > bgpVIPPasswordMaxBytes {
-		return "", fmt.Errorf("secret %q key %q exceeds the %d-byte TCP MD5 limit", secret.Name, corev1.BasicAuthPasswordKey, bgpVIPPasswordMaxBytes)
-	}
-	return string(password), nil
-}
-
-// resolveBGPVIPPasswordSecret is the day-2 resolver: a direct Get of the
-// referenced Secret from the openshift-config namespace (no Secret lister is
-// wired for openshift-config, and these reads happen only on BareMetal+BGP
-// syncs, so a live Get is the cheaper correct option).
+// getBGPVIPPasswordSecret is the operator's Secret source for validating the
+// rendered transport: a direct, time-bounded Get. The operator also wires
+// ocSecretLister for openshift-config (it reads the pull secret through it),
+// but a lister read can lag behind a Secret created just before the
+// BGPVIPConfig that references it, failing the render until a later sync; a
+// direct Get sees the new Secret immediately. These reads happen only on
+// BareMetal+BGP syncs.
 //
-// Note on rotation: the operator does not watch these Secrets. A rotated
-// password takes effect on the next sync (informer resync period or any
-// other event that retriggers the sync loop). This is intentional: wiring a
-// Secret informer for openshift-config just for this would be more machinery
-// than the rotation latency is worth.
-func (optr *Operator) resolveBGPVIPPasswordSecret(name string) (string, error) {
-	secret, err := optr.kubeClient.CoreV1().Secrets("openshift-config").Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to read the BGP VIP password Secret openshift-config/%s: %w", name, err)
-	}
-	return bgpVIPPasswordFromSecret(secret)
+// Rotation is handled by the template controller, which watches the
+// openshift-config Secrets and re-renders the peers file when a referenced
+// Secret changes; the transport written here does not change on rotation.
+func (optr *Operator) getBGPVIPPasswordSecret(namespace, name string) (*corev1.Secret, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), bgpVIPPasswordSecretGetTimeout)
+	defer cancel()
+	return optr.kubeClient.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-// bgpVIPPeerToJSON maps one typed BGPVIPPeer to the Dev Preview wire form.
-// The mapping mirrors the installer's ConfigMap producer so the peers file
-// on the nodes is byte-identical whichever source produced it: only BFD and
-// MultiHop are written (as "true"); HoldTimer and DirectlyConnected are the
-// renderer's defaults and stay absent, as do omitted enums and zero timers.
-// A passwordSecret reference is resolved to plaintext via the resolver;
-// fldPath locates the peer in the CR spec for errors, which end up in the
-// operator log and the Rendered condition and so name neither the peer
-// address nor the password.
-func bgpVIPPeerToJSON(peer mcfgv1alpha1.BGPVIPPeer, fldPath string, resolve bgpVIPPasswordResolver) (bgpVIPPeerJSON, error) {
-	out := bgpVIPPeerJSON{
+// bgpVIPPeerToJSON maps one typed BGPVIPPeer to the transport form. The
+// mapping mirrors the installer's ConfigMap producer so the peers file on the
+// nodes is byte-identical whichever source produced it: only BFD and MultiHop
+// are written (as "true"); HoldTimer and DirectlyConnected are the renderer's
+// defaults and stay absent, as do omitted enums and zero timers. A
+// passwordSecret is written as a reference to the openshift-config Secret,
+// never as plaintext.
+func bgpVIPPeerToJSON(peer mcfgv1alpha1.BGPVIPPeer) ctrlcommon.BGPVIPPeer {
+	out := ctrlcommon.BGPVIPPeer{
 		PeerAddress: peer.PeerAddress,
 		PeerASN:     peer.PeerASN,
 		Port:        peer.Port,
 	}
 	if peer.PasswordSecret.Name != "" {
-		password, err := resolve(peer.PasswordSecret.Name)
-		if err != nil {
-			return bgpVIPPeerJSON{}, fmt.Errorf("failed to resolve the password for %s: %w", fldPath, err)
+		out.PasswordSecret = &ctrlcommon.BGPVIPPasswordSecretRef{
+			Name:      peer.PasswordSecret.Name,
+			Namespace: ctrlcommon.OpenshiftConfigNamespace,
 		}
-		out.Password = password
 	}
 	if peer.FailureDetection == mcfgv1alpha1.FailureDetectionBFD {
 		out.BFDEnabled = bgpVIPFlagEnabled
@@ -491,39 +433,31 @@ func bgpVIPPeerToJSON(peer mcfgv1alpha1.BGPVIPPeer, fldPath string, resolve bgpV
 	if peer.KeepaliveTimeSeconds != 0 {
 		out.KeepaliveTime = strconv.FormatInt(int64(peer.KeepaliveTimeSeconds), 10)
 	}
-	return out, nil
+	return out
 }
 
 // bgpVIPPeersJSONFromCR serializes a BGPVIPConfig CR plus the cluster VIPs
-// into the Dev Preview config.json payload, byte-compatible with what the
-// bgp-vip-config ConfigMap used to carry. passwordSecret references are
-// resolved to plaintext through resolve (API-backed day-2, file-backed at
-// bootstrap); a resolver failure fails the whole render.
-func bgpVIPPeersJSONFromCR(cr *mcfgv1alpha1.BGPVIPConfig, infra *configv1.Infrastructure, resolve bgpVIPPasswordResolver) (string, error) {
-	cfg := bgpVIPPeersJSONConfig{
+// into the ControllerConfig transport. Password Secrets are referenced, not
+// read. Without passwordSecret references the transport is byte-identical to
+// the Dev Preview config.json payload the bgp-vip-config ConfigMap used to
+// carry.
+func bgpVIPPeersJSONFromCR(cr *mcfgv1alpha1.BGPVIPConfig, infra *configv1.Infrastructure) (string, error) {
+	cfg := ctrlcommon.BGPVIPPeersConfig{
 		LocalASN: cr.Spec.LocalASN,
 	}
 	for _, community := range cr.Spec.Communities {
 		cfg.Communities = append(cfg.Communities, string(community))
 	}
-	cfg.DefaultPeers = make([]bgpVIPPeerJSON, 0, len(cr.Spec.DefaultPeers))
-	for i, peer := range cr.Spec.DefaultPeers {
-		out, err := bgpVIPPeerToJSON(peer, fmt.Sprintf("spec.defaultPeers[%d]", i), resolve)
-		if err != nil {
-			return "", err
-		}
-		cfg.DefaultPeers = append(cfg.DefaultPeers, out)
+	cfg.DefaultPeers = make([]ctrlcommon.BGPVIPPeer, 0, len(cr.Spec.DefaultPeers))
+	for _, peer := range cr.Spec.DefaultPeers {
+		cfg.DefaultPeers = append(cfg.DefaultPeers, bgpVIPPeerToJSON(peer))
 	}
 	if len(cr.Spec.HostOverrides) > 0 {
-		cfg.HostOverrides = make(map[string][]bgpVIPPeerJSON, len(cr.Spec.HostOverrides))
-		for i, override := range cr.Spec.HostOverrides {
-			peers := make([]bgpVIPPeerJSON, 0, len(override.Peers))
-			for j, peer := range override.Peers {
-				out, err := bgpVIPPeerToJSON(peer, fmt.Sprintf("spec.hostOverrides[%d].peers[%d]", i, j), resolve)
-				if err != nil {
-					return "", err
-				}
-				peers = append(peers, out)
+		cfg.HostOverrides = make(map[string][]ctrlcommon.BGPVIPPeer, len(cr.Spec.HostOverrides))
+		for _, override := range cr.Spec.HostOverrides {
+			peers := make([]ctrlcommon.BGPVIPPeer, 0, len(override.Peers))
+			for _, peer := range override.Peers {
+				peers = append(peers, bgpVIPPeerToJSON(peer))
 			}
 			cfg.HostOverrides[override.Hostname] = peers
 		}
@@ -539,21 +473,12 @@ func bgpVIPPeersJSONFromCR(cr *mcfgv1alpha1.BGPVIPConfig, infra *configv1.Infras
 	return string(out), nil
 }
 
-// syncBGPVIPPeersJSON populates spec.BGPVIPPeersJSON from the BGPVIPConfig
-// "cluster" CR when BGP-based VIP management is enabled on a BareMetal
-// platform, and reports the outcome on the CR's Rendered condition.
-func (optr *Operator) syncBGPVIPPeersJSON(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
-	// Any previously pending report is stale the moment a new render starts:
-	// a deleted CR or a disabled feature must not leave an old pointer being
-	// re-reported. The pointer is re-set below only on a successful render.
-	optr.bgpVIPConfigToReport = nil
-	if !ctrlcommon.IsBGPVIPManagement(infra) {
-		return nil
-	}
+// getBGPVIPConfig returns the BGPVIPConfig "cluster" CR.
+func (optr *Operator) getBGPVIPConfig() (*mcfgv1alpha1.BGPVIPConfig, error) {
 	if optr.bgpVIPConfigLister == nil {
 		// The informer only exists when the BGPBasedVIPManagement gate is
 		// on; vipManagement=BGP without it cannot be rendered.
-		return fmt.Errorf("BGP VIP management is enabled but the %s feature gate is not", features.FeatureGateBGPBasedVIPManagement)
+		return nil, fmt.Errorf("BGP VIP management is enabled but the %s feature gate is not", features.FeatureGateBGPBasedVIPManagement)
 	}
 	obj, err := optr.bgpVIPConfigLister.Get("cluster")
 	if apierrors.IsNotFound(err) && optr.bgpVIPConfigListerSynced != nil && !optr.bgpVIPConfigListerSynced() {
@@ -567,15 +492,44 @@ func (optr *Operator) syncBGPVIPPeersJSON(spec *mcfgv1.ControllerConfigSpec, inf
 			// The spec is rebuilt from scratch on every sync, so silently
 			// tolerating absence would blank the peers file fleet-wide.
 			// Degrade instead, holding the last good ControllerConfig.
-			return fmt.Errorf("BGP VIP management is enabled but the BGPVIPConfig 'cluster' resource is missing")
+			return nil, fmt.Errorf("BGP VIP management is enabled but the BGPVIPConfig 'cluster' resource is missing")
 		}
-		return fmt.Errorf("failed to read the BGPVIPConfig 'cluster' resource: %w", err)
+		return nil, fmt.Errorf("failed to read the BGPVIPConfig 'cluster' resource: %w", err)
 	}
 	cr := &mcfgv1alpha1.BGPVIPConfig{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.UnstructuredContent(), cr); err != nil {
-		return fmt.Errorf("failed to decode the BGPVIPConfig 'cluster' resource: %w", err)
+		return nil, fmt.Errorf("failed to decode the BGPVIPConfig 'cluster' resource: %w", err)
 	}
-	peersJSON, err := bgpVIPPeersJSONFromCR(cr, infra, optr.resolveBGPVIPPasswordSecret)
+	return cr, nil
+}
+
+// syncBGPVIPPeersJSON populates spec.BGPVIPPeersJSON from the BGPVIPConfig
+// "cluster" CR when BGP-based VIP management is enabled on a BareMetal
+// platform. The transport only ever carries passwordSecret references.
+//
+// The referenced Secrets are validated with the same resolver the renderers
+// use; its output (the resolved passwords) is discarded and never reaches the
+// ControllerConfig. A missing or invalid Secret fails the render: the error
+// is returned (operator Degraded), reported on the CR's Rendered condition,
+// and the last good ControllerConfig is kept, so the template controller
+// keeps rendering the last good references.
+func (optr *Operator) syncBGPVIPPeersJSON(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
+	// Any previously pending report is stale the moment a new render starts:
+	// a deleted CR or a disabled feature must not leave an old pointer being
+	// re-reported. The pointer is re-set below only on a successful render.
+	optr.bgpVIPConfigToReport = nil
+	if !ctrlcommon.IsBGPVIPManagement(infra) {
+		return nil
+	}
+	cr, err := optr.getBGPVIPConfig()
+	if err != nil {
+		return err
+	}
+	peersJSON, err := bgpVIPPeersJSONFromCR(cr, infra)
+	if err == nil {
+		// Validation only: the resolved peers file is discarded.
+		_, err = ctrlcommon.ResolveBGPVIPPeersJSON(peersJSON, optr.getBGPVIPPasswordSecret)
+	}
 	if err != nil {
 		if statusErr := optr.applyBGPVIPConfigRenderedStatus(cr, err); statusErr != nil {
 			klog.Errorf("Failed to update BGPVIPConfig status: %v", statusErr)

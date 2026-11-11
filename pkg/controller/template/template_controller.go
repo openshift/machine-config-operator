@@ -36,6 +36,7 @@ import (
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1clientset "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelistersv1 "k8s.io/client-go/listers/core/v1"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -84,6 +85,11 @@ type Controller struct {
 
 	iriMerger *ctrlcommon.IRISecretMerger
 
+	// openshiftConfigSecretLister reads Secrets in openshift-config, such as
+	// the ones BGP VIP peer passwordSecret references point at. Objects are
+	// cache-owned and must not be mutated.
+	openshiftConfigSecretLister corelistersv1.SecretLister
+
 	queue workqueue.TypedRateLimitingInterface[string]
 
 	urlClearOnce sync.Once
@@ -125,6 +131,7 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
+	ctrl.openshiftConfigSecretLister = secretsInformer.Lister()
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
@@ -205,7 +212,37 @@ func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
 		secret.Name == cfg.Spec.PullSecret.Name {
 		ctrl.enqueueController()
 		klog.Infof("Re-syncing ControllerConfig due to secret %s/%s change", secret.Namespace, secret.Name)
+		return
 	}
+
+	// Check if this is a BGP VIP peer password Secret: the peers file is
+	// rendered from it, so rotation must re-render.
+	if isReferencedBGPVIPPasswordSecret(cfg, secret) {
+		ctrl.enqueueControllerConfig(cfg)
+		klog.Infof("Re-syncing ControllerConfig due to BGP VIP password secret %s/%s change", secret.Namespace, secret.Name)
+	}
+}
+
+// isReferencedBGPVIPPasswordSecret reports whether secret is referenced by a
+// passwordSecret in the ControllerConfig's BGP VIP peers transport. Every
+// Secret event in the cluster can reach this (the IRI informer is not
+// namespaced), so the cheap checks come before the payload is parsed.
+func isReferencedBGPVIPPasswordSecret(cfg *mcfgv1.ControllerConfig, secret *corev1.Secret) bool {
+	if secret.Namespace != ctrlcommon.OpenshiftConfigNamespace || cfg.Spec.BGPVIPPeersJSON == "" ||
+		!ctrlcommon.IsBGPVIPManagement(cfg.Spec.Infra) {
+		return false
+	}
+	refs, err := ctrlcommon.BGPVIPPasswordSecretRefs(cfg.Spec.BGPVIPPeersJSON)
+	if err != nil {
+		klog.V(4).Infof("Could not read the BGP VIP password Secret references from ControllerConfig %s: %v", cfg.Name, err)
+		return false
+	}
+	for _, ref := range refs {
+		if ref.Namespace == secret.Namespace && ref.Name == secret.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func (ctrl *Controller) addSecret(obj interface{}) {
@@ -255,6 +292,22 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 			return
 		}
 		klog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
+		return
+	}
+
+	if secret.Namespace != ctrlcommon.OpenshiftConfigNamespace {
+		return
+	}
+	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		klog.V(4).Infof("Could not get ControllerConfig to check deleted secret %s/%s: %v", secret.Namespace, secret.Name, err)
+		return
+	}
+	// A deleted BGP VIP password Secret makes the peers file unrenderable:
+	// re-sync so the failure is reported (the last good MachineConfig stays).
+	if isReferencedBGPVIPPasswordSecret(cfg, secret) {
+		ctrl.enqueueControllerConfig(cfg)
+		klog.Infof("Re-syncing ControllerConfig due to BGP VIP password secret %s/%s deletion", secret.Namespace, secret.Name)
 	}
 }
 
@@ -599,6 +652,15 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
+	// Resolve the BGP VIP peer password Secrets into the peers file content
+	// before any MachineConfig write (including the image URL cleanup below):
+	// on failure nothing is applied, so the last good MachineConfigs (and the
+	// peers file the nodes have) stay in place.
+	bgpVIPPeersFile, err := bgpVIPPeersFileJSON(cfg, ctrl.getBGPVIPSecret)
+	if err != nil {
+		return ctrl.syncFailingStatus(cfg, fmt.Errorf("could not render the BGP VIP peers file: %w", err))
+	}
+
 	// TODO: To be removed when 4.22 is EOL
 	// Since 4.22 templated/generated (non-rendered) MCs no longer set the
 	// OS and Extensions URLs and if given, the render controller ignores their
@@ -618,7 +680,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		Enabled:     ctrl.tlsGroupPreferencesEnabled,
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, groupOpts)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -670,7 +732,25 @@ func (ctrl *Controller) clearImageURLs() error {
 	return err
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
+// getBGPVIPSecret reads a BGP VIP password Secret from the openshift-config
+// Secret informer cache.
+func (ctrl *Controller) getBGPVIPSecret(namespace, name string) (*corev1.Secret, error) {
+	return ctrl.openshiftConfigSecretLister.Secrets(namespace).Get(name)
+}
+
+// bgpVIPPeersFileJSON returns the frr-peers.json content for a ControllerConfig:
+// its BGP VIP peers transport with the passwordSecret references resolved
+// through getSecret. Without active BGP VIP management the peers file is not
+// consumed (the frr-k8s static pod is disabled) and renders empty, so a stale
+// transport can never fail the render.
+func bgpVIPPeersFileJSON(config *mcfgv1.ControllerConfig, getSecret ctrlcommon.BGPVIPSecretGetter) (string, error) {
+	if !ctrlcommon.IsBGPVIPManagement(config.Spec.Infra) {
+		return "", nil
+	}
+	return ctrlcommon.ResolveBGPVIPPeersJSON(config.Spec.BGPVIPPeersJSON, getSecret)
+}
+
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, bgpVIPPeersFile string, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -683,6 +763,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
 		TLSCurvePreferences:  tlsCurvePreferences,
+		BGPVIPPeersFileJSON:  bgpVIPPeersFile,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -698,7 +779,14 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	return mcs, nil
 }
 
-// RunBootstrap runs the template controller in bootstrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, groupOpts)
+// RunBootstrap runs the template controller in bootstrap mode. getBGPVIPSecret
+// resolves the BGP VIP peer passwordSecret references (from the bootstrap
+// manifests); it may be nil when no Secrets are available, in which case a
+// referenced password fails the render.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, getBGPVIPSecret ctrlcommon.BGPVIPSecretGetter) ([]*mcfgv1.MachineConfig, error) {
+	bgpVIPPeersFile, err := bgpVIPPeersFileJSON(config, getBGPVIPSecret)
+	if err != nil {
+		return nil, fmt.Errorf("could not render the BGP VIP peers file: %w", err)
+	}
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, bgpVIPPeersFile, apiServer, groupOpts)
 }

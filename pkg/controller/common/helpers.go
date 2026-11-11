@@ -848,10 +848,14 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 	overwrite := true
 	outConfig := ign3types.Config{}
 	// Convert data to Ignition resources
-	for _, contents := range files {
+	for i, contents := range files {
 		f := new(fcctbase.File)
 		if err := yaml.Unmarshal([]byte(contents), f); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %q into struct: %w", contents, err)
+			// Never echo contents or decoder text: rendered files can carry
+			// secrets (e.g. the BGP VIP peers file holds resolved passwords),
+			// and decoder errors can quote file keys and values. The file's
+			// index in files is the only identifier reported.
+			return nil, fmt.Errorf("failed to unmarshal file %d into struct", i)
 		}
 		f.Overwrite = &overwrite
 
