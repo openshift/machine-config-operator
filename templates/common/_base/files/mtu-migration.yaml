@@ -57,7 +57,7 @@ contents:
                                     # remove overriden fields and linkdown (read only)
                                     sed -re 's/ (proto|metric) [^[:blank:]]+//g' -e 's/linkdown//g' |
                                     # remove mtu that we are going to be setting later on
-                                    sed -re "s/ mtu $mtu([[:blank:]]|$)//g" |
+                                    sed -re "s/ mtu $mtu([[:blank:]]|$)/ /g" |
                                     # ip oneline replaces '\n' with '\', remove it and normalize blanks
                                     sed -re "s/\\\//g" -e 's/[[:blank:]]+/ /g' -e 's/[[:blank:]]*$//g' |
                                     # remove duplicates while preserving original order
