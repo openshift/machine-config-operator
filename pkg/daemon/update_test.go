@@ -1149,3 +1149,68 @@ func TestFRRPeersFileChangeIsNonDisruptive(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, drain)
 }
+
+func TestStripIrreconcilableStorageSections(t *testing.T) {
+	ignCfg := ctrlcommon.NewIgnConfig()
+
+	ignCfg.Storage.Files = []ign3types.File{
+		newTestIgnitionFile(0),
+		newTestIgnitionFile(1),
+	}
+	ignCfg.Storage.Disks = []ign3types.Disk{
+		{Device: "/dev/sda"},
+	}
+	ignCfg.Storage.Filesystems = []ign3types.Filesystem{
+		{Device: "/dev/sda1", Path: helpers.StrToPtr("/var/lib/containers"), Format: helpers.StrToPtr("xfs")},
+	}
+	ignCfg.Storage.Raid = []ign3types.Raid{
+		{Name: "md0", Level: helpers.StrToPtr("raid1"), Devices: []ign3types.Device{"/dev/sda1", "/dev/sdb1"}},
+	}
+	ignCfg.Storage.Directories = []ign3types.Directory{
+		{Node: ign3types.Node{Path: "/etc/foo"}},
+	}
+	ignCfg.Storage.Links = []ign3types.Link{
+		{Node: ign3types.Node{Path: "/etc/bar"}, LinkEmbedded1: ign3types.LinkEmbedded1{Target: helpers.StrToPtr("/etc/baz")}},
+	}
+
+	mc := helpers.CreateMachineConfigFromIgnition(ignCfg)
+	mc.Name = "rendered-worker-test"
+	mc.Spec.OSImageURL = "registry.example.com/rhcos:latest"
+	mc.Spec.KernelArguments = []string{"quiet"}
+
+	stripped, err := stripIrreconcilableStorageSections(mc)
+	require.NoError(t, err)
+
+	// Original MC must not be mutated
+	origIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	require.NoError(t, err)
+	assert.Len(t, origIgnCfg.Storage.Disks, 1, "original disks must be unchanged")
+	assert.Len(t, origIgnCfg.Storage.Filesystems, 1, "original filesystems must be unchanged")
+
+	// Stripped MC should have irreconcilable sections removed
+	strippedIgnCfg, err := ctrlcommon.ParseAndConvertConfig(stripped.Spec.Config.Raw)
+	require.NoError(t, err)
+
+	assert.Empty(t, strippedIgnCfg.Storage.Disks, "disks should be stripped")
+	assert.Empty(t, strippedIgnCfg.Storage.Filesystems, "filesystems should be stripped")
+	assert.Empty(t, strippedIgnCfg.Storage.Raid, "raid should be stripped")
+	assert.Empty(t, strippedIgnCfg.Storage.Directories, "directories should be stripped")
+	assert.Empty(t, strippedIgnCfg.Storage.Links, "links should be stripped")
+
+	// Files must be preserved
+	assert.Len(t, strippedIgnCfg.Storage.Files, 2, "files should be preserved")
+
+	// Non-Ignition fields must be preserved
+	assert.Equal(t, mc.Name, stripped.Name)
+	assert.Equal(t, mc.Spec.OSImageURL, stripped.Spec.OSImageURL)
+	assert.Equal(t, mc.Spec.KernelArguments, stripped.Spec.KernelArguments)
+
+	// The stripped MC should now be reconcilable against an empty MC
+	emptyMC := canonicalizeEmptyMC(nil)
+	_, err = reconcilable(emptyMC, stripped, nil)
+	assert.NoError(t, err, "stripped MC should be reconcilable against an empty MC")
+
+	// The original MC should NOT be reconcilable against an empty MC
+	_, err = reconcilable(emptyMC, mc, nil)
+	assert.Error(t, err, "original MC with storage sections should not be reconcilable against an empty MC")
+}

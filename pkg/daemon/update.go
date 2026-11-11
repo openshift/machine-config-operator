@@ -820,6 +820,35 @@ func (dn *Daemon) calculatePostConfigChangeNodeDisruptionAction(diff *machineCon
 	return nodeDisruptionActions, nil
 }
 
+// stripIrreconcilableStorageSections returns a deep copy of the MachineConfig
+// with install-time-only Ignition storage sections removed. These sections
+// (disks, filesystems, raid, directories, links) are applied by Ignition at
+// provisioning time and are never applied by the MCD at runtime. Stripping them
+// prevents the reconcilable check from failing when comparing against an empty
+// baseline MC during the OCL revert firstboot.
+func stripIrreconcilableStorageSections(mc *mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
+	stripped := mc.DeepCopy()
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(stripped.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config: %w", err)
+	}
+
+	ignCfg.Storage.Disks = nil
+	ignCfg.Storage.Filesystems = nil
+	ignCfg.Storage.Raid = nil
+	ignCfg.Storage.Directories = nil
+	ignCfg.Storage.Links = nil
+
+	rawIgn, err := json.Marshal(ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling stripped Ignition config: %w", err)
+	}
+	stripped.Spec.Config.Raw = rawIgn
+
+	return stripped, nil
+}
+
 // Finalizes the revert process by enabling a special systemd unit prior to
 // rebooting the node.
 //
@@ -840,16 +869,27 @@ func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) (
 	// First, we write the new MachineConfig to a file. This is both the signal
 	// that the revert systemd unit should fire as well as the desired source of
 	// truth.
-	outBytes, err := json.Marshal(newConfig)
+	//
+	// Strip install-time-only storage sections (disks, filesystems, raid,
+	// directories, links) that the MCD never applies at runtime. Keeping them
+	// causes the reconcilable check in RunFirstbootCompleteMachineconfig to fail
+	// when comparing against the empty baseline MC — the same reason
+	// appendEncapsulated strips the Ignition config on normal firstboot.
+	mc, err := stripIrreconcilableStorageSections(newConfig)
 	if err != nil {
-		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", newConfig.Name, err)
+		return fmt.Errorf("could not strip irreconcilable storage sections from MachineConfig %q: %w", newConfig.Name, err)
+	}
+
+	outBytes, err := json.Marshal(mc)
+	if err != nil {
+		return fmt.Errorf("could not marshal MachineConfig %q to JSON: %w", mc.Name, err)
 	}
 
 	if err := writeFileAtomicallyWithDefaults(runtimeassets.RevertServiceMachineConfigFile, outBytes); err != nil {
-		return fmt.Errorf("could not write MachineConfig %q to %q: %w", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile, err)
+		return fmt.Errorf("could not write MachineConfig %q to %q: %w", mc.Name, runtimeassets.RevertServiceMachineConfigFile, err)
 	}
 
-	klog.Infof("Wrote MachineConfig %q to %q", newConfig.Name, runtimeassets.RevertServiceMachineConfigFile)
+	klog.Infof("Wrote MachineConfig %q to %q", mc.Name, runtimeassets.RevertServiceMachineConfigFile)
 
 	defer func() {
 		if retErr != nil {
@@ -866,7 +906,7 @@ func (dn *Daemon) finalizeRevertToNonLayering(newConfig *mcfgv1.MachineConfig) (
 	// it to disk. The reason for doing it this way is because it will persist
 	// after the reboot since it was not written or mutated by the rpm-ostree
 	// process.
-	if err := dn.enableRevertSystemdUnit(newConfig); err != nil {
+	if err := dn.enableRevertSystemdUnit(mc); err != nil {
 		return err
 	}
 
