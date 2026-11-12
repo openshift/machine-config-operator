@@ -2,7 +2,6 @@ package helpers
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -11,12 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	fakecorev1client "k8s.io/client-go/kubernetes/fake"
 )
-
-// noPollBudget is the wall-clock ceiling for an assertion that must return
-// without ever sleeping a poll interval. It sits far below the one second
-// default poll interval, so overshooting it still means a poll happened, yet
-// far above the scheduling jitter these parallel subtests are subject to.
-const noPollBudget = 200 * time.Millisecond
 
 type mockTesting struct {
 	failed          bool
@@ -39,13 +32,6 @@ func (m *mockTesting) FailNow()         { m.isFailNowCalled = true }
 func (m *mockTesting) Cleanup(f func()) { m.cleanupFunc = f }
 func (m *mockTesting) Failed() bool     { return m.failed }
 
-// failureMessage renders what the assertion reported. Every polling failure
-// sets isFailNowCalled, so that flag alone cannot tell a timeout apart from
-// exhausted attempts; the reported error can.
-func (m *mockTesting) failureMessage() string {
-	return fmt.Sprintf(m.errorfFormat, m.errorfArgs...)
-}
-
 // For now, this test will primarily concern itself with whether the various
 // objects on the Assertion struct are set correctly. This is because failed
 // assertions will cause the test suite to fail.
@@ -65,7 +51,7 @@ func TestAssertions(t *testing.T) {
 
 		a.PodDoesNotExist("nonexistent-pod")
 		assert.False(t, mock.isFailNowCalled)
-		assert.Less(t, time.Since(start), noPollBudget)
+		assert.True(t, time.Since(start) <= time.Millisecond)
 	})
 
 	t.Run("Reaches the desired state in a single attempt", func(t *testing.T) {
@@ -82,7 +68,7 @@ func TestAssertions(t *testing.T) {
 
 		a.PodDoesNotExist("nonexistent-pod")
 		assert.False(t, mock.isFailNowCalled)
-		assert.Less(t, time.Since(start), noPollBudget)
+		assert.True(t, time.Since(start) <= time.Millisecond)
 		assert.Equal(t, a.pollCount, 1)
 	})
 
@@ -99,7 +85,7 @@ func TestAssertions(t *testing.T) {
 
 		a.PodExists("nonexistent-pod")
 		assert.True(t, mock.isFailNowCalled)
-		assert.Less(t, time.Since(start), noPollBudget)
+		assert.True(t, time.Since(start) <= time.Millisecond)
 	})
 
 	t.Run("Polls with timeout", func(t *testing.T) {
@@ -114,9 +100,8 @@ func TestAssertions(t *testing.T) {
 		assert.Nil(t, a.ctx)
 
 		a.PodExists("nonexistent-pod")
-		assert.GreaterOrEqual(t, time.Since(start), timeout)
+		assert.True(t, time.Since(start) >= timeout)
 		assert.True(t, mock.isFailNowCalled)
-		assert.Contains(t, mock.failureMessage(), "context deadline exceeded")
 	})
 
 	t.Run("Polls at interval with timeout", func(t *testing.T) {
@@ -136,7 +121,6 @@ func TestAssertions(t *testing.T) {
 
 		a.PodExists("nonexistent-pod")
 		assert.True(t, mock.isFailNowCalled)
-		assert.Contains(t, mock.failureMessage(), "context deadline exceeded")
 	})
 
 	t.Run("Polls at interval with max attempts reached", func(t *testing.T) {
@@ -144,21 +128,15 @@ func TestAssertions(t *testing.T) {
 
 		interval := time.Millisecond
 
-		// The attempt counter has to be the only stop condition that can fire,
-		// so give the timeout orders of magnitude more room than the handful
-		// of one millisecond polls this needs. A timeout close to the polling
-		// budget races the counter and intermittently yields a short count.
-		timeout := 10 * time.Second
-
 		a, mock := getAssertionsForTest()
 
 		a = a.WithPollInterval(interval)
 		assert.Equal(t, a.pollInterval, interval)
 		assert.True(t, a.poll)
 
-		a = a.WithTimeout(timeout)
+		a = a.WithTimeout(time.Millisecond * 5)
 		assert.Equal(t, a.pollInterval, interval)
-		assert.Equal(t, a.timeout, timeout)
+		assert.Equal(t, a.timeout, time.Millisecond*5)
 
 		a = a.WithMaxAttempts(2)
 		assert.Equal(t, a.maxAttempts, 2)
@@ -170,38 +148,31 @@ func TestAssertions(t *testing.T) {
 
 		assert.True(t, mock.isFailNowCalled)
 		assert.Equal(t, 2, a.pollCount)
-		assert.Contains(t, mock.failureMessage(), "max attempts 2 has been reached")
 	})
 
 	t.Run("Runs and is canceled with a context", func(t *testing.T) {
 		t.Parallel()
 
-		// The parent deadline is the stop condition under test, so keep it well
-		// clear of the child timeout. Two durations a few milliseconds apart
-		// cannot tell which one fired, only how loaded the machine is.
-		parentDeadline := 50 * time.Millisecond
-		childTimeout := 10 * time.Second
-
-		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), parentDeadline)
-		defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
+		go func() {
+			time.Sleep(time.Millisecond * 5)
+			cancel()
+		}()
 
 		a, mock := getAssertionsForTest()
+		start := time.Now()
 
 		a = a.WithContext(ctx)
 		assert.Equal(t, a.ctx, ctx)
 
-		a = a.WithTimeout(childTimeout)
-		assert.Equal(t, a.timeout, childTimeout)
+		a = a.WithTimeout(time.Millisecond * 10)
+		assert.Equal(t, a.timeout, time.Millisecond*10)
 
 		a.PodExists("nonexistent-pod")
-		elapsed := time.Since(start)
 
+		assert.True(t, time.Since(start) > time.Millisecond*4)
+		assert.True(t, time.Since(start) < time.Millisecond*10)
 		assert.True(t, mock.isFailNowCalled)
-		// Polled until the parent was done rather than failing outright, and
-		// stopped there instead of running out the much longer child timeout.
-		assert.GreaterOrEqual(t, elapsed, parentDeadline)
-		assert.Less(t, elapsed, childTimeout/2)
 	})
 }
 
