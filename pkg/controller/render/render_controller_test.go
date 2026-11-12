@@ -99,9 +99,15 @@ func (f *fixture) newController() *Controller {
 	c.eventRecorder = ctrlcommon.NamespacedEventRecorder(&record.FakeRecorder{})
 
 	stopCh := make(chan struct{})
-	defer close(stopCh)
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
+	// WaitForCacheSync only waits for the informer stores to sync; the initial
+	// add notifications are delivered to the event handlers asynchronously.
+	// Stop the informers and wait for their handler goroutines to exit so that
+	// late events cannot race with tests that replace callbacks such as
+	// enqueueMachineConfigPool.
+	close(stopCh)
+	i.Shutdown()
 
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
