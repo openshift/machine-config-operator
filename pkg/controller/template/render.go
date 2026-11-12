@@ -48,6 +48,11 @@ type RenderConfig struct {
 	TLSCipherSuites     []string
 	TLSCurvePreferences []int32
 
+	// FeatureGates exposes the cluster feature gates to templates via the
+	// featureGateEnabled function. It may be nil for callers that render
+	// templates which do not depend on feature gates.
+	FeatureGates ctrlcommon.FeatureGatesHandler
+
 	// no need to set this, will be automatically configured
 	Constants map[string]string
 }
@@ -388,6 +393,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlPort"] = urlPort
 	funcs["isOpenShiftManagedDefaultLB"] = isOpenShiftManagedDefaultLB
 	funcs["isBGPVIPManagement"] = isBGPVIPManagement
+	funcs["featureGateEnabled"] = featureGateEnabled
 	funcs["dnsRecordsType"] = dnsRecordsType
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
@@ -693,6 +699,17 @@ func urlPort(u string) (interface{}, error) {
 	default:
 		return "", fmt.Errorf("unknown scheme in %s", u)
 	}
+}
+
+// featureGateEnabled reports whether the named cluster feature gate is enabled.
+// It returns false when no feature gate handler is available or the gate is
+// unknown, so templates never fail to render on clusters that do not know the
+// gate.
+func featureGateEnabled(cfg RenderConfig, name string) bool {
+	if cfg.FeatureGates == nil {
+		return false
+	}
+	return cfg.FeatureGates.Enabled(configv1.FeatureGateName(name))
 }
 
 func isOpenShiftManagedDefaultLB(cfg RenderConfig) bool {

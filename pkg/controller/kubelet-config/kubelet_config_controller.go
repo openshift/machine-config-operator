@@ -421,7 +421,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key string) {
 // generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
 // based on the given FeatureGate.
 func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, apiServer, groupOpts)
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, fgHandler, apiServer, groupOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
@@ -449,7 +449,7 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	return originalKubeConfig, nil
 }
 
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, apiServer *osev1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) (*ign3types.File, error) {
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, fgHandler ctrlcommon.FeatureGatesHandler, apiServer *osev1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) (*ign3types.File, error) {
 	// Render the default templates
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	tlsCurvePreferences := ctrlcommon.GetSecurityProfileGroupsFromAPIServer(apiServer, groupOpts)
@@ -458,6 +458,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
 		TLSCurvePreferences:  tlsCurvePreferences,
+		FeatureGates:         fgHandler,
 	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {

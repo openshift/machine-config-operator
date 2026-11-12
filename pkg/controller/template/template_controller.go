@@ -618,7 +618,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		Enabled:     ctrl.tlsGroupPreferencesEnabled,
 	}
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, groupOpts)
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, clusterPullSecretRaw, apiServer, groupOpts, ctrl.fgHandler)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -670,7 +670,7 @@ func (ctrl *Controller) clearImageURLs() error {
 	return err
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, clusterPullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, clusterPullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(clusterPullSecretRaw), err)
@@ -683,6 +683,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		TLSMinVersion:        tlsMinVersion,
 		TLSCipherSuites:      tlsCipherSuites,
 		TLSCurvePreferences:  tlsCurvePreferences,
+		FeatureGates:         fgHandler,
 	}
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -699,6 +700,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the template controller in bootstrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, groupOpts)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, apiServer *configv1.APIServer, groupOpts ctrlcommon.TLSGroupsOptions, fgHandler ctrlcommon.FeatureGatesHandler) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, apiServer, groupOpts, fgHandler)
 }

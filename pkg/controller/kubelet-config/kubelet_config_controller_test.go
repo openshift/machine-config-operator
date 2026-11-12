@@ -1944,7 +1944,7 @@ func TestKubeletConfigTLSRender(t *testing.T) {
 			fgHandler := ctrlcommon.NewFeatureGatesHardcodedHandler([]osev1.FeatureGateName{"Example"}, nil)
 			ctrl := f.newController(fgHandler)
 
-			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", testCase.apiserver, ctrlcommon.TLSGroupsOptions{})
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", fgHandler, testCase.apiserver, ctrlcommon.TLSGroupsOptions{})
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}

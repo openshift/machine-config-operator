@@ -298,7 +298,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Bootstrap rendering: FIPS target=%t, TLSGroupPreferences=%t",
 		groupOpts.FIPSEnabled, groupOpts.Enabled)
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts, fgHandler)
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler)
 	if err != nil {
 		return err
 	}
