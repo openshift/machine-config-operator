@@ -9,11 +9,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -160,6 +157,9 @@ const (
 	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
 	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
 	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+	mcsEventsClusterRoleManifestPath              = "manifests/machineconfigserver/events-clusterrole.yaml"
+	mcsEventsRoleBindingDefaultManifestPath       = "manifests/machineconfigserver/events-rolebinding-default.yaml"
+	mcsEventsRoleBindingTargetManifestPath        = "manifests/machineconfigserver/events-rolebinding-target.yaml"
 
 	// Machine OS puller manifest paths
 	mopRoleBindingManifestPath    = "manifests/machine-os-puller/rolebinding.yaml"
@@ -937,7 +937,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		templatectrl.KubeVIPKey:               imgs.KubeVip,
 	}
 
-	ignitionHost, err := getIgnitionHost(&infra.Status)
+	ignitionHost, err := server.GetIgnitionHost(&infra.Status)
 	if err != nil {
 		return err
 	}
@@ -967,7 +967,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig, _ *configv1.ClusterOpera
 		optr.setOperatorLogLevel(mcop.Spec.OperatorLogLevel)
 	}
 
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel))
+	// The MCS serves Ignition on the same host it is reached at for firstboot
+	// failure reports, so reuse the host already computed for the pointer config
+	// rather than having the MCS rediscover it from the Infrastructure object.
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra, pointerConfigData, apiServer, fmt.Sprintf("%d", optr.logLevel), fmt.Sprintf("https://%s", ignitionHost))
 
 	return nil
 }
@@ -1013,34 +1016,6 @@ func (optr *Operator) getTrustedBundle(proxy *configv1.Proxy) ([]byte, error) {
 		}
 	}
 	return trustBundle, nil
-}
-
-func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
-	internalURL := infraStatus.APIServerInternalURL
-	internalURLParsed, err := url.Parse(internalURL)
-	if err != nil {
-		return "", err
-	}
-	securePortStr := strconv.Itoa(server.SecurePort)
-	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
-	if infraStatus.PlatformStatus != nil {
-		switch infraStatus.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIPs[0], securePortStr)
-		case configv1.OpenStackPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIPs[0], securePortStr)
-		case configv1.OvirtPlatformType:
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs[0], securePortStr)
-		case configv1.VSpherePlatformType:
-			if infraStatus.PlatformStatus.VSphere != nil {
-				if len(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
-					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs[0], securePortStr)
-				}
-			}
-		}
-	}
-
-	return ignitionHost, nil
 }
 
 func (optr *Operator) syncMachineConfigPools(config *renderConfig, _ *configv1.ClusterOperator) error {
@@ -2015,6 +1990,11 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig, _ *configv1.
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcsClusterRoleManifestPath,
+			mcsEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mcsEventsRoleBindingDefaultManifestPath,
+			mcsEventsRoleBindingTargetManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mcsClusterRoleBindingManifestPath,
@@ -2481,7 +2461,7 @@ func setGVK(obj runtime.Object, scheme *runtime.Scheme) error {
 	return nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *ctrlcommon.RenderConfigImages, infra *configv1.Infrastructure, pointerConfigData []byte, apiServer *configv1.APIServer, logLevel, mcsURL string) *renderConfig {
 	tlsMinVersion, tlsCipherSuites := ctrlcommon.GetSecurityProfileCiphersFromAPIServer(apiServer)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
@@ -2491,6 +2471,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Images:                 imgs,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 		APIServerURL:           infra.Status.APIServerInternalURL,
+		MCSURL:                 mcsURL,
 		PointerConfig:          string(pointerConfigData),
 		Infra:                  *infra,
 		TLSMinVersion:          tlsMinVersion,

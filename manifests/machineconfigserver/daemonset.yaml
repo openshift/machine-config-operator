@@ -23,6 +23,7 @@ spec:
         args:
           - "start"
           - "--apiserver-url={{.APIServerURL}}"
+          - "--mcs-url={{.MCSURL}}"
           - "--payload-version={{.ReleaseVersion}}"
           - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
           - "--tls-min-version={{.TLSMinVersion}}"
