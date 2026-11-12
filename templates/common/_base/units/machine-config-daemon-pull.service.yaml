@@ -11,6 +11,7 @@ contents: |
   # Run after crio-wipe so the pulled MCD image is protected against a corrupted storage from a forced shutdown
   Wants=crio-wipe.service NetworkManager-wait-online.service
   After=crio-wipe.service NetworkManager-wait-online.service network.service
+  RequiresMountsFor=/var
 
   [Service]
   Type=oneshot
