@@ -365,6 +365,117 @@ nulla pariatur.`
 		logger.Infof("OK!\n")
 	})
 
+	// TODO-POLARION: replace with real Polarion ID once assigned
+	g.It("[TODO-POLARION][OTP] Ignition 3.6 special mode bits are applied to files on nodes [Disruptive]", func() {
+		const infraMcpName = "infra"
+		var (
+			setuidMode = PtrInt(2541) // 0o4755: setuid + rwxr-xr-x
+			setuidPath = "/etc/mc-special-mode-setuid.test"
+			setgidMode = PtrInt(1517) // 0o2755: setgid + rwxr-xr-x
+			setgidPath = "/etc/mc-special-mode-setgid.test"
+			mc         = NewMachineConfig(oc.AsAdmin(), "mc-tc-special-mode-bits", infraMcpName)
+		)
+
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating infra pool")
+		defer func() { o.Expect(DeleteCustomMCP(oc.AsAdmin(), infraMcpName)).NotTo(o.HaveOccurred()) }()
+		defer infraMcp.waitForComplete()
+		defer func() { o.Expect(mc.Delete()).NotTo(o.HaveOccurred()) }()
+
+		ndp := NewNodeDisruptionPolicy(oc)
+		defer ndp.Rollback()
+		o.Expect(
+			ndp.AddFilePolicy(setuidPath, NewCommonAction(NodeDisruptionPolicyActionNone)).
+				AddFilePolicy(setgidPath, NewCommonAction(NodeDisruptionPolicyActionNone)).
+				Apply(),
+		).To(o.Succeed(), "Failed to apply NodeDisruptionPolicy")
+
+		exutil.By("Create 3.6.0 MC with setuid and setgid files")
+		setuidFile := ign32File{
+			Path:     setuidPath,
+			Contents: ign32Contents{Source: GetBase64EncodedFileSourceContent("setuid test")},
+			Mode:     setuidMode,
+		}
+		setgidFile := ign32File{
+			Path:     setgidPath,
+			Contents: ign32Contents{Source: GetBase64EncodedFileSourceContent("setgid test")},
+			Mode:     setgidMode,
+		}
+
+		filesJSON := string(MarshalOrFail([]ign32File{setuidFile, setgidFile}))
+		mc.parameters = []string{fmt.Sprintf("FILES=%s", filesJSON), "IGNITION_VERSION=3.6.0"}
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for infra pool to be updated")
+		infraMcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify special mode bits on the infra node")
+		node := infraMcp.GetNodesOrFail()[0]
+		logger.Infof("Checking node %s", node.GetName())
+
+		setuidRF := NewRemoteFile(node, setuidPath)
+		o.Expect(setuidRF.Fetch()).NotTo(o.HaveOccurred(),
+			"Cannot stat %s on node %s", setuidPath, node.GetName())
+		o.Expect(setuidRF.GetOctalPermissions()).To(o.Equal("4755"),
+			"setuid bit not set on %s on node %s", setuidPath, node.GetName())
+
+		setgidRF := NewRemoteFile(node, setgidPath)
+		o.Expect(setgidRF.Fetch()).NotTo(o.HaveOccurred(),
+			"Cannot stat %s on node %s", setgidPath, node.GetName())
+		o.Expect(setgidRF.GetOctalPermissions()).To(o.Equal("2755"),
+			"setgid bit not set on %s on node %s", setgidPath, node.GetName())
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[TODO-POLARION][OTP] Ignition 3.5 MachineConfig strips special mode bits silently [Disruptive]", func() {
+		// The ignition v3.6 upconverter masks special bits before validation, so a 3.5.0 MC with
+		// mode 04755 lands at 0755 on disk. This is intentional; use a 3.6.0 MC for setuid files.
+		const infraMcpName = "infra"
+		var (
+			filePath   = "/etc/mc-special-mode-v35.test"
+			setuidFile = ign32File{
+				Path:     filePath,
+				Contents: ign32Contents{Source: GetBase64EncodedFileSourceContent("v35 setuid test")},
+				Mode:     PtrInt(2541), // 0o4755; upconverter strips to 0755
+			}
+			mc = NewMachineConfig(oc.AsAdmin(), "mc-tc-special-mode-bits-v35", infraMcpName)
+		)
+
+		infraMcp, err := CreateCustomMCP(oc.AsAdmin(), infraMcpName, 1)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating infra pool")
+		defer func() { o.Expect(DeleteCustomMCP(oc.AsAdmin(), infraMcpName)).NotTo(o.HaveOccurred()) }()
+		defer infraMcp.waitForComplete()
+		defer func() { o.Expect(mc.Delete()).NotTo(o.HaveOccurred()) }()
+
+		ndp := NewNodeDisruptionPolicy(oc)
+		defer ndp.Rollback()
+		o.Expect(
+			ndp.AddFilePolicy(filePath, NewCommonAction(NodeDisruptionPolicyActionNone)).Apply(),
+		).To(o.Succeed(), "Failed to apply NodeDisruptionPolicy")
+
+		exutil.By("Create 3.5.0 MC with setuid file")
+		filesJSON := string(MarshalOrFail([]ign32File{setuidFile}))
+		mc.parameters = []string{fmt.Sprintf("FILES=%s", filesJSON), "IGNITION_VERSION=3.5.0"}
+		mc.create()
+		logger.Infof("OK!\n")
+
+		exutil.By("Wait for infra pool to update")
+		infraMcp.waitForComplete()
+		logger.Infof("OK!\n")
+
+		exutil.By("Verify setuid bit was stripped on the infra node")
+		node := infraMcp.GetNodesOrFail()[0]
+		logger.Infof("Checking node %s", node.GetName())
+		rf := NewRemoteFile(node, filePath)
+		o.Expect(rf.Fetch()).NotTo(o.HaveOccurred(),
+			"Cannot stat %s on node %s", filePath, node.GetName())
+		o.Expect(rf.GetOctalPermissions()).To(o.Equal("0755"),
+			"Expected setuid bit to be stripped on %s on node %s", filePath, node.GetName())
+		logger.Infof("OK!\n")
+	})
+
 	g.It("[PolarionID:64833][OTP] Do not make an 'orig' copy for config.json file [Serial]", func() {
 		var (
 			mMcp                = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolMaster)
