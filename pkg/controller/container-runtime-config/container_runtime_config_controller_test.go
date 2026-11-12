@@ -1444,7 +1444,7 @@ func TestRunImageBootstrap(t *testing.T) {
 				// Adding the release-image registry "release-reg.io" to the list of blocked registries to ensure that is it not added to
 				// both registries.conf and policy.json as blocked
 				imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
-				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies)
+				mcs, err := RunImageBootstrap("../../../templates", cc, pools, tc.icspRules, tc.idmsRules, tc.itmsRules, imgCfg, tc.clusterImagePolicies, tc.imagePolicies, ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
 				require.NoError(t, err)
 
 				require.Len(t, mcs, len(pools))
