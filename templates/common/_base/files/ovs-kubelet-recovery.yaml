@@ -1,0 +1,67 @@
+{{if eq .NetworkType "OVNKubernetes" -}}
+mode: 0755
+path: "/usr/local/sbin/ovs-kubelet-recovery"
+contents:
+  inline: |
+    #!/bin/bash
+    set -uo pipefail
+    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+
+    log() {
+        printf 'ovs-kubelet-recovery: %s\n' "$*" >&2
+    }
+
+    all_active() {
+        local unit
+        for unit in "$@"; do
+            systemctl is-active --quiet "$unit" || return 1
+        done
+    }
+
+    ovs_ready() {
+        all_active ovsdb-server.service ovs-vswitchd.service openvswitch.service &&
+            ovs-vsctl --timeout=5 show >/dev/null 2>&1
+    }
+
+    chain_ready() {
+        all_active kubelet-dependencies.target crio.service kubelet.service
+    }
+
+    trap 'log "recovery interrupted or timed out"; exit 1' TERM INT
+
+    # Run through ovs-kubelet-recovery.service so systemd serializes recovery.
+    # Clear failed states and start limits once, not on every retry.
+    systemctl reset-failed \
+        ovsdb-server.service ovs-vswitchd.service openvswitch.service \
+        nmstate-configuration.service ovs-configuration.service \
+        kubelet-dependencies.target crio.service kubelet.service || exit 1
+
+    # TimeoutStartSec bounds this helper, including waits for dependency jobs.
+    # Timing out does not cancel jobs already submitted to systemd.
+    for ((attempt = 1; attempt <= 30; attempt++)); do
+        log "attempt $attempt/30"
+
+        if ovs_ready && chain_ready; then
+            log "OVS, dependency target, CRI-O and kubelet are active"
+            exit 0
+        fi
+
+        systemctl start --no-block openvswitch.service ||
+            log "could not queue OVS start"
+
+        if ovs_ready; then
+            # One blocking transaction lets systemd order all prerequisites.
+            # Separate starts can execute networking oneshots multiple times.
+            if systemctl start kubelet.service && ovs_ready && chain_ready; then
+                log "OVS, dependency target, CRI-O and kubelet are active"
+                exit 0
+            fi
+            log "Kubernetes dependency start did not complete successfully"
+        fi
+
+        (( attempt == 30 )) || sleep 10
+    done
+
+    log "retry limit reached; inspect the dependency unit journals"
+    exit 1
+{{end -}}
