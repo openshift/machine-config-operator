@@ -96,7 +96,7 @@ func TestReportCompletedReboot(t *testing.T) {
 			dn.bootID = tc.daemonBoot
 			observed := node.DeepCopy()
 			observed.Status.NodeInfo.BootID = tc.nodeBoot
-			complete, err := dn.reportCompletedReboot(observed, "worker")
+			complete, err := dn.reportCompletedRebootWithContext(context.Background(), observed, "worker")
 			require.NoError(t, err)
 			require.False(t, complete)
 			require.Zero(t, statusWrites)
@@ -108,7 +108,7 @@ func TestReportCompletedReboot(t *testing.T) {
 			dn.bootID = "new-boot"
 			observed := node.DeepCopy()
 			observed.Status.Phase = phase
-			complete, err := dn.reportCompletedReboot(observed, "worker")
+			complete, err := dn.reportCompletedRebootWithContext(context.Background(), observed, "worker")
 			require.NoError(t, err)
 			require.False(t, complete)
 			require.Zero(t, statusWrites)
@@ -118,7 +118,7 @@ func TestReportCompletedReboot(t *testing.T) {
 
 	dn.bootID = "new-boot"
 	statusErr = errors.New("status write failed")
-	complete, err := dn.reportCompletedReboot(node, "worker")
+	complete, err := dn.reportCompletedRebootWithContext(context.Background(), node, "worker")
 	require.ErrorContains(t, err, "status write failed")
 	require.False(t, complete)
 	require.Zero(t, writer.writes)
@@ -127,7 +127,7 @@ func TestReportCompletedReboot(t *testing.T) {
 
 	statusErr = nil
 	writer.err = errors.New("annotation write failed")
-	complete, err = dn.reportCompletedReboot(node, "worker")
+	complete, err = dn.reportCompletedRebootWithContext(context.Background(), node, "worker")
 	require.ErrorContains(t, err, "annotation write failed")
 	require.False(t, complete)
 	require.Equal(t, constants.MachineConfigDaemonStateRebooting, writer.node.Annotations[constants.MachineConfigDaemonPostConfigAction])
@@ -138,7 +138,7 @@ func TestReportCompletedReboot(t *testing.T) {
 	require.Equal(t, metav1.ConditionTrue, persisted.Status.Conditions[0].Status)
 
 	writer.err = nil
-	complete, err = dn.reportCompletedReboot(node, "worker")
+	complete, err = dn.reportCompletedRebootWithContext(context.Background(), node, "worker")
 	require.NoError(t, err)
 	require.True(t, complete)
 	require.Equal(t, "", writer.node.Annotations[constants.MachineConfigDaemonPostConfigAction])
@@ -178,7 +178,7 @@ func TestSyncNodeRetriesRebootWithoutBlockingInitialization(t *testing.T) {
 
 	// The missing ControllerConfig stops the test after node initialization;
 	// it must not stop at the stale boot ID or clear the reboot annotation.
-	err := dn.syncNode(node.Name)
+	err := dn.syncNode(context.Background(), node.Name)
 	require.ErrorContains(t, err, "could not get ControllerConfig")
 	require.True(t, dn.nodeInitialized)
 	require.Equal(t, node.Name, queue.key)
