@@ -80,11 +80,15 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        securityContext:
+          readOnlyRootFilesystem: true
         volumeMounts:
         - mountPath: /etc/tls/private
           name: proxy-tls
         - mountPath: /etc/kube-rbac-proxy
           name: mcd-auth-proxy-config
+        - mountPath: /tmp
+          name: tmp-kube-rbac-proxy
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
@@ -102,6 +106,8 @@ spec:
         - configMap:
             name: kube-rbac-proxy
           name: mcd-auth-proxy-config
+        - name: tmp-kube-rbac-proxy
+          emptyDir: {}
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
       - operator: Exists
