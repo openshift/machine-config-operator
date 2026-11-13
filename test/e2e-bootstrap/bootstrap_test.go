@@ -492,7 +492,7 @@ func compareRenderedConfigPool(t *testing.T, clientSet *framework.ClientSet, des
 	t.Logf("Bootstrap rendered %s config as %q", poolName, bootstrapRenderedConfigName)
 
 	controllerMC, err := clientSet.MachineConfigs().Get(context.Background(), controllerRenderedConfigName, metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	outIgn := ign3types.Config{}
 	err = json.Unmarshal(controllerMC.Spec.Config.Raw, &outIgn)
 	require.NoError(t, err, "failed to unmarshal controller MC ignition config")

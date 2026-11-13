@@ -57,7 +57,7 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 1*time.Minute, true, func(ctx context.Context) (bool, error) {
 		mcdPod, err := helpers.MCDForNode(cs, &node)
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
@@ -65,12 +65,12 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 		if err != nil {
 			// common err is that the mcd went down mid cmd. Re-try for good measure
 			mcdPod, err = helpers.MCDForNode(cs, &node)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			logs, err = cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 				Container: "machine-config-daemon",
 			}).DoRaw(ctx)
 		}
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		splitLogs := strings.Split(string(logs), "\n")
 
@@ -99,7 +99,7 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 		t.Logf("Config Drift Monitor is running (waited %v)", end)
 	}
 
-	require.Nil(t, err, "expected config drift monitor to start (waited %v)", end)
+	require.NoError(t, err, "expected config drift monitor to start (waited %v)", end)
 }
 
 func assertNodeIsInDoneState(t *testing.T, cs *framework.ClientSet, node corev1.Node) {

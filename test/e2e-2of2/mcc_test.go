@@ -31,7 +31,7 @@ func TestMCCReconcileAfterBadMC(t *testing.T) {
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
-	require.Nil(t, err, "failed to parse ignition config")
+	require.NoError(t, err, "failed to parse ignition config")
 	ignCfg.Storage.Disks = []ign3types.Disk{
 		{
 			Device: "/one",

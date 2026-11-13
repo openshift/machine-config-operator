@@ -72,7 +72,7 @@ dropins:
     ConditionPathExists=/enoent
 `
 	config, err := TranspileCoreOSConfigToIgn([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
 		t.Fatalf("invalid ignition V3 config found: %v", report)
 	}
@@ -85,7 +85,7 @@ func TestValidateIgnition(t *testing.T) {
 	// Test that an empty ignition config returns nil
 	testIgn2Config := ign2types.Config{}
 	isValid := ValidateIgnition(testIgn2Config)
-	require.Nil(t, isValid)
+	require.NoError(t, isValid)
 
 	// Test that an invalid ignition config returns and error
 	tempUser1 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
@@ -102,12 +102,12 @@ func TestValidateIgnition(t *testing.T) {
 	}
 	testIgn2Config.Storage.Files = []ign2types.File{ign2File}
 	isValid = ValidateIgnition(testIgn2Config)
-	require.Nil(t, isValid)
+	require.NoError(t, isValid)
 
 	// Test that an empty ignition config returns nil
 	testIgn3Config := ign3types.Config{}
 	isValid2 := ValidateIgnition(testIgn3Config)
-	require.Nil(t, isValid2)
+	require.NoError(t, isValid2)
 
 	// Test that an invalid ignition config returns an error
 	tempUser2 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
@@ -125,7 +125,7 @@ func TestValidateIgnition(t *testing.T) {
 	}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	isValid2 = ValidateIgnition(testIgn3Config)
-	require.Nil(t, isValid2)
+	require.NoError(t, isValid2)
 
 	// Test that file modes do not have special bits (sticky, setuid, setgid) set
 	// https://bugzilla.redhat.com/show_bug.cgi?id=2038240
@@ -295,14 +295,14 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn := helpers.MarshalOrDie(testIgn2Config)
 	// check that it was parsed successfully
 	convertedIgn, err := ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// turn v3.1 config into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.2 cfg
@@ -311,7 +311,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.1 cfg
@@ -320,7 +320,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
@@ -330,7 +330,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
@@ -340,7 +340,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
@@ -350,7 +350,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
@@ -360,7 +360,7 @@ func TestParseAndConvert(t *testing.T) {
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully back to the default version
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testIgn3Config.Ignition.Version = InternalMCOIgnitionVersion
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
@@ -394,7 +394,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	}
 	inMachineConfigs := []*mcfgv1.MachineConfig{machineConfigFIPS}
 	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, cconfig, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// check that the outgoing config does have the version string set,
 	// despite not having a MC with an ignition conf
@@ -404,7 +404,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	rawOutIgn, err := json.Marshal(outIgn)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL:      GetBaseImageContainer(&cconfig.Spec, nil),
@@ -515,7 +515,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	}
 
 	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	expectedMachineConfig = &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
@@ -570,7 +570,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	}, "bbb", MachineConfigPoolWorker)
 
 	filePath2Gzipped, err := helpers.CreateGzippedIgn3File(filePath2, testDataOld, mode)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	machineConfigWorker3 := helpers.CreateMachineConfigFromIgnitionWithMetadata(ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
@@ -599,7 +599,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 
 	cconfig = &mcfgv1.ControllerConfig{}
 	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// The expectation here is that the merged config contains the MCs with name bbb (overrides aaa due to name) and ccc (overrides ddd due to pool)
 	expectedMachineConfig = &mcfgv1.MachineConfig{
@@ -748,7 +748,7 @@ func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
 	testIgn2Config.Systemd.Units = append(testIgn2Config.Systemd.Units, unitThree)
 
 	convertedIgn2Config, err := removeIgnDuplicateFilesUnitsUsers(testIgn2Config)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	expectedIgn2Config := ign2types.Config{}
 	expectedIgn2Config.Storage.Files = append(expectedIgn2Config.Storage.Files, fileNew)
@@ -807,15 +807,15 @@ func TestSetDefaultFileOverwrite(t *testing.T) {
 			},
 		},
 	}
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cconfig := &mcfgv1.ControllerConfig{}
 	mergedMachineConfig, err := MergeMachineConfigs([]*mcfgv1.MachineConfig{machineConfigPreMerge}, cconfig, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Convert and create the expected post-merge config
 	rawOutIgnPostMerge, err := json.Marshal(testIgn3ConfigPostMerge)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			KernelArguments: []string{},

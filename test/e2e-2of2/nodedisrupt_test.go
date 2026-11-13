@@ -37,7 +37,7 @@ func TestNodeDisruptionPolicies(t *testing.T) {
 
 	cs := framework.NewClientSet("")
 	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.Nil(t, err, "error grabbing nodes from worker pool")
+	require.NoError(t, err, "error grabbing nodes from worker pool")
 	require.Greater(t, len(nodes), 0, "this test requires atleast one node in the worker pool")
 
 	// By equally(based on run-time) separating out the actions to be tested across three parallel sub-tests,
@@ -139,7 +139,7 @@ func TestNodeDisruptionPolicySpecialAction(t *testing.T) {
 
 	// Grab name of MCD pod under test
 	mcdPod, err := helpers.MCDForNode(cs, &nodeUnderTest)
-	require.Nil(t, err, "determing mcd pod of node under test failed")
+	require.NoError(t, err, "determing mcd pod of node under test failed")
 
 	// Grab old rendered MC to figure out transition back
 	oldRenderedMC := helpers.GetMcName(t, cs, testMCPSpecialName)
@@ -147,17 +147,17 @@ func TestNodeDisruptionPolicySpecialAction(t *testing.T) {
 	// Modify registry file on disk by adding a new "test.io" domain
 	tomlReg := sysregistriesv2.V2RegistriesConf{}
 	_, err = toml.Decode(helpers.GetFileContentOnNode(t, cs, nodeUnderTest, constants.ContainerRegistryConfPath), &tomlReg)
-	require.Nil(t, err, "failed decoding TOML content from file %s: %w", constants.ContainerRegistryConfPath, err)
+	require.NoError(t, err, "failed decoding TOML content from file %s: %w", constants.ContainerRegistryConfPath, err)
 	tomlReg.UnqualifiedSearchRegistries = append(tomlReg.UnqualifiedSearchRegistries, "test.io")
 	var newFile bytes.Buffer
 	encoder := toml.NewEncoder(&newFile)
 	err = encoder.Encode(tomlReg)
-	require.Nil(t, err, "failed encoding TOML content into file %s: %w", constants.ContainerRegistryConfPath, err)
+	require.NoError(t, err, "failed encoding TOML content into file %s: %w", constants.ContainerRegistryConfPath, err)
 
 	// Create the a test machineconfig from the file in cluster
 	testMC := helpers.NewMachineConfig("01-test", helpers.MCLabelForRole(testMCPSpecialName), "", []ign3types.File{ctrlcommon.NewIgnFile(constants.ContainerRegistryConfPath, newFile.String())})
 	_, err = cs.MachineconfigurationV1Interface.MachineConfigs().Create(context.TODO(), testMC, metav1.CreateOptions{})
-	require.Nil(t, err, "creating test machine config failed")
+	require.NoError(t, err, "creating test machine config failed")
 
 	// Wait for transition to new config
 	renderedMC := helpers.WaitForConfigAndPoolComplete(t, cs, testMCPSpecialName, testMC.Name)
@@ -167,8 +167,8 @@ func TestNodeDisruptionPolicySpecialAction(t *testing.T) {
 	helpers.AssertMCDLogsContain(t, cs, mcdPod, &nodeUnderTest, fmt.Sprintf("Performing post config change action: Special for config %s", renderedMC))
 
 	// Remove test config, this is the equivalent of deleting a registry
-	cs.MachineconfigurationV1Interface.MachineConfigs().Delete(context.TODO(), testMC.Name, metav1.DeleteOptions{})
-	require.Nil(t, err, "deleting test machine config failed")
+	err = cs.MachineconfigurationV1Interface.MachineConfigs().Delete(context.TODO(), testMC.Name, metav1.DeleteOptions{})
+	require.NoError(t, err, "deleting test machine config failed")
 
 	// Wait for pool to return to old MC before checking actions
 	helpers.WaitForPoolComplete(t, cs, testMCPSpecialName, oldRenderedMC)
@@ -193,18 +193,18 @@ func checkNodeDisruptionAction(t *testing.T, cs *framework.ClientSet, testMC *v1
 
 	// Grab name of MCD pod under test
 	mcdPod, err := helpers.MCDForNode(cs, &nodeUnderTest)
-	require.Nil(t, err, "determing mcd pod of node under test failed")
+	require.NoError(t, err, "determing mcd pod of node under test failed")
 
 	// Apply the node disruption policy
 	_, err = machineConfigurationClient.OperatorV1().MachineConfigurations().Apply(context.TODO(), &applyConfiguration, metav1.ApplyOptions{FieldManager: "machine-config-operator" + testMCP})
-	require.Nil(t, err, "updating cluster node disruption policy failed")
+	require.NoError(t, err, "updating cluster node disruption policy failed")
 
 	// Grab old rendered MC to figure out transition back
 	oldRenderedMC := helpers.GetMcName(t, cs, testMCP)
 
 	// Create the test machineconfig in cluster
 	_, err = cs.MachineconfigurationV1Interface.MachineConfigs().Create(context.TODO(), testMC, metav1.CreateOptions{})
-	require.Nil(t, err, "creating test machine config failed")
+	require.NoError(t, err, "creating test machine config failed")
 
 	// Wait for transition to new config
 	renderedMC := helpers.WaitForConfigAndPoolComplete(t, cs, testMCP, testMC.Name)
@@ -220,7 +220,7 @@ func checkNodeDisruptionAction(t *testing.T, cs *framework.ClientSet, testMC *v1
 
 	// Remove test config
 	cs.MachineconfigurationV1Interface.MachineConfigs().Delete(context.TODO(), testMC.Name, metav1.DeleteOptions{})
-	require.Nil(t, err, "deleting test machine config failed")
+	require.NoError(t, err, "deleting test machine config failed")
 
 	// Wait for pool to return to old MC before running next test case
 	helpers.WaitForPoolComplete(t, cs, testMCP, oldRenderedMC)

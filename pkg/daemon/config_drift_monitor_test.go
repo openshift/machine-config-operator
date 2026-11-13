@@ -314,13 +314,13 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 	}
 
 	// Start the config drift monitor
-	require.Nil(t, cdm.Start(opts))
+	require.NoError(t, cdm.Start(opts))
 
 	// Ensure that it's running
 	assert.True(t, cdm.IsRunning())
 
 	// Mutate the filesystem
-	require.Nil(t, tc.mutate(ignConfig))
+	require.NoError(t, tc.mutate(ignConfig))
 
 	// TODO: Figure out a value to make this work on Macs because they take
 	// longer to report the filesystem activity.
@@ -378,7 +378,7 @@ func setDefaultUIDandGID(file ign3types.File) ign3types.File {
 // Creates the Ignition Config test fixture
 func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config {
 	compressedFile, err := helpers.CreateGzippedIgn3File("/etc/a-compressed-file", "thefilecontents", int(defaultFilePermissions))
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	return ign3types.Config{
 		Ignition: ign3types.Ignition{
@@ -490,7 +490,7 @@ func (tc *configDriftMonitorTestCase) writeIgnitionConfig(t *testing.T, ignConfi
 	}
 
 	// Write files the same way the MCD does.
-	// NOTE: We manually handle the errors here because using require.Nil or
+	// NOTE: We manually handle the errors here because using require.NoError or
 	// require.NoError will skip the deferred functions, which is undesirable.
 	if err := writeFiles(ignConfig.Storage.Files, true); err != nil {
 		return fmt.Errorf("could not write ignition config files: %w", err)

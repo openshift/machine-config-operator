@@ -194,7 +194,7 @@ func TestBootstrapServer(t *testing.T) {
 
 	bytes := []byte("testing")
 	err = os.WriteFile(filepath.Join(testDir, "bar.crt"), bytes, 0o664)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
 		serverBaseDir:  testDir,

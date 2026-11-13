@@ -132,21 +132,21 @@ func waitForAllMastersUpdate(cs *framework.ClientSet, mastersSchedulable bool) e
 func TestClusterOperatorStatusExtension(t *testing.T) {
 	cs := framework.NewClientSet("")
 	co, err := cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	ext := map[string]string{
 		"test": "extension",
 	}
 	rawExt, err := json.Marshal(ext)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	co.Status.Extension.Raw = rawExt
 	_, err = cs.ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	co, err = cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotNil(t, co.Status.Extension)
 	coExt := map[string]string{}
 	err = json.Unmarshal(co.Status.Extension.Raw, &coExt)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	v, ok := coExt["test"]
 	require.True(t, ok)
 	require.Equal(t, "extension", v)
@@ -167,7 +167,7 @@ func TestMetrics(t *testing.T) {
 
 	if err := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
 		svc, err := cs.Services("openshift-machine-config-operator").Get(context.TODO(), "machine-config-controller", metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		// Extract the IP and port and build the URL
 		requestTarget := svc.Spec.ClusterIP
@@ -176,7 +176,7 @@ func TestMetrics(t *testing.T) {
 
 		t.Logf("Getting monitoring token")
 		token, err := helpers.GetMonitoringToken(t, cs)
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		// The bearer token goes in on stdin as a curl config file rather than
 		// as an argument: `oc rsh` encodes argv into the exec request URI,
@@ -215,16 +215,16 @@ func TestImageRegistryMergedCM(t *testing.T) {
 		},
 		metav1.CreateOptions{},
 	)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	trustedCM, err := cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cfg, err := cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cfgJson, err := json.Marshal(cfg)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	newCfg := cfg.DeepCopy()
 
@@ -232,14 +232,14 @@ func TestImageRegistryMergedCM(t *testing.T) {
 
 	newCfgJson, err := json.Marshal(newCfg)
 
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(cfgJson, newCfgJson, cfgJson)
 
 	//	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(cfgJson, newCfgJson, v1.Image{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	_, err = cs.ConfigV1Interface.Images().Patch(context.TODO(), "cluster", types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cfg, err = cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	cfgJson, err = json.Marshal(cfg)
@@ -249,18 +249,18 @@ func TestImageRegistryMergedCM(t *testing.T) {
 
 	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		newTrustedCM, err = cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		if _, ok := newTrustedCM.Data["foo"]; ok {
 			return true, nil
 		}
 		return false, nil
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, newTrustedCM.CreationTimestamp, trustedCM.CreationTimestamp)
 
 	nodes, err := helpers.GetNodesByRole(cs, "worker")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	//mcd, err := helpers.MCDForNode(cs, &nodes[0])
 
@@ -269,7 +269,7 @@ func TestImageRegistryMergedCM(t *testing.T) {
 		if err != nil {
 			t.Logf("Error while exec'ing on node. Probably transient due to commands being executed: %s", err.Error())
 			nodes, err = helpers.GetNodesByRole(cs, "worker")
-			require.Nil(t, err)
+			require.NoError(t, err)
 			return false, nil
 		}
 		t.Logf("OUTPUT: %s", out)
@@ -277,10 +277,10 @@ func TestImageRegistryMergedCM(t *testing.T) {
 	})
 
 	cfg, err = cs.ConfigV1Interface.Images().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cfgJson, err = json.Marshal(cfg)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	newCfg = cfg.DeepCopy()
 
@@ -288,17 +288,17 @@ func TestImageRegistryMergedCM(t *testing.T) {
 
 	newCfgJson, err = json.Marshal(newCfg)
 
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	patchBytes, err = jsonmergepatch.CreateThreeWayJSONMergePatch(cfgJson, newCfgJson, cfgJson)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	_, err = cs.ConfigV1Interface.Images().Patch(context.TODO(), "cluster", types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	err = wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		newTrustedCM, err = cs.CoreV1Interface.ConfigMaps("openshift-config-managed").Get(context.TODO(), "merged-trusted-image-registry-ca", metav1.GetOptions{})
-		require.Nil(t, err)
+		require.NoError(t, err)
 		if _, ok := newTrustedCM.Data["foo"]; ok {
 			return false, nil
 		}
@@ -310,5 +310,5 @@ func TestImageRegistryMergedCM(t *testing.T) {
 		return !strings.Contains(out, "foo"), nil
 	})
 	err = cs.CoreV1Interface.ConfigMaps("openshift-config").Delete(context.TODO(), "mcotestingca", metav1.DeleteOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 }

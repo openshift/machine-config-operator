@@ -35,7 +35,7 @@ func TestKubeletConfigDefaultUpdateFreq(t *testing.T) {
 	resources["cpu"] = "100m"
 	// this might get caught by the test below that says if default == current but that is ok since we want to make sure nodeStatusUpdateFrequency is 10s
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
-	require.Nil(t, err, "failed to encode kubelet config")
+	require.NoError(t, err, "failed to encode kubelet config")
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
 		Spec: mcfgv1.KubeletConfigSpec{
@@ -58,7 +58,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		SystemReservedCgroup:   "",
 		EnforceNodeAllocatable: []string{kubeletypes.NodeAllocatableEnforcementKey},
 	}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
-	require.Nil(t, err, "failed to encode kubelet config")
+	require.NoError(t, err, "failed to encode kubelet config")
 
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-101"},
@@ -76,7 +76,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 		SystemReservedCgroup:   "/system.slice",
 		EnforceNodeAllocatable: []string{kubeletypes.NodeAllocatableEnforcementKey, kubeletypes.SystemReservedCompressibleEnforcementKey},
 	}, kubeletconfigv1beta1.SchemeGroupVersion, runtime.ContentTypeJSON)
-	require.Nil(t, err, "failed to encode kubelet config")
+	require.NoError(t, err, "failed to encode kubelet config")
 
 	kc2 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-200"},
@@ -172,10 +172,10 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	// create default mc to have something to verify we successfully rolled back
 	defaultMCConfig := helpers.CreateMC(mcName, poolName)
 	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
-		require.Nil(t, err, "machine config deletion failed")
+		require.NoError(t, err, "machine config deletion failed")
 	})
 	defaultTarget := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
 
@@ -183,7 +183,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 	cleanupKcFunc1 := createKcWithConfig(t, cs, kcName1, poolName, &kc1.Spec, "")
 	// wait for the first kubelet config to show up
 	kcMCName1, err := getMCFromKubeletCfg(cs, kcName1)
-	require.Nil(t, err, "failed to render machine config from first container runtime config")
+	require.NoError(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first kubelet config update rolls out to the pool
 	kc1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
 	// verify value was changed to match that of the first kubelet config
@@ -205,7 +205,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 		cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
 		// wait for the second kubelet config to show up
 		kcMCName2, err := getMCFromKubeletCfg(cs, kcName2)
-		require.Nil(t, err, "failed to render machine config from second container runtime config")
+		require.NoError(t, err, "failed to render machine config from second container runtime config")
 		// ensure the second kubelet config update rolls out to the pool
 		helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
 		// verify value was changed to match that of the second kubelet config
@@ -225,7 +225,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 
 		// cleanup the second kubelet config and make sure it doesn't error
 		err = cleanupKcFunc2()
-		require.Nil(t, err)
+		require.NoError(t, err)
 		t.Logf("Deleted KubeletConfig %s", kcName2)
 
 		// ensure config rolls back to the previous kubelet config as expected
@@ -246,7 +246,7 @@ func runTestWithKubeletCfg(t *testing.T, testName string, regexKey []string, str
 
 		// cleanup the first kubelet config and make sure it doesn't error
 		err = cleanupKcFunc1()
-		require.Nil(t, err)
+		require.NoError(t, err)
 		t.Logf("Deleted KubeletConfig %s", kcName1)
 		// ensure config rolls back as expected
 		helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
@@ -299,7 +299,7 @@ func createKcWithConfig(t *testing.T, cs *framework.ClientSet, name, key string,
 	}
 
 	_, err := cs.KubeletConfigs().Create(context.TODO(), kc, metav1.CreateOptions{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return func() error {
 		return cs.KubeletConfigs().Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}
