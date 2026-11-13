@@ -124,6 +124,10 @@ func (b *Bootstrap) Run(destDir string) error {
 		iriTLSCert           *corev1.Secret
 		osImageStream        *mcfgv1.OSImageStream
 		iriCredentialsSecret *corev1.Secret
+		// openshiftConfigSecrets holds the openshift-config Secret
+		// manifests by name; BGP VIP peer passwordSecret references resolve
+		// from it.
+		openshiftConfigSecrets = map[string]*corev1.Secret{}
 	)
 	for _, info := range infos {
 		if info.IsDir() {
@@ -215,6 +219,13 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.InternalReleaseImageAuthSecretName {
 					iriCredentialsSecret = obj
 				}
+				if obj.GetNamespace() == ctrlcommon.OpenshiftConfigNamespace {
+					if _, dup := openshiftConfigSecrets[obj.GetName()]; dup {
+						klog.Warningf("ignoring duplicate manifest for Secret %s/%s in %q", obj.GetNamespace(), obj.GetName(), file.Name())
+					} else {
+						openshiftConfigSecrets[obj.GetName()] = obj
+					}
+				}
 			case *mcfgv1.OSImageStream:
 				// If given, it's treated as user input with config such as the default stream
 				osImageStream = obj
@@ -298,7 +309,17 @@ func (b *Bootstrap) Run(destDir string) error {
 	klog.Infof("Bootstrap rendering: FIPS target=%t, TLSGroupPreferences=%t",
 		groupOpts.FIPSEnabled, groupOpts.Enabled)
 
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts)
+	// BGP VIP peer passwordSecret references (openshift-config) resolve from
+	// the installer's Secret manifests; the ControllerConfig only carries the
+	// references, the passwords go into the rendered peers file alone.
+	getBGPVIPSecret := func(namespace, name string) (*corev1.Secret, error) {
+		secret, ok := openshiftConfigSecrets[name]
+		if namespace != ctrlcommon.OpenshiftConfigNamespace || !ok {
+			return nil, fmt.Errorf("no manifest for Secret %s/%s found in %q", namespace, name, b.manifestDir)
+		}
+		return ctrlcommon.SecretWithStringDataMerged(secret), nil
+	}
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts, getBGPVIPSecret)
 	if err != nil {
 		return err
 	}

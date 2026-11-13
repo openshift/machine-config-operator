@@ -631,3 +631,126 @@ func TestValidatePreBuiltImage(t *testing.T) {
 		})
 	}
 }
+
+// BGP VIP peers fixtures: the bootstrap MCC must render the pre-change
+// frr-peers.json bytes from a reference-only ControllerConfig transport.
+const (
+	bootstrapPeersTransport = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"passwordSecret":{"name":"bgp-peer-pw","namespace":"openshift-config"}}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"],"hostOverrides":{"master-0":[{"peerAddress":"192.168.111.2","peerASN":64514,"passwordSecret":{"name":"bgp-peer-pw","namespace":"openshift-config"}}]}}`
+	bootstrapPeersFile      = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret"}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"],"hostOverrides":{"master-0":[{"peerAddress":"192.168.111.2","peerASN":64514,"password":"s3cret"}]}}`
+	bootstrapFRRPeersPath   = "/etc/kubernetes/static-pod-resources/frr-k8s/frr-peers.json"
+)
+
+// makeBGPBootstrapControllerConfig switches the bootstrap test ControllerConfig
+// to BareMetal with BGP-based VIP management and the reference-only transport.
+func makeBGPBootstrapControllerConfig(t *testing.T, srcDir string) {
+	t.Helper()
+	path := filepath.Join(srcDir, "machineconfigcontroller-controllerconfig.yaml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	cc := &mcfgv1.ControllerConfig{}
+	require.NoError(t, yaml.Unmarshal(data, cc))
+	cc.Spec.Infra.Status.PlatformStatus = &apicfgv1.PlatformStatus{
+		Type: apicfgv1.BareMetalPlatformType,
+		BareMetal: &apicfgv1.BareMetalPlatformStatus{
+			VIPManagement:        apicfgv1.VIPManagementTypeBGP,
+			APIServerInternalIPs: []string{"192.168.111.5"},
+			IngressIPs:           []string{"192.168.111.4"},
+		},
+	}
+	if cc.Spec.DNS == nil {
+		cc.Spec.DNS = &apicfgv1.DNS{Spec: apicfgv1.DNSSpec{BaseDomain: "domain.example.com"}}
+	}
+	cc.Spec.BGPVIPPeersJSON = bootstrapPeersTransport
+	out, err := yaml.Marshal(cc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, out, 0o644))
+}
+
+// renderedMasterFile returns the decoded contents of path in the single
+// rendered master config written by the bootstrap run, asserting its 0600
+// mode.
+func renderedMasterFile(t *testing.T, destDir, path string) (string, bool) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", "rendered-master-*.yaml"))
+	require.NoError(t, err)
+	require.Len(t, paths, 1)
+	mcBytes, err := os.ReadFile(paths[0])
+	require.NoError(t, err)
+	mc, err := mcoResourceRead.ReadMachineConfigV1(mcBytes)
+	require.NoError(t, err)
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	require.NoError(t, err)
+	for i := range ignCfg.Storage.Files {
+		f := &ignCfg.Storage.Files[i]
+		if f.Path == path {
+			require.NotNil(t, f.Mode)
+			assert.Equal(t, 0o600, *f.Mode)
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+			require.NoError(t, err)
+			return string(contents), true
+		}
+	}
+	return "", false
+}
+
+// TestBootstrapRunBGPVIPPasswordSecret locks the bootstrap MCC resolution of
+// BGP VIP peer passwordSecret references from the installer's openshift-config
+// Secret manifests (data or stringData), the byte-identical peers file in the
+// rendered master config, and a ControllerConfig output free of plaintext.
+func TestBootstrapRunBGPVIPPasswordSecret(t *testing.T) {
+	secretData := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: bgp-peer-pw\n  namespace: openshift-config\ntype: kubernetes.io/basic-auth\ndata:\n  password: czNjcmV0\n"
+	secretStringData := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: bgp-peer-pw\n  namespace: openshift-config\ntype: kubernetes.io/basic-auth\nstringData:\n  password: s3cret\n"
+	decoy := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: bgp-peer-pw\n  namespace: openshift-machine-config-operator\ntype: kubernetes.io/basic-auth\nstringData:\n  password: SYNTHETIC-LEAK-MARKER\n"
+
+	cases := []struct {
+		name      string
+		manifests map[string]string
+	}{
+		{name: "Secret manifest with data", manifests: map[string]string{"bgp-vip-peer-secret.yaml": secretData}},
+		{name: "Secret manifest with stringData", manifests: map[string]string{"bgp-vip-peer-secret.yaml": secretStringData}},
+		{name: "same-named Secret in another namespace is ignored", manifests: map[string]string{"a-decoy.yaml": decoy, "z-bgp-vip-peer-secret.yaml": secretData}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bootstrap, _, srcDir, destDir := setupForBootstrapTest(t)
+			makeBGPBootstrapControllerConfig(t, srcDir)
+			for name, content := range tc.manifests {
+				require.NoError(t, os.WriteFile(filepath.Join(srcDir, name), []byte(content), 0o644))
+			}
+			require.NoError(t, bootstrap.Run(destDir))
+
+			peers, found := renderedMasterFile(t, destDir, bootstrapFRRPeersPath)
+			require.True(t, found, "the rendered master config must carry frr-peers.json")
+			assert.Equal(t, bootstrapPeersFile, peers)
+
+			cconfigBytes, err := os.ReadFile(filepath.Join(destDir, "controller-config", "machine-config-controller.yaml"))
+			require.NoError(t, err)
+			assert.NotContains(t, string(cconfigBytes), "s3cret", "the bootstrap ControllerConfig output must not carry the password")
+			assert.Contains(t, string(cconfigBytes), "passwordSecret")
+		})
+	}
+
+	t.Run("missing Secret manifest fails without leaking", func(t *testing.T) {
+		bootstrap, _, srcDir, destDir := setupForBootstrapTest(t)
+		makeBGPBootstrapControllerConfig(t, srcDir)
+		require.NoError(t, os.WriteFile(filepath.Join(srcDir, "a-decoy.yaml"), []byte(decoy), 0o644))
+		err := bootstrap.Run(destDir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "openshift-config/bgp-peer-pw")
+		assert.NotContains(t, err.Error(), "SYNTHETIC-LEAK-MARKER")
+	})
+}
+
+// TestBootstrapRunBGPVIPUnsafePasswordDoesNotLeak: a password that would
+// break the rendered peers file fails the bootstrap render, and the error
+// does not carry the password.
+func TestBootstrapRunBGPVIPUnsafePasswordDoesNotLeak(t *testing.T) {
+	// base64 of "SYNTHETIC LEAK-\u0085-MARKER"
+	secret := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: bgp-peer-pw\n  namespace: openshift-config\ntype: kubernetes.io/basic-auth\ndata:\n  password: U1lOVEhFVElDIExFQUstwoUtTUFSS0VS\n"
+	bootstrap, _, srcDir, destDir := setupForBootstrapTest(t)
+	makeBGPBootstrapControllerConfig(t, srcDir)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "bgp-vip-peer-secret.yaml"), []byte(secret), 0o644))
+	err := bootstrap.Run(destDir)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "SYNTHETIC LEAK")
+}

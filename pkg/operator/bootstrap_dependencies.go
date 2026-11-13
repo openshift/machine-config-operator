@@ -10,6 +10,7 @@ import (
 	mcfgv1alpha1 "github.com/openshift/api/machineconfiguration/v1alpha1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	mcfgscheme "github.com/openshift/client-go/machineconfiguration/clientset/versioned/scheme"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -92,7 +93,12 @@ type BootstrapDependencies struct {
 	KubeAPIServerServingCA string
 	MCSCA                  string
 	AdditionalTrustBundle  string
-	BGPVIPPeersJSON        string
+	// BGPVIPPeersJSON is the ControllerConfig transport: passwordSecret
+	// references only, never plaintext.
+	BGPVIPPeersJSON string
+	// BGPVIPPeersFileJSON is the bootstrap node's frr-peers.json content,
+	// with the references resolved. It never enters the ControllerConfig.
+	BGPVIPPeersFileJSON string
 }
 
 // NewBootstrapDependencies creates a new BootstrapDependencies instance by validating and loading
@@ -292,9 +298,12 @@ func (b *BootstrapDependencies) fillClusterConfig() error {
 	return nil
 }
 
-// fillBGPVIPConfig loads the optional BGPVIPConfig CR manifest and serializes
-// it to the peers JSON payload for frr-peers.json rendering. The VIPs come
-// from the Infrastructure manifest, which fillCRs loads earlier.
+// fillBGPVIPConfig loads the optional BGPVIPConfig CR manifest. It produces
+// two payloads: the ControllerConfig transport (BGPVIPPeersJSON), which only
+// references the password Secrets, and the content of the bootstrap node's own
+// frr-peers.json (BGPVIPPeersFileJSON), with the references resolved from the
+// installer's Secret manifests. The VIPs come from the Infrastructure
+// manifest, which fillCRs loads earlier.
 func (b *BootstrapDependencies) fillBGPVIPConfig(path string) error {
 	if path == "" {
 		return nil
@@ -306,35 +315,37 @@ func (b *BootstrapDependencies) fillBGPVIPConfig(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read the BGPVIPConfig manifest: %w", err)
 	}
-	peersJSON, err := bgpVIPPeersJSONFromCR(cr, b.Infrastructure, bgpVIPFilePasswordResolver(filepath.Dir(path)))
+	transport, err := bgpVIPPeersJSONFromCR(cr, b.Infrastructure)
 	if err != nil {
 		return err
 	}
-	b.BGPVIPPeersJSON = peersJSON
+	// A missing or invalid Secret manifest fails the bootstrap render: the
+	// bootstrap node and the first master boot need the password.
+	peersFile, err := ctrlcommon.ResolveBGPVIPPeersJSON(transport, bgpVIPFileSecretGetter(filepath.Dir(path)))
+	if err != nil {
+		return err
+	}
+	b.BGPVIPPeersJSON = transport
+	b.BGPVIPPeersFileJSON = peersFile
 	return nil
 }
 
-// bgpVIPFilePasswordResolver returns the bootstrap-time password resolver:
-// a passwordSecret reference is resolved from the installer-generated Secret
+// bgpVIPFileSecretGetter returns the bootstrap-time Secret source: a
+// passwordSecret reference is resolved from the installer-generated Secret
 // manifest (openshift-config/<name>) found among the YAML manifests in dir —
 // the directory holding the BGPVIPConfig manifest. The manifests are matched
 // by kind, namespace and name rather than by file name, so the installer is
 // free to name its files. A referenced Secret that is not there is an error.
-func bgpVIPFilePasswordResolver(dir string) bgpVIPPasswordResolver {
-	return func(name string) (string, error) {
+func bgpVIPFileSecretGetter(dir string) ctrlcommon.BGPVIPSecretGetter {
+	return func(namespace, name string) (*corev1.Secret, error) {
+		if namespace != ctrlcommon.OpenshiftConfigNamespace {
+			return nil, fmt.Errorf("BGP VIP password Secrets must live in %s, not %s", ctrlcommon.OpenshiftConfigNamespace, namespace)
+		}
 		secret, err := findBGPVIPPasswordSecretManifest(dir, name)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		// The stringData->data merge is API-server behavior; a manifest read
-		// straight from disk needs it done by hand.
-		for key, value := range secret.StringData {
-			if secret.Data == nil {
-				secret.Data = map[string][]byte{}
-			}
-			secret.Data[key] = []byte(value)
-		}
-		return bgpVIPPasswordFromSecret(secret)
+		return ctrlcommon.SecretWithStringDataMerged(secret), nil
 	}
 }
 
@@ -355,7 +366,7 @@ func findBGPVIPPasswordSecretManifest(dir, name string) (*corev1.Secret, error) 
 		if err != nil {
 			continue
 		}
-		if secret.Namespace == "openshift-config" && secret.Name == name {
+		if secret.Namespace == ctrlcommon.OpenshiftConfigNamespace && secret.Name == name {
 			return secret, nil
 		}
 	}

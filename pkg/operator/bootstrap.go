@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,20 @@ type manifest struct {
 	name     string
 	data     []byte
 	filename string
+	// mode is the file mode to write; zero means defaultManifestFileMode.
+	mode os.FileMode
 }
+
+// defaultManifestFileMode is the mode of bootstrap assets unless a manifest
+// asks for a stricter one.
+const defaultManifestFileMode os.FileMode = 0o644
+
+// bgpVIPPeersFileMode is the mode of the bootstrap node's frr-peers.json,
+// which carries the resolved BGP peer passwords; it matches the 0600 the
+// MachineConfig gives the same file on the cluster nodes. The installer copies
+// the asset into /etc/kubernetes/static-pod-resources without forcing a mode,
+// so the installed file keeps it.
+const bgpVIPPeersFileMode os.FileMode = 0o600
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
@@ -85,19 +99,45 @@ func RenderBootstrap(
 			continue
 		}
 
-		path := filepath.Join(destinationDir, m.filename)
-		dirname := filepath.Dir(path)
-		if err := os.MkdirAll(dirname, 0o755); err != nil {
-			return err
-		}
-		// Disable gosec here to avoid throwing
-		// G306: Expect WriteFile permissions to be 0600 or less
-		// #nosec
-		if err := os.WriteFile(path, b, 0o644); err != nil {
+		if err := writeManifest(destinationDir, m, b); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// writeManifest writes one rendered bootstrap asset under destinationDir with
+// the manifest's mode. An explicit (stricter) mode is also enforced on a file
+// that already exists, which the open mode alone would leave untouched; it is
+// applied right after the file is opened (and truncated), before any content
+// is written.
+func writeManifest(destinationDir string, m manifest, data []byte) error {
+	path := filepath.Join(destinationDir, m.filename)
+	dirname := filepath.Dir(path)
+	if err := os.MkdirAll(dirname, 0o755); err != nil {
+		return err
+	}
+	mode := m.mode
+	if mode == 0 {
+		mode = defaultManifestFileMode
+	}
+	// Disable gosec here to avoid throwing
+	// G302/G306: Expect file permissions to be 0600 or less
+	// #nosec
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if m.mode != 0 {
+		if err := f.Chmod(m.mode); err != nil {
+			// Keep the primary error; report a close failure as well.
+			return errors.Join(err, f.Close())
+		}
+	}
+	if _, err := f.Write(data); err != nil {
+		return errors.Join(err, f.Close())
+	}
+	return f.Close()
 }
 
 func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, releaseImage string) (*renderConfig, error) {
@@ -161,6 +201,9 @@ func buildSpec(dependencies *BootstrapDependencies, imgs *ctrlcommon.Images, rel
 
 	config := getRenderConfig("", dependencies.KubeAPIServerServingCA, spec,
 		&imgs.RenderConfigImages, dependencies.Infrastructure, nil, nil, "2")
+	// The resolved peers file is only rendered into the bootstrap node's own
+	// frr-peers.json; the ControllerConfig above carries the references.
+	config.BGPVIPPeersFileJSON = dependencies.BGPVIPPeersFileJSON
 	return config, nil
 }
 
@@ -277,7 +320,7 @@ func getPlatformManifests(manifests []manifest, platformName string, lbType conf
 			platformManifests = append(platformManifests,
 				manifest{name: "manifests/on-prem/0000-frr-k8s.yaml", filename: platformName + "/manifests/0000-frr-k8s.yaml"},
 				manifest{name: "manifests/on-prem/frr.conf.tmpl", filename: platformName + "/static-pod-resources/frr-k8s/frr.conf.tmpl"},
-				manifest{name: "manifests/on-prem/frr-peers.json.tmpl", filename: platformName + "/static-pod-resources/frr-k8s/frr-peers.json"},
+				manifest{name: "manifests/on-prem/frr-peers.json.tmpl", filename: platformName + "/static-pod-resources/frr-k8s/frr-peers.json", mode: bgpVIPPeersFileMode},
 				manifest{name: "manifests/on-prem/frr-startup-daemons", filename: platformName + "/static-pod-resources/frr-k8s/startup/daemons"},
 				manifest{name: "manifests/on-prem/frr-startup-vtysh.conf", filename: platformName + "/static-pod-resources/frr-k8s/startup/vtysh.conf"},
 				manifest{name: "manifests/on-prem/0010-kube-vip-api.yaml", filename: platformName + "/manifests/0010-kube-vip-api.yaml"},

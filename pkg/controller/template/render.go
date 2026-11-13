@@ -50,6 +50,12 @@ type RenderConfig struct {
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
+
+	// BGPVIPPeersFileJSON is the content of the BGP VIP peers file
+	// (frr-peers.json): ControllerConfigSpec.BGPVIPPeersJSON with its
+	// passwordSecret references resolved. Render-only; it must never be
+	// written back into the ControllerConfig.
+	BGPVIPPeersFileJSON string
 }
 
 const (
@@ -353,7 +359,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 
 	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(keySortVals(files), keySortVals(units))
 	if err != nil {
-		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
+		return nil, fmt.Errorf("rendering MachineConfig %s: %w", name, err)
 	}
 	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
 	if err != nil {

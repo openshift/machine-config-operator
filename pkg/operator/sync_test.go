@@ -235,10 +235,49 @@ func buildBGPVIPConfigCR(opts ...func(*mcfgv1alpha1.BGPVIPConfig)) *mcfgv1alpha1
 	return cr
 }
 
-// TestBGPVIPPeersJSONFromCR locks the serialized transport to the Dev
-// Preview config.json schema so templates and runtimecfg stay untouched.
-// The dual-stack golden payload was captured from a live cluster
-// (openshift-network-operator/bgp-vip-config, data["config.json"]).
+// Golden payloads shared by the BGP VIP tests. legacyFullPeersFile is the
+// exact node-file payload the operator wrote into the ControllerConfig before
+// passwords moved out of it (resolved plaintext in "password"); the template
+// and bootstrap renderers must still produce it byte-for-byte from
+// fullPeersTransport, which carries a passwordSecret reference instead.
+const (
+	legacyFullPeersFile = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret","port":1790,"bfdEnabled":"true","ebgpMultiHop":"true","holdTime":"90","keepaliveTime":"30"}],"communities":["64512:100","64512:4200000000:300"],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"],"hostOverrides":{"master-0":[{"peerAddress":"192.168.111.2","peerASN":64514,"holdTime":"180"}]}}`
+	fullPeersTransport  = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"passwordSecret":{"name":"bgp-peer-pw","namespace":"openshift-config"},"port":1790,"bfdEnabled":"true","ebgpMultiHop":"true","holdTime":"90","keepaliveTime":"30"}],"communities":["64512:100","64512:4200000000:300"],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"],"hostOverrides":{"master-0":[{"peerAddress":"192.168.111.2","peerASN":64514,"holdTime":"180"}]}}`
+	// simplePeersTransport / legacySimplePeersFile: one default peer with a
+	// passwordSecret, as transport and as the pre-change payload.
+	simplePeersTransport  = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"passwordSecret":{"name":"bgp-peer-pw","namespace":"openshift-config"}}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`
+	legacySimplePeersFile = `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret"}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`
+	// bgpLeakMarker is a synthetic password used to prove that no error,
+	// status or spec ever carries Secret contents.
+	bgpLeakMarker = "SYNTHETIC-LEAK-MARKER"
+)
+
+// bgpPasswordSecret builds a basic-auth password Secret in openshift-config.
+func bgpPasswordSecret(name string, password []byte) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "openshift-config"},
+		Type:       corev1.SecretTypeBasicAuth,
+		Data:       map[string][]byte{"password": password},
+	}
+}
+
+// bgpSecretGetter serves the given Secrets.
+func bgpSecretGetter(secrets ...*corev1.Secret) ctrlcommon.BGPVIPSecretGetter {
+	return func(namespace, name string) (*corev1.Secret, error) {
+		for _, s := range secrets {
+			if s.Namespace == namespace && s.Name == name {
+				return s, nil
+			}
+		}
+		return nil, fmt.Errorf("secret %s/%s not found", namespace, name)
+	}
+}
+
+// TestBGPVIPPeersJSONFromCR locks the serialized transport: the Dev Preview
+// config.json schema for everything but passwords, which are written as
+// openshift-config Secret references. The dual-stack golden payload was
+// captured from a live cluster (openshift-network-operator/bgp-vip-config,
+// data["config.json"]).
 func TestBGPVIPPeersJSONFromCR(t *testing.T) {
 	goldenDualStack := `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513},{"peerAddress":"fd2e:6f44:5dd8:c956::1","peerASN":64513}],"apiVIPs":["192.168.111.5","fd2e:6f44:5dd8:c956::5"],"ingressVIPs":["192.168.111.4","fd2e:6f44:5dd8:c956::4"]}`
 
@@ -246,14 +285,18 @@ func TestBGPVIPPeersJSONFromCR(t *testing.T) {
 		name     string
 		cr       *mcfgv1alpha1.BGPVIPConfig
 		infra    *configv1.Infrastructure
-		resolver bgpVIPPasswordResolver
 		expected string
+		// expectedPeersFile is what the renderers must produce from the
+		// transport with the password Secret resolved: the pre-change
+		// payload, byte for byte.
+		expectedPeersFile string
 	}{
 		{
-			name:     "dual-stack, no overrides (live-cluster golden)",
-			cr:       buildBGPVIPConfigCR(),
-			infra:    buildInfra(withBareMetalVIPManagement("BGP"), withDualStackVIPs()),
-			expected: goldenDualStack,
+			name:              "dual-stack, no overrides (live-cluster golden)",
+			cr:                buildBGPVIPConfigCR(),
+			infra:             buildInfra(withBareMetalVIPManagement("BGP"), withDualStackVIPs()),
+			expected:          goldenDualStack,
+			expectedPeersFile: goldenDualStack,
 		},
 		{
 			name: "enums, timers, port, password, communities and host overrides",
@@ -281,16 +324,11 @@ func TestBGPVIPPeersJSONFromCR(t *testing.T) {
 				}}
 			}),
 			infra: buildInfra(withBareMetalVIPManagement("BGP")),
-			resolver: func(name string) (string, error) {
-				if name != "bgp-peer-pw" {
-					return "", fmt.Errorf("unexpected secret name %q", name)
-				}
-				return "s3cret", nil
-			},
 			// HoldTimer / DirectlyConnected are the renderer defaults and stay
 			// absent, exactly as the installer's ConfigMap producer writes them;
 			// timers are bare seconds.
-			expected: `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret","port":1790,"bfdEnabled":"true","ebgpMultiHop":"true","holdTime":"90","keepaliveTime":"30"}],"communities":["64512:100","64512:4200000000:300"],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"],"hostOverrides":{"master-0":[{"peerAddress":"192.168.111.2","peerASN":64514,"holdTime":"180"}]}}`,
+			expected:          fullPeersTransport,
+			expectedPeersFile: legacyFullPeersFile,
 		},
 		{
 			name: "omitted enums and zero timers are absent",
@@ -300,93 +338,105 @@ func TestBGPVIPPeersJSONFromCR(t *testing.T) {
 					PeerASN:     64513,
 				}}
 			}),
-			infra:    buildInfra(withBareMetalVIPManagement("BGP")),
-			expected: `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`,
+			infra:             buildInfra(withBareMetalVIPManagement("BGP")),
+			expected:          `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`,
+			expectedPeersFile: `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			resolver := tc.resolver
-			if resolver == nil {
-				// No-password peers must never trigger a resolution.
-				resolver = func(name string) (string, error) {
-					t.Fatalf("unexpected password resolution for %q", name)
-					return "", nil
-				}
-			}
-			got, err := bgpVIPPeersJSONFromCR(tc.cr, tc.infra, resolver)
+			got, err := bgpVIPPeersJSONFromCR(tc.cr, tc.infra)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, got)
+			// The transport never carries a password.
+			assert.NotContains(t, got, "s3cret")
+			assert.NotContains(t, got, `"password"`)
 			// Sanity: the payload must be valid, compact JSON.
 			var buf bytes.Buffer
 			require.NoError(t, json.Compact(&buf, []byte(got)))
 			assert.Equal(t, got, buf.String())
+			// Rendering the transport reproduces the pre-change payload.
+			peersFile, err := ctrlcommon.ResolveBGPVIPPeersJSON(got, bgpSecretGetter(bgpPasswordSecret("bgp-peer-pw", []byte("s3cret"))))
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedPeersFile, peersFile)
 		})
 	}
 }
 
-// TestBGPVIPPeersJSONFromCRResolverError locks the failure contract: a
-// resolver error fails the whole render, for default peers and overrides.
-func TestBGPVIPPeersJSONFromCRResolverError(t *testing.T) {
-	cr := buildBGPVIPConfigCR(func(cr *mcfgv1alpha1.BGPVIPConfig) {
-		cr.Spec.DefaultPeers = []mcfgv1alpha1.BGPVIPPeer{{
-			PeerAddress:    "192.168.111.1",
-			PeerASN:        64513,
-			PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "missing"},
-		}}
-	})
-	infra := buildInfra(withBareMetalVIPManagement("BGP"))
-	failing := func(name string) (string, error) { return "", fmt.Errorf("secret %q not found", name) }
-	_, err := bgpVIPPeersJSONFromCR(cr, infra, failing)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `secret "missing" not found`)
-	assert.Contains(t, err.Error(), "spec.defaultPeers[0]")
-	// The error reaches the operator log and the Rendered condition: it
-	// locates the peer by its position, never by its address.
-	assert.NotContains(t, err.Error(), "192.168.111.1")
-
-	cr = buildBGPVIPConfigCR(func(cr *mcfgv1alpha1.BGPVIPConfig) {
-		cr.Spec.DefaultPeers = []mcfgv1alpha1.BGPVIPPeer{{PeerAddress: "192.168.111.1", PeerASN: 64513}}
-		cr.Spec.HostOverrides = []mcfgv1alpha1.BGPVIPHostPeers{{
-			Hostname: "master-0",
-			Peers: []mcfgv1alpha1.BGPVIPPeer{
-				{PeerAddress: "fd2e::1", PeerASN: 64514},
-				{PeerAddress: "fd2e::2", PeerASN: 64514, PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "missing"}},
-			},
-		}}
-	})
-	_, err = bgpVIPPeersJSONFromCR(cr, infra, failing)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "spec.hostOverrides[0].peers[1]")
-	assert.NotContains(t, err.Error(), "fd2e::2")
-}
-
-// TestBGPVIPPasswordFromSecret locks the Secret validation shared by the
-// day-2 and bootstrap resolvers.
-func TestBGPVIPPasswordFromSecret(t *testing.T) {
-	build := func(secretType corev1.SecretType, data map[string][]byte) *corev1.Secret {
-		return &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "bgp-peer-pw", Namespace: "openshift-config"},
-			Type:       secretType,
-			Data:       data,
+// TestSyncBGPVIPPeersJSONValidation locks the operator's single validation
+// path: the referenced Secrets are checked by the shared resolver (output
+// discarded), each Secret is read once, and errors locate the peer by
+// position, never by its address or the override's hostname.
+func TestSyncBGPVIPPeersJSONValidation(t *testing.T) {
+	infra := buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP"))
+	run := func(t *testing.T, cr *mcfgv1alpha1.BGPVIPConfig, secrets ...runtime.Object) (*mcfgv1.ControllerConfigSpec, *fake.Clientset, error) {
+		t.Helper()
+		var patched []byte
+		dynamicClient := bgpRenderedStatusRecorder(t, cr, &patched)
+		kubeClient := fake.NewSimpleClientset(secrets...)
+		optr := &Operator{
+			bgpVIPConfigLister: newBGPVIPConfigLister(t, cr),
+			bgpVIPConfigClient: dynamicClient.Resource(bgpVIPConfigGVR),
+			kubeClient:         kubeClient,
 		}
+		spec := &mcfgv1.ControllerConfigSpec{}
+		err := optr.syncBGPVIPPeersJSON(spec, infra)
+		return spec, kubeClient, err
 	}
-	t.Run("valid", func(t *testing.T) {
-		got, err := bgpVIPPasswordFromSecret(build(corev1.SecretTypeBasicAuth, map[string][]byte{"password": []byte("s3cret")}))
+
+	t.Run("missing Secret on a default peer", func(t *testing.T) {
+		cr := buildBGPVIPConfigCR(func(cr *mcfgv1alpha1.BGPVIPConfig) {
+			cr.Spec.DefaultPeers = []mcfgv1alpha1.BGPVIPPeer{{PeerAddress: "192.168.111.1", PeerASN: 64513, PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "missing"}}}
+		})
+		spec, _, err := run(t, cr)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "defaultPeers[0]")
+		assert.Contains(t, err.Error(), "openshift-config/missing")
+		assert.NotContains(t, err.Error(), "192.168.111.1")
+		assert.Empty(t, spec.BGPVIPPeersJSON)
+	})
+
+	t.Run("missing Secret on a host override peer", func(t *testing.T) {
+		cr := buildBGPVIPConfigCR(func(cr *mcfgv1alpha1.BGPVIPConfig) {
+			cr.Spec.DefaultPeers = []mcfgv1alpha1.BGPVIPPeer{{PeerAddress: "192.168.111.1", PeerASN: 64513}}
+			cr.Spec.HostOverrides = []mcfgv1alpha1.BGPVIPHostPeers{{
+				Hostname: "master-0",
+				Peers: []mcfgv1alpha1.BGPVIPPeer{
+					{PeerAddress: "fd2e::1", PeerASN: 64514},
+					{PeerAddress: "fd2e::2", PeerASN: 64514, PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "missing"}},
+				},
+			}}
+		})
+		spec, _, err := run(t, cr)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "hostOverrides[0].peers[1]")
+		assert.NotContains(t, err.Error(), "fd2e::2")
+		assert.NotContains(t, err.Error(), "master-0")
+		assert.Empty(t, spec.BGPVIPPeersJSON)
+	})
+
+	t.Run("a shared Secret is read once and the resolved password is discarded", func(t *testing.T) {
+		cr := buildBGPVIPConfigCR(func(cr *mcfgv1alpha1.BGPVIPConfig) {
+			cr.Spec.DefaultPeers = []mcfgv1alpha1.BGPVIPPeer{
+				{PeerAddress: "192.168.111.1", PeerASN: 64513, PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "shared"}},
+				{PeerAddress: "192.168.111.3", PeerASN: 64513},
+			}
+			cr.Spec.HostOverrides = []mcfgv1alpha1.BGPVIPHostPeers{{
+				Hostname: "master-0",
+				Peers:    []mcfgv1alpha1.BGPVIPPeer{{PeerAddress: "192.168.111.2", PeerASN: 64514, PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "shared"}}},
+			}}
+		})
+		spec, kubeClient, err := run(t, cr, bgpPasswordSecret("shared", []byte("s3cret")))
 		require.NoError(t, err)
-		assert.Equal(t, "s3cret", got)
-	})
-	t.Run("wrong type", func(t *testing.T) {
-		_, err := bgpVIPPasswordFromSecret(build(corev1.SecretTypeOpaque, map[string][]byte{"password": []byte("s3cret")}))
-		assert.ErrorContains(t, err, "kubernetes.io/basic-auth")
-	})
-	t.Run("missing key", func(t *testing.T) {
-		_, err := bgpVIPPasswordFromSecret(build(corev1.SecretTypeBasicAuth, nil))
-		assert.ErrorContains(t, err, `non-empty "password" key`)
-	})
-	t.Run("over 80 bytes", func(t *testing.T) {
-		_, err := bgpVIPPasswordFromSecret(build(corev1.SecretTypeBasicAuth, map[string][]byte{"password": bytes.Repeat([]byte("x"), 81)}))
-		assert.ErrorContains(t, err, "80-byte TCP MD5 limit")
+		gets := 0
+		for _, a := range kubeClient.Actions() {
+			if a.GetVerb() == "get" && a.GetResource().Resource == "secrets" {
+				gets++
+			}
+		}
+		assert.Equal(t, 1, gets)
+		assert.NotContains(t, spec.BGPVIPPeersJSON, "s3cret")
+		assert.Contains(t, spec.BGPVIPPeersJSON, `"passwordSecret":{"name":"shared","namespace":"openshift-config"}`)
 	})
 }
 
@@ -401,6 +451,46 @@ func newBGPVIPConfigLister(t *testing.T, crs ...*mcfgv1alpha1.BGPVIPConfig) dyna
 	return dynamiclister.New(indexer, bgpVIPConfigGVR)
 }
 
+// bgpRenderedStatusRecorder wires a fake dynamic client that records the
+// BGPVIPConfig status server-side apply.
+func bgpRenderedStatusRecorder(t *testing.T, cr *mcfgv1alpha1.BGPVIPConfig, patched *[]byte) *fakedynamic.FakeDynamicClient {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, mcfgv1alpha1.AddToScheme(scheme))
+	var objs []runtime.Object
+	if cr != nil {
+		objs = append(objs, cr)
+	}
+	dynamicClient := fakedynamic.NewSimpleDynamicClient(scheme, objs...)
+	dynamicClient.PrependReactor("patch", "bgpvipconfigs", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		patchAction := action.(clienttesting.PatchAction)
+		assert.Equal(t, "status", action.GetSubresource(), "status subresource expected")
+		assert.Equal(t, types.ApplyPatchType, patchAction.GetPatchType(), "server-side apply expected")
+		*patched = patchAction.GetPatch()
+		content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(cr)
+		require.NoError(t, err)
+		return true, &unstructured.Unstructured{Object: content}, nil
+	})
+	return dynamicClient
+}
+
+// renderedCondition decodes the single Rendered condition from a recorded
+// BGPVIPConfig status apply.
+func renderedCondition(t *testing.T, patched []byte) map[string]interface{} {
+	t.Helper()
+	var applied map[string]interface{}
+	require.NoError(t, json.Unmarshal(patched, &applied))
+	status := applied["status"].(map[string]interface{})
+	// The API has no status-level observedGeneration; the condition
+	// carries it and nothing else may be written.
+	assert.NotContains(t, status, "observedGeneration")
+	conds := status["conditions"].([]interface{})
+	require.Len(t, conds, 1)
+	cond := conds[0].(map[string]interface{})
+	assert.Equal(t, mcfgv1alpha1.BGPVIPConfigRendered, cond["type"])
+	return cond
+}
+
 func TestSyncBGPVIPPeersJSON(t *testing.T) {
 	goldenJSON := `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513},{"peerAddress":"fd2e:6f44:5dd8:c956::1","peerASN":64513}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`
 	withPasswordSecret := func(cr *mcfgv1alpha1.BGPVIPConfig) {
@@ -410,18 +500,13 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 			PasswordSecret: mcfgv1alpha1.BGPVIPPasswordSecret{Name: "bgp-peer-pw"},
 		}}
 	}
-	peerPasswordSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "bgp-peer-pw", Namespace: "openshift-config"},
-		Type:       corev1.SecretTypeBasicAuth,
-		Data:       map[string][]byte{"password": []byte("s3cret")},
-	}
 	cases := []struct {
 		name                    string
 		infra                   *configv1.Infrastructure
 		cr                      *mcfgv1alpha1.BGPVIPConfig
 		secrets                 []runtime.Object
 		expectError             bool
-		expectRenderFailed      bool
+		expectRenderFailed      string
 		ccApplyError            error
 		expectedBGPVIPPeersJSON string
 		expectedRendered        *metav1.ConditionStatus
@@ -466,45 +551,40 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 			expectedRendered: nil, // no CR to write status to
 		},
 		{
-			name:                    "peer passwordSecret is resolved into the JSON password",
+			name:                    "peer passwordSecret is written as an openshift-config reference",
 			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
 			cr:                      buildBGPVIPConfigCR(withPasswordSecret),
-			secrets:                 []runtime.Object{peerPasswordSecret},
-			expectedBGPVIPPeersJSON: `{"localASN":64512,"defaultPeers":[{"peerAddress":"192.168.111.1","peerASN":64513,"password":"s3cret"}],"apiVIPs":["192.168.111.5"],"ingressVIPs":["192.168.111.4"]}`,
+			secrets:                 []runtime.Object{bgpPasswordSecret("bgp-peer-pw", []byte("s3cret"))},
+			expectedBGPVIPPeersJSON: simplePeersTransport,
 			expectedRendered:        ptr.To(metav1.ConditionTrue),
 		},
 		{
-			// Missing/invalid password Secret => sync error (Degraded) and
-			// Rendered=False reported at render time, same semantics as a
-			// missing CR.
+			// Missing/invalid password Secret => render error (Degraded),
+			// Rendered=False reported at render time, nothing rendered for
+			// the ControllerConfig (the last good one is kept).
 			name:               "missing password Secret degrades and reports Rendered=False",
 			infra:              buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
 			cr:                 buildBGPVIPConfigCR(withPasswordSecret),
 			expectError:        true,
-			expectRenderFailed: true,
+			expectRenderFailed: "openshift-config/bgp-peer-pw",
+		},
+		{
+			name:               "invalid password Secret degrades without surfacing its contents",
+			infra:              buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
+			cr:                 buildBGPVIPConfigCR(withPasswordSecret),
+			secrets:            []runtime.Object{bgpPasswordSecret("bgp-peer-pw", bytes.Repeat([]byte(bgpLeakMarker), 5))},
+			expectError:        true,
+			expectRenderFailed: "80-byte TCP MD5 limit",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			require.NoError(t, mcfgv1alpha1.AddToScheme(scheme))
-			var objs []runtime.Object
 			var crs []*mcfgv1alpha1.BGPVIPConfig
 			if tc.cr != nil {
-				objs = append(objs, tc.cr)
 				crs = append(crs, tc.cr)
 			}
-			dynamicClient := fakedynamic.NewSimpleDynamicClient(scheme, objs...)
 			var patched []byte
-			dynamicClient.PrependReactor("patch", "bgpvipconfigs", func(action clienttesting.Action) (bool, runtime.Object, error) {
-				patchAction := action.(clienttesting.PatchAction)
-				assert.Equal(t, "status", action.GetSubresource(), "status subresource expected")
-				assert.Equal(t, types.ApplyPatchType, patchAction.GetPatchType(), "server-side apply expected")
-				patched = patchAction.GetPatch()
-				content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(tc.cr)
-				require.NoError(t, err)
-				return true, &unstructured.Unstructured{Object: content}, nil
-			})
+			dynamicClient := bgpRenderedStatusRecorder(t, tc.cr, &patched)
 			optr := &Operator{
 				bgpVIPConfigLister: newBGPVIPConfigLister(t, crs...),
 				bgpVIPConfigClient: dynamicClient.Resource(bgpVIPConfigGVR),
@@ -522,20 +602,21 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expectedBGPVIPPeersJSON, spec.BGPVIPPeersJSON)
 			}
-			if tc.expectRenderFailed {
+			specJSON, jsonErr := json.Marshal(spec)
+			require.NoError(t, jsonErr)
+			assert.NotContains(t, string(specJSON), "s3cret")
+			assert.NotContains(t, string(specJSON), bgpLeakMarker)
+			if tc.expectRenderFailed != "" {
 				// A render failure with a readable CR reports
 				// Rendered=False/RenderFailed immediately, and leaves no
 				// pending report behind.
 				require.NotNil(t, patched, "a Rendered=False status apply is expected at render time")
-				var applied map[string]interface{}
-				require.NoError(t, json.Unmarshal(patched, &applied))
-				conds := applied["status"].(map[string]interface{})["conditions"].([]interface{})
-				require.Len(t, conds, 1)
-				cond := conds[0].(map[string]interface{})
-				assert.Equal(t, mcfgv1alpha1.BGPVIPConfigRendered, cond["type"])
+				cond := renderedCondition(t, patched)
 				assert.Equal(t, string(metav1.ConditionFalse), cond["status"])
 				assert.Equal(t, "RenderFailed", cond["reason"])
-				assert.Contains(t, cond["message"], "bgp-peer-pw")
+				assert.Contains(t, cond["message"], tc.expectRenderFailed)
+				assert.NotContains(t, cond["message"], bgpLeakMarker)
+				assert.NotContains(t, err.Error(), bgpLeakMarker)
 				assert.Nil(t, optr.bgpVIPConfigToReport, "no pending report after a render failure")
 				return
 			}
@@ -551,16 +632,7 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 				return
 			}
 			require.NotNil(t, patched, "a status apply is expected")
-			var applied map[string]interface{}
-			require.NoError(t, json.Unmarshal(patched, &applied))
-			status := applied["status"].(map[string]interface{})
-			// The API has no status-level observedGeneration; the condition
-			// carries it (asserted below) and nothing else may be written.
-			assert.NotContains(t, status, "observedGeneration")
-			conds := status["conditions"].([]interface{})
-			require.Len(t, conds, 1)
-			cond := conds[0].(map[string]interface{})
-			assert.Equal(t, mcfgv1alpha1.BGPVIPConfigRendered, cond["type"])
+			cond := renderedCondition(t, patched)
 			assert.Equal(t, string(*tc.expectedRendered), cond["status"])
 			assert.Equal(t, float64(tc.cr.Generation), cond["observedGeneration"])
 			if *tc.expectedRendered == metav1.ConditionFalse {

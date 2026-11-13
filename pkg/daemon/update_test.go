@@ -18,6 +18,7 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/machine-config-operator/pkg/apihelpers"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/osrelease"
@@ -1128,4 +1129,23 @@ func TestLegacyExtensionPackageUpgradeScenario(t *testing.T) {
 	}
 
 	require.True(t, foundNewMatch, "Should find a valid package set matching the new OS image state (current packages)")
+}
+
+// TestFRRPeersFileChangeIsNonDisruptive locks the node side of a BGP VIP peer
+// password rotation: the template controller re-renders 00-master with only
+// frr-peers.json changed, and with the default cluster policies that diff
+// maps to the None action, so the update needs neither a drain nor a reboot.
+func TestFRRPeersFileChangeIsNonDisruptive(t *testing.T) {
+	const frrPeersPath = "/etc/kubernetes/static-pod-resources/frr-k8s/frr-peers.json"
+	clusterPolicies := apihelpers.MergeClusterPolicies(opv1.NodeDisruptionPolicyConfig{})
+
+	actions := calculatePostConfigChangeNodeDisruptionActionFromMCDiffs(false, []string{frrPeersPath}, nil, clusterPolicies)
+	assert.Equal(t, []opv1.NodeDisruptionPolicyStatusAction{{Type: opv1.NoneStatusAction}}, actions)
+	assert.False(t, apihelpers.CheckNodeDisruptionActionsForTargetActions(actions, opv1.RebootStatusAction))
+
+	oldIgn := ctrlcommon.NewIgnConfig()
+	newIgn := ctrlcommon.NewIgnConfig()
+	drain, err := isDrainRequiredForNodeDisruptionActions(actions, oldIgn, newIgn)
+	require.NoError(t, err)
+	assert.False(t, drain)
 }

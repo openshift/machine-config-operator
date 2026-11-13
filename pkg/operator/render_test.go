@@ -135,6 +135,9 @@ func TestRenderAllManifests(t *testing.T) {
 			},
 		},
 	}
+	// The bootstrap node's frr-peers.json renders the resolved peers file;
+	// without passwords it is the transport itself.
+	renderConfig.BGPVIPPeersFileJSON = renderConfig.ControllerConfig.BGPVIPPeersJSON
 
 	// Some of the templates accept a different schema type that doesn't have a
 	// known type, but contains elements of the above renderConfig.

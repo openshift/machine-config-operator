@@ -2381,3 +2381,38 @@ func TestGetSecurityProfileGroupsFeatureGate(t *testing.T) {
 			"Modern's X25519MLKEM768 and X25519 are dropped for a FIPS target")
 	})
 }
+
+// TestTranspileCoreOSConfigToIgnDoesNotEchoFileContents locks the generic
+// helper's error sanitization: a rendered file that does not parse may carry
+// secrets (the BGP VIP peers file holds resolved passwords), and decoder
+// errors can quote file keys and values, so the helper reports only the
+// failing file's index, without any decoder text. The cases call the helper
+// directly; some use inputs that the BGP password validation would reject
+// before rendering.
+func TestTranspileCoreOSConfigToIgnDoesNotEchoFileContents(t *testing.T) {
+	const marker = "SYNTHETIC-HELPER-LEAK-MARKER"
+	const validFile = "path: /etc/valid\ncontents:\n  inline: ok\n"
+	for name, file := range map[string]string{
+		"unterminated flow mapping": "path: /etc/example\ncontents: {inline: " + marker + "\n",
+		"NEL breaks a block scalar": "mode: 0600\npath: \"/etc/example\"\ncontents:\n  inline: |-\n    {\"password\":\"" + marker + "\u0085-tail\"}\n",
+		"unsupported null map key":  "path: /etc/example\nnull: " + marker + "\n",
+		"unknown anchor":            "path: /etc/example\ncontents:\n  inline: *" + marker + "\n",
+		"string into int field":     "path: /etc/example\nmode: " + marker + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, tc := range []struct {
+				files []string
+				want  string
+			}{
+				{files: []string{file}, want: "failed to unmarshal file 0 into struct"},
+				// After a file that parses, the failing file's own index.
+				{files: []string{validFile, file}, want: "failed to unmarshal file 1 into struct"},
+			} {
+				_, err := TranspileCoreOSConfigToIgn(tc.files, nil)
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), marker)
+				assert.EqualError(t, err, tc.want)
+			}
+		})
+	}
+}
