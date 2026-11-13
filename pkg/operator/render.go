@@ -84,6 +84,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["isAWSPlatform"] = isAWSPlatform
 	funcs["cloudPlatformAPIIntLoadBalancerIPs"] = cloudPlatformAPIIntLoadBalancerIPs
 	funcs["cloudPlatformAPILoadBalancerIPs"] = cloudPlatformAPILoadBalancerIPs
 	funcs["cloudPlatformIngressLoadBalancerIPs"] = cloudPlatformIngressLoadBalancerIPs
@@ -251,6 +252,13 @@ func ipFamilies(serviceCIDRs []string) (mcfgv1.IPFamiliesType, error) {
 // for the proxy cookie secret object
 func (rc renderConfig) GenerateProxyCookieSecret() string {
 	return base64.StdEncoding.EncodeToString([]byte(utilrand.String(32)))
+}
+
+// isAWSPlatform reports whether the cluster infrastructure is AWS. It tolerates
+// missing infrastructure data so templates can be rendered without it.
+func isAWSPlatform(cfg mcfgv1.ControllerConfigSpec) bool {
+	return cfg.Infra != nil && cfg.Infra.Status.PlatformStatus != nil &&
+		cfg.Infra.Status.PlatformStatus.Type == configv1.AWSPlatformType
 }
 
 func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {

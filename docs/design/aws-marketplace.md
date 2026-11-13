@@ -157,7 +157,14 @@ Accepting one version older than the target prevents stalling when the target ve
 
 ## Credentials
 
-The MCO reads AWS credentials from the `aws-cloud-credentials` secret in the `openshift-machine-api` namespace. This secret is provisioned by the machine-api-operator's `CredentialsRequest` and already includes `ec2:DescribeImages` with `resource: "*"`. No new `CredentialsRequest` or RBAC changes are required — the MCO's existing clusterrole grants cluster-wide secret read access.
+The MCO reads AWS credentials from the `aws-cloud-credentials` secret in the
+`openshift-machine-config-operator` namespace. This secret is the target of the
+MCO's own `CredentialsRequest`, `openshift-machine-config-operator-aws`, which
+grants only `ec2:DescribeImages` with `resource: "*"` and, for STS, binds the
+role to the `machine-config-controller` service account. The MCO does not read
+the machine-api-operator's credentials. See
+[AWS boot image credentials](../AWSBootImageCredentials.md) for the supported
+secret formats and Manual-mode provisioning.
 
 ## E2E Testing
 

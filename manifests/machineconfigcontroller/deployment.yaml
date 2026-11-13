@@ -36,6 +36,11 @@ spec:
           name: image-inspection-cache
         - mountPath: /tmp
           name: mcc-tmp
+        {{- if isAWSPlatform .ControllerConfig }}
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: bound-sa-token
+          readOnly: true
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
@@ -97,6 +102,18 @@ spec:
         - configMap:
              name: kube-rbac-proxy
           name: mcc-auth-proxy-config
+        {{- if isAWSPlatform .ControllerConfig }}
+        # Projected token for STS web identity. The fields defaulted by the API server
+        # are set explicitly so the operator's deployment merge does not see a diff.
+        - name: bound-sa-token
+          projected:
+            defaultMode: 420
+            sources:
+            - serviceAccountToken:
+                audience: openshift
+                expirationSeconds: 3600
+                path: token
+        {{- end }}
       restartPolicy: Always
       tolerations:
       - key: node-role.kubernetes.io/master

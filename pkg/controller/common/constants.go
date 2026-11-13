@@ -5,6 +5,8 @@ const (
 	MCONamespace = "openshift-machine-config-operator"
 	// VSphereCredentialsSecretName is the CredentialsRequest target consumed by the MCO.
 	VSphereCredentialsSecretName = "vsphere-cloud-credentials"
+	// AWSCredentialsSecretName is the CredentialsRequest target consumed by the MCO boot image controller on AWS.
+	AWSCredentialsSecretName = "aws-cloud-credentials"
 
 	// OpenshiftConfigManagedNamespace is the namespace that has the etc-pki-entitlement/Simple Content Access Cert
 	OpenshiftConfigManagedNamespace = "openshift-config-managed"

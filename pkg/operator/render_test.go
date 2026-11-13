@@ -681,3 +681,86 @@ func TestRenderCloudAltDNSManifests(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderMachineConfigControllerWebIdentityToken(t *testing.T) {
+	t.Parallel()
+
+	const (
+		tokenVolume    = "bound-sa-token"
+		tokenMountPath = "/var/run/secrets/openshift/serviceaccount"
+	)
+
+	infraFor := func(platform configv1.PlatformType) *configv1.Infrastructure {
+		return &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{Type: platform},
+			},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		infra       *configv1.Infrastructure
+		expectToken bool
+	}{
+		{name: "AWS mounts the projected token", infra: infraFor(configv1.AWSPlatformType), expectToken: true},
+		{name: "GCP does not mount the projected token", infra: infraFor(configv1.GCPPlatformType)},
+		{name: "vSphere does not mount the projected token", infra: infraFor(configv1.VSpherePlatformType)},
+		{name: "missing platform status does not mount the projected token", infra: &configv1.Infrastructure{}},
+		{name: "missing infrastructure does not mount the projected token", infra: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			config := &renderConfig{
+				TargetNamespace: "testing-namespace",
+				ReleaseVersion:  "4.8.0-rc.0",
+				Images: &ctrlcommon.RenderConfigImages{
+					MachineConfigOperator: "mco-operator-image",
+					KubeRbacProxy:         "kube-rbac-proxy-image",
+				},
+				ControllerConfig: mcfgv1.ControllerConfigSpec{Infra: tc.infra},
+			}
+			rendered, err := renderAsset(config, "manifests/machineconfigcontroller/deployment.yaml")
+			require.NoError(t, err)
+			deployment := resourceread.ReadDeploymentV1OrDie(rendered)
+
+			podSpec := deployment.Spec.Template.Spec
+			var volumeFound bool
+			for _, volume := range podSpec.Volumes {
+				if volume.Name != tokenVolume {
+					continue
+				}
+				volumeFound = true
+				require.NotNil(t, volume.Projected)
+				// Fields defaulted by the API server must be explicit; otherwise the
+				// operator's semantic deployment merge reports a diff on every sync.
+				require.NotNil(t, volume.Projected.DefaultMode)
+				assert.Equal(t, int32(420), *volume.Projected.DefaultMode)
+				require.Len(t, volume.Projected.Sources, 1)
+				token := volume.Projected.Sources[0].ServiceAccountToken
+				require.NotNil(t, token)
+				assert.Equal(t, "openshift", token.Audience)
+				assert.Equal(t, "token", token.Path)
+				require.NotNil(t, token.ExpirationSeconds)
+				assert.Equal(t, int64(3600), *token.ExpirationSeconds)
+			}
+			assert.Equal(t, tc.expectToken, volumeFound)
+
+			var mountFound bool
+			for _, container := range podSpec.Containers {
+				for _, mount := range container.VolumeMounts {
+					if mount.Name != tokenVolume {
+						continue
+					}
+					assert.Equal(t, "machine-config-controller", container.Name, "only the controller container needs the token")
+					assert.Equal(t, tokenMountPath, mount.MountPath)
+					assert.True(t, mount.ReadOnly)
+					mountFound = true
+				}
+			}
+			assert.Equal(t, tc.expectToken, mountFound)
+		})
+	}
+}
