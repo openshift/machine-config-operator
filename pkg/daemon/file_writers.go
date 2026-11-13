@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	"github.com/google/renameio"
 	"k8s.io/klog/v2"
 
@@ -167,9 +167,11 @@ func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, 
 		return err
 	}
 	defer t.Cleanup()
-	// Set permissions before writing data, in case the data is sensitive.
-	if err := t.Chmod(fileMode); err != nil {
-		return err
+	// chown strips special bits, hence should come first before we chmod.
+	if uid != -1 && gid != -1 {
+		if err := t.Chown(uid, gid); err != nil {
+			return err
+		}
 	}
 	w := bufio.NewWriter(t)
 	if _, err := w.Write(b); err != nil {
@@ -178,12 +180,42 @@ func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, 
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	if uid != -1 && gid != -1 {
-		if err := t.Chown(uid, gid); err != nil {
-			return err
-		}
+	// Set the final permissions last so the setuid/setgid bits survive the chown above.
+	if err := t.Chmod(fileMode); err != nil {
+		return err
 	}
 	return t.CloseAtomicallyReplace()
+}
+
+// ignition raw posix based int mode uses bit 9-11 for sticky, setuid, setgid bits. Native go file mode uses bits 20-23 for these special bits.
+// This function converts the ignition raw int mode to the native go file mode.
+func toNativeGoFileMode(mode int) os.FileMode {
+	nativeMode := os.FileMode(mode).Perm() // LSB bits correspond to normal bits.
+	if mode&0o4000 != 0 {
+		nativeMode |= os.ModeSetuid
+	}
+	if mode&0o2000 != 0 {
+		nativeMode |= os.ModeSetgid
+	}
+	if mode&0o1000 != 0 {
+		nativeMode |= os.ModeSticky
+	}
+	return nativeMode
+}
+
+// reverse helper to convert from native Go File mode to posix integer based file mode.
+func toPOSIXFileMode(mode os.FileMode) uint32 {
+	posix := uint32(mode.Perm()) // gets last 9 non-special bits.
+	if mode&os.ModeSetuid != 0 {
+		posix |= 0o4000
+	}
+	if mode&os.ModeSetgid != 0 {
+		posix |= 0o2000
+	}
+	if mode&os.ModeSticky != 0 {
+		posix |= 0o1000
+	}
+	return posix
 }
 
 // write dropins to disk
@@ -246,7 +278,7 @@ func writeFiles(files []ign3types.File, skipCertificateWrite bool) error {
 
 		mode := defaultFilePermissions
 		if file.Mode != nil {
-			mode = os.FileMode(*file.Mode) //nolint:gosec
+			mode = toNativeGoFileMode(*file.Mode)
 		}
 
 		// set chown if file information is provided

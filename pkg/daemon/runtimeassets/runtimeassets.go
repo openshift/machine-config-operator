@@ -1,7 +1,7 @@
 package runtimeassets
 
 import (
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 )
 
 type RuntimeAsset interface {

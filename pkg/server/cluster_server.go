@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
