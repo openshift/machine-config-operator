@@ -30,9 +30,8 @@ const (
 	awsRHCOSOwnerID = "531415883065"
 	// awsMarketplaceOwnerAlias is the owner alias used in DescribeImages filters for marketplace AMIs.
 	awsMarketplaceOwnerAlias = "aws-marketplace"
-	// awsCredentialsSecretName is the secret in openshift-machine-api provisioned by
-	// the machine-api-operator's CredentialsRequest. It already includes ec2:DescribeImages.
-	awsCredentialsSecretName = "aws-cloud-credentials"
+	// awsRoleSessionName is the STS session name used when assuming the MCO role with web identity.
+	awsRoleSessionName = "machine-config-operator"
 )
 
 // amiKind classifies a RHCOS AMI by its origin.
@@ -46,7 +45,7 @@ const (
 )
 
 // awsEC2ClientCacheEntry holds a cached EC2 client along with the resourceVersion of the
-// aws-cloud-credentials secret it was built from, so it can be invalidated on rotation.
+// MCO AWS credentials secret it was built from, so it can be invalidated on rotation.
 type awsEC2ClientCacheEntry struct {
 	resourceVersion string
 	client          *ec2.Client
@@ -61,15 +60,16 @@ var awsEC2ClientCache = struct {
 	entries map[string]awsEC2ClientCacheEntry
 }{entries: map[string]awsEC2ClientCacheEntry{}}
 
-// getAWSEC2Client fetches the aws-cloud-credentials secret and returns an EC2 client for the given region.
-// It supports two credential formats: static keys (aws_access_key_id / aws_secret_access_key) and
-// STS web-identity (role_arn / web_identity_token_file). STS is tried first.
+// getAWSEC2Client fetches the MCO AWS credentials secret and returns an EC2 client for the given region.
+// The secret is the target of the MCO's own CredentialsRequest, so its permissions are scoped to the
+// boot image controller and, under STS, its role trusts the machine-config-controller service account.
+// See resolveAWSCredentials for the supported formats.
 // Clients are cached per region and reused until the credentials secret changes.
 func getAWSEC2Client(ctx context.Context, region string, secretClient clientset.Interface) (*ec2.Client, error) {
-	secret, err := secretClient.CoreV1().Secrets(ctrlcommon.MachineAPINamespace).Get(
-		ctx, awsCredentialsSecretName, metav1.GetOptions{})
+	secret, err := secretClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(
+		ctx, ctrlcommon.AWSCredentialsSecretName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch %s secret: %w", awsCredentialsSecretName, err)
+		return nil, fmt.Errorf("failed to fetch secret %s/%s: %w", ctrlcommon.MCONamespace, ctrlcommon.AWSCredentialsSecretName, err)
 	}
 
 	awsEC2ClientCache.mu.Lock()
@@ -91,34 +91,36 @@ func getAWSEC2Client(ctx context.Context, region string, secretClient clientset.
 	return client, nil
 }
 
-// newAWSEC2Client builds a new EC2 client for the given region from the aws-cloud-credentials secret.
+// newAWSEC2Client builds a new EC2 client for the given region from the MCO AWS credentials secret.
+// For STS web identity credentials, the token file is checked when the client is built and then
+// re-read by the SDK on every credential refresh, so projected token rotation is picked up.
 func newAWSEC2Client(region string, secret *corev1.Secret) (*ec2.Client, error) {
-	roleARN := string(secret.Data["role_arn"])
-	tokenFile := string(secret.Data["web_identity_token_file"])
-	if roleARN != "" && tokenFile != "" {
+	creds, err := resolveAWSCredentials(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	if creds.usesWebIdentity() {
+		if err := checkWebIdentityTokenFile(creds.webIdentityTokenFile); err != nil {
+			return nil, fmt.Errorf("secret %s/%s: %w", secret.Namespace, secret.Name, err)
+		}
 		stsClient := sts.New(sts.Options{Region: region})
-		creds := aws.NewCredentialsCache(stscreds.NewWebIdentityRoleProvider(
-			stsClient, roleARN, stscreds.IdentityTokenFile(tokenFile),
+		provider := aws.NewCredentialsCache(stscreds.NewWebIdentityRoleProvider(
+			stsClient, creds.roleARN, stscreds.IdentityTokenFile(creds.webIdentityTokenFile),
 			func(o *stscreds.WebIdentityRoleOptions) {
-				o.RoleSessionName = "machine-config-operator"
+				o.RoleSessionName = awsRoleSessionName
 			},
 		))
 		return ec2.New(ec2.Options{
 			Region:      region,
-			Credentials: creds,
+			Credentials: provider,
 		}), nil
 	}
 
-	accessKeyID := string(secret.Data["aws_access_key_id"])
-	secretAccessKey := string(secret.Data["aws_secret_access_key"])
-	if accessKeyID != "" && secretAccessKey != "" {
-		return ec2.New(ec2.Options{
-			Region:      region,
-			Credentials: credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
-		}), nil
-	}
-
-	return nil, fmt.Errorf("%s secret contains neither static credentials (aws_access_key_id/aws_secret_access_key) nor STS credentials (role_arn/web_identity_token_file)", awsCredentialsSecretName)
+	return ec2.New(ec2.Options{
+		Region:      region,
+		Credentials: credentials.NewStaticCredentialsProvider(creds.accessKeyID, creds.secretAccessKey, ""),
+	}), nil
 }
 
 // describeAMI returns the EC2 image details for the given AMI ID.
