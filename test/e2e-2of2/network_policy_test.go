@@ -27,7 +27,6 @@ const (
 var staticPolicyNames = []string{
 	"default-deny",
 	"allow-all-egress",
-	"allow-machine-config-operator",
 	"allow-machine-config-controller",
 	"allow-machine-os-builder",
 }
@@ -82,7 +81,6 @@ func TestNetworkPolicies_DefaultPoliciesExist(t *testing.T) {
 		name     string
 		labelVal string
 	}{
-		{"allow-machine-config-operator", "machine-config-operator"},
 		{"allow-machine-config-controller", "machine-config-controller"},
 		{"allow-machine-os-builder", "machine-os-builder"},
 	} {
@@ -233,7 +231,7 @@ func TestNetworkPolicies_AdminNetworkPolicyOverride(t *testing.T) {
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"k8s-app": "machine-config-operator"},
+				MatchLabels: map[string]string{"k8s-app": "machine-config-controller"},
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
