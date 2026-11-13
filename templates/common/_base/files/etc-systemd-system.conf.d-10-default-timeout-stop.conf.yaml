@@ -3,4 +3,4 @@ path: "/etc/systemd/system.conf.d/10-default-timeout-stop.conf"
 contents:
   inline: |
     [Manager]
-    DefaultTimeoutStopSec=200
+    DefaultTimeoutStopSec=365
