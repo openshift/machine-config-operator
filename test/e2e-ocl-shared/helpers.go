@@ -929,6 +929,30 @@ func NewMachineConfigTriggersImageRebuild(name, pool string, exts []string) *mcf
 	return mc
 }
 
+// NewMachineConfigWithStorageSections returns a MC that includes storage.disks
+// and storage.filesystems sections. These are install-time-only sections that
+// the MCD cannot reconcile at runtime. This is useful for testing the OCL
+// revert path with irreconcilable storage sections present in the rendered config.
+func NewMachineConfigWithStorageSections(name, pool string) *mcfgv1.MachineConfig {
+	mc := NewMachineConfig(name, pool)
+
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse Ignition config: %v", err))
+	}
+
+	ignCfg.Storage.Disks = []ign3types.Disk{
+		{Device: "/dev/test-ocl-revert"},
+	}
+	format := "xfs"
+	ignCfg.Storage.Filesystems = []ign3types.Filesystem{
+		{Device: "/dev/test-ocl-revert-part1", Path: helpers.StrToPtr("/var/lib/test-ocl-revert"), Format: &format},
+	}
+
+	mc.Spec.Config.Raw = helpers.MarshalOrDie(ignCfg)
+	return mc
+}
+
 // newMachineConfigWithKernelType returns the same base MC, but adds the given kernel
 func NewMachineConfigWithKernelType(name, pool, kernelType string) *mcfgv1.MachineConfig {
 	mc := NewMachineConfig(name, pool)
