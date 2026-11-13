@@ -7,7 +7,7 @@ contents: |
   ConditionPathExists=/run/ostree-booted
   # Removal of this file signals firstboot completion
   ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
-  After=machine-config-daemon-pull.service
+  After=machine-config-daemon-pull.service firstboot-pivot-skip-finalize.service
   Before=kubelet-dependencies.target
 
   [Service]
@@ -25,6 +25,7 @@ contents: |
   # Run this via podman because we want to use the nmstatectl binary in our container
   ExecStart=/usr/bin/podman run --rm --privileged --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .Images.machineConfigOperator }}' firstboot-complete-machineconfig --persist-nics
   ExecStart=/usr/bin/podman run --rm --privileged --pid=host --net=host -v /:/rootfs  --entrypoint machine-config-daemon '{{ .Images.machineConfigOperator }}' firstboot-complete-machineconfig
+  ExecStartPost=-/usr/sbin/sysctl --system
   ExecStopPost=-/usr/bin/umount /sysroot/ostree/repo/config
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env

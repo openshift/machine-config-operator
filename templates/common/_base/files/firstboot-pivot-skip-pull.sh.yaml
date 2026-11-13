@@ -1,0 +1,109 @@
+mode: 0755
+path: "/usr/local/bin/firstboot-pivot-skip-pull.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -euo pipefail
+
+    ENCAPSULATED="/etc/ignition-machine-config-encapsulated.json"
+    AUTHFILE="/var/lib/kubelet/config.json"
+    MODULES_SAVE="/run/modules-save"
+    echo "firstboot-pivot-skip-pull: extracting OS image URL"
+    OSIMAGE=$(jq -r '.spec.osImageURL' "${ENCAPSULATED}")
+    if [ -z "${OSIMAGE}" ] || [ "${OSIMAGE}" = "null" ]; then
+        echo "firstboot-pivot-skip-pull: no osImageURL in encapsulated MachineConfig" >&2
+        exit 1
+    fi
+    echo "firstboot-pivot-skip-pull: target image: ${OSIMAGE}"
+
+    mkdir -p /run/ostree
+    ln -sf "${AUTHFILE}" /run/ostree/auth.json
+
+    # On baremetal, NM sets rc-manager=unmanaged and does not write
+    # /etc/resolv.conf. The on-prem-resolv-prepender service does
+    # that, but it only runs under multi-user.target. Copy NM's
+    # internal resolv.conf so DNS works under our minimal target.
+    NM_RESOLV="/var/run/NetworkManager/resolv.conf"
+    if [ -f "${NM_RESOLV}" ]; then
+        echo "firstboot-pivot-skip-pull: copying NM resolv.conf for DNS"
+        cp -f "${NM_RESOLV}" /etc/resolv.conf
+    fi
+
+    echo "firstboot-pivot-skip-pull: resolv.conf:"
+    cat /etc/resolv.conf 2>&1 || true
+    echo "firstboot-pivot-skip-pull: network interfaces:"
+    ip -brief addr 2>&1 || true
+    echo "firstboot-pivot-skip-pull: routes:"
+    ip route 2>&1 || true
+    echo "firstboot-pivot-skip-pull: NM connections:"
+    nmcli -t connection show --active 2>&1 || true
+    REGISTRY=$(echo "${OSIMAGE}" | cut -d'/' -f1)
+    echo "firstboot-pivot-skip-pull: resolving ${REGISTRY}:"
+    getent hosts "${REGISTRY}" 2>&1 || echo "firstboot-pivot-skip-pull: DNS lookup failed for ${REGISTRY}"
+    echo "firstboot-pivot-skip-pull: auth file:"
+    ls -la "${AUTHFILE}" 2>&1 || true
+    echo "firstboot-pivot-skip-pull: registries.conf:"
+    cat /etc/containers/registries.conf 2>&1 || true
+
+    # Save the entire /usr/lib/modules before apply-live replaces it.
+    # The target image has a different kernel version, so the running
+    # kernel's module directory will not exist after apply-live.
+    if [ ! -d "${MODULES_SAVE}" ]; then
+        echo "firstboot-pivot-skip-pull: saving kernel modules"
+        mkdir -p "${MODULES_SAVE}"
+        cp -a /usr/lib/modules/. "${MODULES_SAVE}/"
+    fi
+
+    # Stage the target deployment. This must run BEFORE any ostree
+    # container image pull into the system repo, because pulling
+    # registers the image ref and causes rpm-ostree to think the
+    # deployment already tracks it.
+    # Retry in a loop because the external network interface may not
+    # be routable yet on baremetal dual-NIC setups. Give up after
+    # the timeout so the system can fall back to the normal firstboot
+    # reboot path.
+    TIMEOUT=120
+    echo "firstboot-pivot-skip-pull: staging deployment via rpm-ostree"
+    deadline=$(( $(date +%s) + TIMEOUT ))
+    while true; do
+        rebase_out=$(rpm-ostree rebase --experimental \
+            "ostree-unverified-registry:${OSIMAGE}" 2>&1) && true
+        rc=$?
+        if [ ${rc} -eq 0 ]; then
+            echo "firstboot-pivot-skip-pull: deployment staged"
+            break
+        fi
+        if echo "${rebase_out}" | grep -q "Old and new refs are equal"; then
+            echo "firstboot-pivot-skip-pull: already on target ref"
+            break
+        fi
+        if [ "$(date +%s)" -ge "${deadline}" ]; then
+            echo "firstboot-pivot-skip-pull: rebase failed after ${TIMEOUT}s, falling back to reboot path" >&2
+            echo "${rebase_out}" >&2
+            mkdir -p /var/log
+            echo "${rebase_out}" > /var/log/firstboot-pivot-skip-pull-error.log
+            exit 1
+        fi
+        echo "firstboot-pivot-skip-pull: rebase attempt failed, retrying in 5s:" >&2
+        echo "${rebase_out}" >&2
+        sleep 5
+    done
+
+    # Apply the staged deployment to the running system without rebooting.
+    echo "firstboot-pivot-skip-pull: applying live"
+    rpm-ostree apply-live --allow-replacement
+
+    # Restore the running kernel's modules over the read-only overlay.
+    # apply-live replaced /usr/lib/modules with the target image's
+    # modules, which are built for a different kernel version. Bind-mount
+    # over the entire directory because the per-version subdirectory
+    # no longer exists in the overlay.
+    echo "firstboot-pivot-skip-pull: restoring kernel modules"
+    mount -o bind "${MODULES_SAVE}" /usr/lib/modules
+
+    # Reload SELinux policy from the target image so the running
+    # policy matches the new binary labels in the overlay.
+    echo "firstboot-pivot-skip-pull: reloading SELinux policy"
+    semodule -R
+
+    echo "firstboot-pivot-skip-pull: complete"
