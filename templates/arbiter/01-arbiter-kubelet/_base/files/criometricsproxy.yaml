@@ -64,8 +64,11 @@ contents:
         - --client-ca-file=/etc/kubernetes/kubelet-ca.crt
         - --logtostderr=true
         - --kubeconfig=/var/lib/kubelet/kubeconfig
-        - --tls-cipher-suites={{join .TLSCipherSuites ","}} 
+        - --tls-cipher-suites={{join .TLSCipherSuites ","}}
         - --tls-min-version={{.TLSMinVersion}}
+        {{- if .ServerTLSGroups }}
+        - --tls-curve-preferences={{join .ServerTLSGroups ","}}
+        {{- end }}
         - --upstream=http://127.0.0.1:9537
         - --tls-cert-file=/var/lib/kubelet/pki/kubelet-server-current.pem
         - --tls-private-key-file=/var/lib/kubelet/pki/kubelet-server-current.pem

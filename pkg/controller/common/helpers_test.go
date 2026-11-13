@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/tls"
 	"os"
 	"os/exec"
 	"reflect"
@@ -2380,4 +2381,48 @@ func TestGetSecurityProfileGroupsFeatureGate(t *testing.T) {
 				TLSGroupsOptions{Enabled: true, FIPSEnabled: true}),
 			"Modern's X25519MLKEM768 and X25519 are dropped for a FIPS target")
 	})
+}
+
+func TestGetGoTLSConfig(t *testing.T) {
+	intermediateMinVersion := string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion)
+	intermediateCiphers := configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers
+
+	testCases := []struct {
+		name             string
+		curvePreferences []int32
+		wantCurves       []tls.CurveID
+	}{
+		{
+			name:             "nil groups leaves CurvePreferences nil so Go uses its defaults",
+			curvePreferences: nil,
+			wantCurves:       nil,
+		},
+		{
+			name:             "empty non-nil groups leaves CurvePreferences nil so Go uses its defaults",
+			curvePreferences: []int32{},
+			wantCurves:       nil,
+		},
+		{
+			name:             "valid groups are set",
+			curvePreferences: []int32{4588, 29},
+			wantCurves:       []tls.CurveID{4588, 29},
+		},
+		{
+			name:             "out-of-range values are filtered out leaving CurvePreferences nil",
+			curvePreferences: []int32{-1, 70000},
+			wantCurves:       nil,
+		},
+		{
+			name:             "out-of-range values mixed with valid are filtered out",
+			curvePreferences: []int32{-1, 29, 70000},
+			wantCurves:       []tls.CurveID{29},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := GetGoTLSConfig(intermediateMinVersion, intermediateCiphers, tc.curvePreferences)
+			require.Equal(t, tc.wantCurves, cfg.CurvePreferences)
+		})
+	}
 }
