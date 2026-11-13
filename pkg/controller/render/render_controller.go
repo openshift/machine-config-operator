@@ -56,6 +56,11 @@ const (
 	renderDelay = 5 * time.Second
 )
 
+var builtInMachineConfigRoles = sets.New(
+	ctrlcommon.MachineConfigPoolMaster,
+	ctrlcommon.MachineConfigPoolWorker,
+	ctrlcommon.MachineConfigPoolArbiter)
+
 var (
 	// controllerKind contains the schema.GroupVersionKind for this controller type.
 	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
@@ -554,6 +559,9 @@ func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) e
 	if err != nil {
 		return err
 	}
+	if err := validateRequiredMachineConfigsExist(pool, mcs); err != nil {
+		return err
+	}
 	sort.SliceStable(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
 
 	if len(mcs) == 0 {
@@ -565,6 +573,101 @@ func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) e
 		return ctrl.syncFailingStatus(pool, err)
 	}
 	return ctrl.syncAvailableStatus(pool)
+}
+
+// validateRequiredMachineConfigsExist prevents a rendered config from being
+// generated from user-provided MachineConfigs while the template controller's
+// base configs are still being created. The base configs contain the kubelet
+// and container-runtime systemd configuration; assigning a render without
+// them can cause the daemon to remove those files on the next update.
+// See: https://redhat.atlassian.net/browse/OCPBUGS-140645
+func validateRequiredMachineConfigsExist(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
+	if pool.Spec.MachineConfigSelector == nil {
+		return nil
+	}
+
+	roles, err := getMachineConfigRolesFromSelector(pool.Spec.MachineConfigSelector)
+	if err != nil {
+		return err
+	}
+
+	roleCount := roles.Len()
+	if roleCount == 1 {
+		return validateRequiredMachineConfigsForRole(roles.UnsortedList()[0], configs)
+	}
+
+	if roleCount == 0 {
+		// A custom pool with a selector unrelated to a built-in role does not have
+		// a fixed template set that this controller can validate here.
+		return nil
+	}
+
+	return fmt.Errorf("MachineConfigPool %s selector matches multiple built-in roles: %s", pool.Name, strings.Join(sets.List(roles), ", "))
+}
+
+// validateRequiredMachineConfigsForRole verifies that all required base
+// MachineConfigs for a built-in role are available.
+func validateRequiredMachineConfigsForRole(role string, configs []*mcfgv1.MachineConfig) error {
+	// These MachineConfig names mirror the following paths in ./templates:
+	// - templates/<role>/00-<role>
+	// - templates/<role>/01-<role>-container-runtime
+	// - templates/<role>/01-<role>-kubelet
+	//
+	// In the future, these templates should be embedded and this list should be
+	// constructed dynamically instead of hard-coding its expected values here.
+	needed := sets.New(
+		fmt.Sprintf("00-%s", role),
+		fmt.Sprintf("01-%s-container-runtime", role),
+		fmt.Sprintf("01-%s-kubelet", role),
+	)
+
+	for _, config := range configs {
+		needed.Delete(config.Name)
+		if needed.Len() == 0 {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("required %s MachineConfigs are not available yet: %s", role, strings.Join(sets.List(needed), ", "))
+}
+
+func stringSetToCommaSeparated(s sets.Set[string]) string {
+	return strings.Join(sets.List(s), ", ")
+}
+
+// getMachineConfigRolesFromSelector returns built-in roles satisfying the
+// selector's role-label requirements. Other requirements are ignored for
+// inferring built-in roles.
+func getMachineConfigRolesFromSelector(machineConfigSelector *metav1.LabelSelector) (sets.Set[string], error) {
+	selector, err := metav1.LabelSelectorAsSelector(machineConfigSelector)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MachineConfigPool selector: %w", err)
+	}
+
+	requirements, selectable := selector.Requirements()
+	if !selectable {
+		return sets.New[string](), nil
+	}
+
+	roleSelector := labels.NewSelector()
+	for _, requirement := range requirements {
+		if requirement.Key() == mcfgv1.MachineConfigRoleLabelKey {
+			roleSelector = roleSelector.Add(requirement)
+		}
+	}
+
+	if roleSelector.Empty() {
+		return sets.New[string](), nil
+	}
+
+	roles := sets.New[string]()
+	for role := range builtInMachineConfigRoles {
+		if roleSelector.Matches(labels.Set{mcfgv1.MachineConfigRoleLabelKey: role}) {
+			roles.Insert(role)
+		}
+	}
+
+	return roles, nil
 }
 
 func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
@@ -960,6 +1063,12 @@ func RunBootstrap(ctx context.Context, pools []*mcfgv1.MachineConfigPool, config
 	for _, pool := range pools {
 		pcs, err := getMachineConfigsForPool(pool, configs)
 		if err != nil {
+			return nil, nil, err
+		}
+		// By the time we're in RunBootstrap(), the MachineConfigs which this
+		// function requires should exist since the rest of the bootstrap process
+		// should have handled it.
+		if err := validateRequiredMachineConfigsExist(pool, pcs); err != nil {
 			return nil, nil, err
 		}
 		var osImageStreamSet *mcfgv1.OSImageStreamSet
