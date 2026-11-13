@@ -35,6 +35,16 @@ var defaultClusterPolicies = opv1.NodeDisruptionPolicyClusterStatus{
 			},
 		},
 		{
+			// The Distribution registry re-reads htpasswd on mtime change,
+			// so credential rotation does not require a service restart.
+			Path: constants.IRIRegistryHtpasswdPath,
+			Actions: []opv1.NodeDisruptionPolicyStatusAction{
+				{
+					Type: opv1.NoneStatusAction,
+				},
+			},
+		},
+		{
 			Path: constants.GPGNoRebootPath,
 			Actions: []opv1.NodeDisruptionPolicyStatusAction{
 				{

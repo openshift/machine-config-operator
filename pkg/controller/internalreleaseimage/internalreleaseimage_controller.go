@@ -52,9 +52,10 @@ var updateBackoff = wait.Backoff{
 // Controller defines the InternalReleaseImage controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler func(mcp string) error
+	syncHandler func(ctx context.Context, mcp string) error
 
 	iriLister       mcfglistersv1.InternalReleaseImageLister
 	iriListerSynced cache.InformerSynced
@@ -106,6 +107,7 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: ctrlcommon.NamespacedEventRecorder(eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-internalreleaseimagecontroller"})),
 		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
@@ -162,9 +164,9 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
-	// Watch IRI secrets (TLS, auth) and the global pull secret. All are served
-	// by the cluster-wide KubeInformerFactory, so a single informer covers all
-	// namespaces.
+	// Watch IRI secrets (TLS, auth). They are served by the cluster-wide
+	// KubeInformerFactory, so a single informer covers all namespaces and the
+	// handlers filter down to MCONamespace.
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
 		AddFunc:    ctrl.addSecret,
 		UpdateFunc: ctrl.updateSecret,
@@ -202,7 +204,7 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer klog.Info("Shutting down MachineConfigController-InternalReleaseImageController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, ctx.Done())
+		go wait.Until(func() { ctrl.worker(ctx) }, time.Second, ctx.Done())
 	}
 
 	<-ctx.Done()
@@ -210,19 +212,19 @@ func (ctrl *Controller) Run(ctx context.Context, workers int) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key)
+	err := ctrl.syncHandler(ctx, key)
 	ctrl.handleErr(err, key)
 
 	return true
@@ -325,8 +327,9 @@ func (ctrl *Controller) processMachineConfigEvent(obj interface{}, logMsg string
 
 func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 	secret := obj.(*corev1.Secret)
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 	klog.V(4).Infof("Secret %s added, re-queuing IRI sync", secret.Name)
@@ -336,8 +339,9 @@ func (ctrl *Controller) addSecret(obj interface{}, _ bool) {
 func (ctrl *Controller) updateSecret(_, cur interface{}) {
 	secret := cur.(*corev1.Secret)
 
-	if secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
-		secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName {
+	if secret.Namespace != ctrlcommon.MCONamespace ||
+		(secret.Name != ctrlcommon.InternalReleaseImageTLSSecretName &&
+			secret.Name != ctrlcommon.InternalReleaseImageAuthSecretName) {
 		return
 	}
 
@@ -539,7 +543,7 @@ func (ctrl *Controller) enqueueInternalReleaseImage() {
 // syncInternalReleaseImage will sync the InternalReleaseImage with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 // nolint: gocyclo
-func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
+func (ctrl *Controller) syncInternalReleaseImage(ctx context.Context, key string) (syncErr error) {
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing InternalReleaseImage %q (%v)", key, startTime)
 	defer func() {
@@ -600,6 +604,14 @@ func (ctrl *Controller) syncInternalReleaseImage(key string) (syncErr error) {
 	iriRegistryCredentialsSecret, err := ctrl.secretLister.Secrets(ctrlcommon.MCONamespace).Get(ctrlcommon.InternalReleaseImageAuthSecretName)
 	if err != nil {
 		return fmt.Errorf("could not get Secret %s: %w", ctrlcommon.InternalReleaseImageAuthSecretName, err)
+	}
+
+	// Ensure the htpasswd field is in sync with the password field. If the
+	// password was rotated, this generates a new bcrypt hash and updates the
+	// secret before re-rendering the MachineConfig.
+	iriRegistryCredentialsSecret, err = reconcileHtpasswd(ctx, ctrl.kubeClient, iriRegistryCredentialsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile IRI registry htpasswd: %w", err)
 	}
 
 	tlsProfile, err := ctrl.getTLSProfile()
