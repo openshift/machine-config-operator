@@ -313,7 +313,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestDoNothing(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +417,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +473,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
 	ps := []byte(`{"dummy": "dummy"}`)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, ps, nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestKubeletAutoNodeSizingEnabled(t *testing.T) {
 
 func TestSystemGomaxprocsDropins(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +569,7 @@ func TestSystemGomaxprocsDropins(t *testing.T) {
 
 func TestSystemGomaxprocsCPUQuantities(t *testing.T) {
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{})
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, ctrlcommon.TLSGroupsOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
