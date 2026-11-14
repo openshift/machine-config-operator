@@ -26,7 +26,7 @@ metadata:
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
-    release.openshift.io/feature-set: Default
+    release.openshift.io/feature-set: Default,OKD
     release.openshift.io/delete: "true"
 ---
 apiVersion: v1
@@ -38,7 +38,7 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
-    release.openshift.io/feature-set: Default
+    release.openshift.io/feature-set: Default,OKD
     release.openshift.io/delete: "true"
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -51,5 +51,5 @@ metadata:
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
-    release.openshift.io/feature-set: Default
+    release.openshift.io/feature-set: Default,OKD
     release.openshift.io/delete: "true"
