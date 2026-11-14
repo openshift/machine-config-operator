@@ -222,8 +222,12 @@ func (p *PinnedImageSetManager) sync(key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), p.prefetchTimeout)
 	// cancel any currently running tasks in the worker pool
 	p.resetWorkload(cancel)
-	if err := p.updateStatusProgressing([]*mcfgv1.MachineConfigPool{primaryPool}); err != nil {
-		klog.Errorf("failed to update status: %v", err)
+	// Only mark Progressing=True when at least one PinnedImageSet is configured.
+	// Fresh installs with no PIS must not briefly claim image prefetch is in progress.
+	if poolsHavePinnedImageSets(pools) {
+		if err := p.updateStatusProgressing([]*mcfgv1.MachineConfigPool{primaryPool}); err != nil {
+			klog.Errorf("failed to update status: %v", err)
+		}
 	}
 
 	if err := p.syncMachineConfigPools(ctx, pools); err != nil {
@@ -588,11 +592,19 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 		return err
 	}
 
+	pisNames := pinnedImageSetNamesFromApplyConfigs(applyCfg)
+	progressingReason, progressingMessage, degradedReason, degradedMessage := completedPinnedImageSetConditionMessages(pisNames, message)
+
+	// When PIS work is finished, conditions flip to False. If one or more PinnedImageSets
+	// were applied, reason/message attribute the values to the previous update cycle
+	// (same pattern as node update phases after Updated=True) and name the set(s).
+	// With no PinnedImageSets configured yet, avoid "previous update" wording so a fresh
+	// install does not imply a PIS update already happened.
 	err = upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1.MachineConfigNodePinnedImageSetsProgressing,
-			Reason:  "AsExpected",
-			Message: message,
+			Reason:  progressingReason,
+			Message: progressingMessage,
 		},
 		nil,
 		metav1.ConditionFalse,
@@ -611,8 +623,8 @@ func (p *PinnedImageSetManager) updateStatusProgressingComplete(pools []*mcfgv1.
 	return upgrademonitor.UpdateMachineConfigNodeStatus(
 		&upgrademonitor.Condition{
 			State:   mcfgv1.MachineConfigNodePinnedImageSetsDegraded,
-			Reason:  "AsExpected",
-			Message: "All is good",
+			Reason:  degradedReason,
+			Message: degradedMessage,
 		},
 		nil,
 		metav1.ConditionFalse,
@@ -678,6 +690,72 @@ func (p *PinnedImageSetManager) getPinnedImageSetApplyConfigsForPools(pools []*m
 		}
 	}
 	return applyConfigs, nil
+}
+
+// poolsHavePinnedImageSets reports whether any pool references a PinnedImageSet.
+func poolsHavePinnedImageSets(pools []*mcfgv1.MachineConfigPool) bool {
+	for _, pool := range pools {
+		if pool != nil && len(pool.Spec.PinnedImageSets) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// pinnedImageSetNamesFromApplyConfigs returns sorted unique PinnedImageSet names
+// that will be written to MachineConfigNode status.
+func pinnedImageSetNamesFromApplyConfigs(applyCfg []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration) []string {
+	if len(applyCfg) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(applyCfg))
+	names := make([]string, 0, len(applyCfg))
+	for _, cfg := range applyCfg {
+		if cfg == nil || cfg.Name == nil || strings.TrimSpace(*cfg.Name) == "" {
+			continue
+		}
+		name := strings.TrimSpace(*cfg.Name)
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// completedPinnedImageSetConditionMessages returns Progressing/Degraded reason and
+// message pairs for a completed PinnedImageSet sync.
+//
+// When no PinnedImageSets are configured, messages must not imply a previous PIS
+// update occurred (fresh install / empty status.pinnedImageSets).
+// When one or more sets completed, messages name the set(s) and attribute the
+// condition to the previous update cycle.
+func completedPinnedImageSetConditionMessages(pisNames []string, completeMessage string) (progressingReason, progressingMessage, degradedReason, degradedMessage string) {
+	if len(pisNames) == 0 {
+		return "NoPinnedImageSets", "No pinned image sets configured",
+			"NoPinnedImageSets", "No pinned image sets configured"
+	}
+	progressingReason = "PinnedImageSetsUpdateComplete"
+	degradedReason = "PinnedImageSetsUpdateComplete"
+	progressingMessage = previousPinnedImageSetUpdateMessage(pisNames, completeMessage)
+	degradedMessage = previousPinnedImageSetUpdateMessage(pisNames, "All is good")
+	return progressingReason, progressingMessage, degradedReason, degradedMessage
+}
+
+// previousPinnedImageSetUpdateMessage formats MCN condition messages for completed
+// PinnedImageSet work. Matches the MCN enhancement pattern used for rendered-config
+// phases ("Action during update to <target>: …") and names the PinnedImageSet(s).
+func previousPinnedImageSetUpdateMessage(pisNames []string, message string) string {
+	switch len(pisNames) {
+	case 0:
+		return message
+	case 1:
+		return fmt.Sprintf("Action during update to pinned image set %s: %s", pisNames[0], message)
+	default:
+		return fmt.Sprintf("Action during update to pinned image sets %s: %s", strings.Join(pisNames, ", "), message)
+	}
 }
 
 //nolint:gosec
