@@ -50,7 +50,7 @@ contents:
         - name: backend_health_check_interval
           value: "5"
         - name: control_plane_health_check_address
-          value: "http://localhost:1936/healthz"
+          value: "http://localhost:1936/healthz/ready"
         - name: control_plane_health_check_timeout_seconds
           value: "3"
         resources:
