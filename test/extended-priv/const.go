@@ -117,8 +117,15 @@ const (
 	MachineFullName = "machine.machine.openshift.io"
 	// CAPIMachineSetFullName is the CAPI machineset fully qualified name
 	CAPIMachineSetFullName = "machineset.cluster.x-k8s.io"
+	// CAPIManagedTemplateLabel labels infrastructure templates created by test code for a given machineset
+	CAPIManagedTemplateLabel = "mco-test/managed-by-machineset"
 	// CAPIMachineFullName is the CAPI machine fully qualified name
 	CAPIMachineFullName = "machine.cluster.x-k8s.io"
+
+	// MAPIApiGroup is the MAPI apiGroup used in MachineConfiguration managedBootImages
+	MAPIApiGroup = "machine.openshift.io"
+	// CAPIApiGroup is the CAPI apiGroup used in MachineConfiguration managedBootImages
+	CAPIApiGroup = "cluster.x-k8s.io"
 
 	// MachineSetResource is the resource name for machinesets
 	MachineSetResource = "machinesets"

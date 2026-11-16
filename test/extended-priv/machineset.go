@@ -73,6 +73,7 @@ type ManagedMachineResource interface {
 	GetWorkspaceFolder() (string, error)
 	GetVSphereFailureDomain() (string, error)
 	GetVSphereConnectionInfo() (*exutil.VSphereConnectionInfo, error)
+	GetAPIGroup() string
 }
 
 // MachineSet struct to handle MachineSet resources
@@ -986,4 +987,8 @@ func (ms MachineSet) GetVSphereConnectionInfo() (*exutil.VSphereConnectionInfo, 
 	}
 
 	return exutil.GetVSphereConnectionInfoFromFailureDomain(ms.GetOC().AsAdmin(), fd)
+}
+
+func (ms MachineSet) GetAPIGroup() string {
+	return MAPIApiGroup
 }

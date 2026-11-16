@@ -115,7 +115,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		exutil.By("Opt-in boot images update with All mode")
 		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource),
+			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource, MAPIApiGroup),
 		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -145,7 +145,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		exutil.By("Configure MachineConfiguration resource to use Partial mode for ControlPlaneMachineSet resources")
 		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 
-		err := machineConfiguration.SetPartialManagedBootImagesConfig(ControlPlaneMachineSetResource, "test-label", "test-value")
+		err := machineConfiguration.SetPartialManagedBootImagesConfig(ControlPlaneMachineSetResource, MAPIApiGroup, "test-label", "test-value")
 		o.Expect(err).To(o.HaveOccurred(), "Expected error when configuring Partial mode for ControlPlaneMachineSets")
 		o.Expect(err).To(o.BeAssignableToTypeOf(&exutil.ExitError{}), "Unexpected error when configuring controlplanemachineset partial mode in MachineConfiguration")
 		o.Expect(err.(*exutil.ExitError).StdErr).To(o.ContainSubstring(expectedError),
@@ -173,7 +173,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		exutil.By("Configure MachineConfiguration resource with mode None for controlplanemachinesets")
 		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
-			machineConfiguration.SetNoneManagedBootImagesConfig(ControlPlaneMachineSetResource),
+			machineConfiguration.SetNoneManagedBootImagesConfig(ControlPlaneMachineSetResource, MAPIApiGroup),
 		).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -272,7 +272,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		exutil.By("Configure MachineConfiguration resource with mode All for controlplanemachinesets")
 		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource),
+			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource, MAPIApiGroup),
 		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -346,7 +346,7 @@ var _ = g.Describe("[sig-mco][Serial][Disruptive][OCPFeatureGate:ManagedBootImag
 		exutil.By("Opt-in boot images update with All mode")
 		defer machineConfiguration.SetSpec(machineConfiguration.GetSpecOrFail())
 		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource),
+			machineConfiguration.SetAllManagedBootImagesConfig(ControlPlaneMachineSetResource, MAPIApiGroup),
 		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
