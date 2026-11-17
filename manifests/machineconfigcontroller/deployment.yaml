@@ -26,6 +26,9 @@ spec:
         - "--payload-version={{.ReleaseVersion}}"
         - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
         - "--tls-min-version={{.TLSMinVersion}}"
+        {{- if .TLSGroups }}
+        - "--tls-curve-preferences={{join .TLSGroups ","}}"
+        {{- end }}
         - "--streams-cache=/var/cache/mcc"
         resources:
           requests:
@@ -63,8 +66,11 @@ spec:
         args:
         - --secure-listen-address=0.0.0.0:9001
         - --config-file=/etc/kube-rbac-proxy/config-file.yaml
-        - --tls-cipher-suites={{join .TLSCipherSuites ","}} 
+        - --tls-cipher-suites={{join .TLSCipherSuites ","}}
         - --tls-min-version={{.TLSMinVersion}}
+        {{- if .TLSGroups }}
+        - --tls-curve-preferences={{join .TLSGroups ","}}
+        {{- end }}
         - --upstream=http://127.0.0.1:8797
         - --logtostderr=true
         - --tls-cert-file=/etc/tls/private/tls.crt

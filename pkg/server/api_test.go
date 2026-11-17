@@ -756,7 +756,7 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "Hello, client")
 		}),
-		ctrlcommon.GetGoTLSConfig("", nil),
+		ctrlcommon.GetGoTLSConfig("", nil, nil),
 	)
 
 	// Configure the TLS testing to allow
