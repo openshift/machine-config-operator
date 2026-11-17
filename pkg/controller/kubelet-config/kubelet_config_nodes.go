@@ -77,9 +77,14 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 
 	if nodeConfig.Spec.CgroupMode == osev1.CgroupModeV1 {
 		klog.Warningf(cgroupsV1DeprecationMsg)
-		if err := ctrl.syncNodeConfigStatus(nodeConfig); err != nil {
-			return err
-		}
+		// The deprecation condition is informational and best effort: a failure
+		// to write it (e.g. missing RBAC permissions or a transient API error)
+		// must not prevent the reconciliation of the node configuration
+		// MachineConfigs below. Aborting here leaves them with a stale
+		// controller version annotation, which the render controller rejects,
+		// degrading the pools and blocking the cluster upgrade.
+		// See https://issues.redhat.com/browse/OCPBUGS-128402
+		ctrl.syncNodeConfigStatus(nodeConfig)
 	}
 	// Fetch the controllerconfig
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
@@ -193,7 +198,13 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	return nil
 }
 
-func (ctrl *Controller) syncNodeConfigStatus(cfg *osev1.Node) error {
+// syncNodeConfigStatus updates the status of the given nodes.config.openshift.io
+// resource with the cgroups v1 deprecation condition. The update is best effort:
+// failures are only logged because the condition is informational and must not
+// block the node config reconciliation (see OCPBUGS-128402).
+func (ctrl *Controller) syncNodeConfigStatus(cfg *osev1.Node) {
+	// Do not mutate the object owned by the informer cache.
+	cfg = cfg.DeepCopy()
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newStatusCondition := apihelpers.NewCondition(cgroupModeCondType, metav1.ConditionTrue, cgroupCondReason, cgroupsV1DeprecationMsg)
 		if len(cfg.Status.Conditions) == 0 || newStatusCondition.Message != cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Message {
@@ -208,7 +219,6 @@ func (ctrl *Controller) syncNodeConfigStatus(cfg *osev1.Node) error {
 	if statusUpdateErr != nil {
 		klog.Warningf("Unable to update the node config status: %v", statusUpdateErr)
 	}
-	return statusUpdateErr
 }
 
 func (ctrl *Controller) enqueueNodeConfig(nodeConfig *osev1.Node) {
