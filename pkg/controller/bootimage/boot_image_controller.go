@@ -1,6 +1,7 @@
 package bootimage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	osconfigv1 "github.com/openshift/api/config/v1"
 	features "github.com/openshift/api/features"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
@@ -269,6 +271,10 @@ func New(
 		UpdateFunc: ctrl.updateClusterVersion,
 	})
 
+	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: ctrl.updateControllerConfig,
+	})
+
 	ctrl.fgHandler = fgHandler
 	ctrl.dynamicClient = dynamicClient
 
@@ -455,6 +461,25 @@ func (ctrl *Controller) updateVSphereCredentialsSecret(oldObj, newObj interface{
 
 	klog.Infof("vSphere credentials Secret updated, reconciling enrolled machine resources")
 	ctrl.enqueueEvent("VSphereCredentialsSecretUpdated")
+}
+
+// updateControllerConfig triggers reconciliation when the additional trust bundle in
+// the cluster's ControllerConfig changes, so that boot image downloads which failed
+// TLS verification are retried with the new CA certificates without waiting for an
+// unrelated event. Other ControllerConfig updates are ignored.
+func (ctrl *Controller) updateControllerConfig(oldObj, newObj interface{}) {
+	oldCC, oldOK := oldObj.(*mcfgv1.ControllerConfig)
+	newCC, newOK := newObj.(*mcfgv1.ControllerConfig)
+	if !oldOK || !newOK || newCC.Name != ctrlcommon.ControllerConfigName {
+		return
+	}
+
+	if bytes.Equal(oldCC.Spec.AdditionalTrustBundle, newCC.Spec.AdditionalTrustBundle) {
+		return
+	}
+
+	klog.Infof("ControllerConfig additional trust bundle updated, reconciling enrolled machine resources")
+	ctrl.enqueueEvent("ControllerConfigTrustBundleUpdated")
 }
 
 // getAdditionalTrustBundle returns the PEM CA certificates that the operator merges
