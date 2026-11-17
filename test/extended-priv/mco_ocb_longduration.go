@@ -941,7 +941,7 @@ func ValidateNewNodesBootDirectlyWithOCLImage(oc *exutil.CLI, mosc *MachineOSCon
 	initialNodeCount := len(mcp.GetNodesOrFail())
 
 	exutil.By("Check able to scale the node from existing ManagedMachineResource")
-	existingMS := GetValidManagedMachineResource(oc.AsAdmin())
+	existingMS := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 
 	o.Expect(existingMS.AddToScale(1)).NotTo(o.HaveOccurred())
 

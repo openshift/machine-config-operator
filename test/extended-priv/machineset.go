@@ -56,6 +56,7 @@ type ManagedMachineResource interface {
 	GetUserDataSecret() (*Secret, error)
 	GetManagedUserDataSecret() (ManagedUserDataSecret, error)
 	SetUserDataSecret(userDataSecretName string) error
+	SetPool(poolName string) error
 	GetReplicaOfSpec() (string, error)
 	ScaleTo(scale int) error
 	AddToScale(delta int) error
@@ -148,15 +149,42 @@ func GetAllManagedMachineResources(oc *exutil.CLI, apiTypes ...MachineAPIType) (
 
 // GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
 // An optional list of MachineAPIType values can be provided to restrict which API types are considered.
-func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) ManagedMachineResource {
-	all := OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiTypes...))
+func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) (ManagedMachineResource, error) {
+	all, err := GetAllManagedMachineResources(oc, apiTypes...)
+	if err != nil {
+		return nil, fmt.Errorf("error listing ManagedMachineResources: %w", err)
+	}
 	for _, ms := range all {
-		if OrFail[string](ms.GetReplicaOfSpec()) != "0" && ms.GetIsReady() {
-			return ms
+		replicas, err := ms.GetReplicaOfSpec()
+		if err != nil || replicas == "0" || !ms.GetIsReady() {
+			continue
+		}
+		return ms, nil
+	}
+	return nil, fmt.Errorf("no ready ManagedMachineResource with replicas > 0 found")
+}
+
+// GetValidManagedMachineResourceByArchitecture returns a ready ManagedMachineResource with
+// replicas > 0 that matches the given architecture.
+func GetValidManagedMachineResourceByArchitecture(oc *exutil.CLI, arch architecture.Architecture) (ManagedMachineResource, error) {
+	all, err := GetAllManagedMachineResources(oc)
+	if err != nil {
+		return nil, fmt.Errorf("error listing ManagedMachineResources: %w", err)
+	}
+	for _, ms := range all {
+		replicas, err := ms.GetReplicaOfSpec()
+		if err != nil || replicas == "0" || !ms.GetIsReady() {
+			continue
+		}
+		msArch, err := ms.GetArchitecture()
+		if err != nil {
+			continue
+		}
+		if msArch == arch {
+			return ms, nil
 		}
 	}
-	e2e.Failf("No ready ManagedMachineResource with replicas > 0 found")
-	return nil
+	return nil, fmt.Errorf("no ready ManagedMachineResource with architecture %s found", arch)
 }
 
 func (ms MachineSet) String() string {
@@ -516,8 +544,12 @@ func (ms MachineSet) SetArchitecture(arch string) error {
 // GetUserDataSecret returns the secret used for user-data
 func (ms MachineSet) GetUserDataSecret() (*Secret, error) {
 	secretName, err := ms.Get(`{.spec.template.spec.providerSpec.value.userDataSecret.name}`)
-	if err != nil {
-		return nil, err
+	if err != nil || secretName == "" {
+		logger.Infof("Retrying with userData path (baremetal uses userData instead of userDataSecret)")
+		secretName, err = ms.Get(`{.spec.template.spec.providerSpec.value.userData.name}`)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return NewSecret(ms.GetOC(), MachineAPINamespace, secretName), nil
 }
@@ -533,7 +565,17 @@ func (ms MachineSet) GetManagedUserDataSecret() (ManagedUserDataSecret, error) {
 
 // SetUserDataSecret configures the machineset to use the provided user-data secret in the machine-config-api namespace
 func (ms MachineSet) SetUserDataSecret(userDataSecretName string) error {
-	return ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "`+userDataSecretName+`" }]`)
+	err := ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userDataSecret/name", "value": "`+userDataSecretName+`" }]`)
+	if err != nil {
+		logger.Infof("Retrying with userData path (baremetal uses userData instead of userDataSecret)")
+		err = ms.Patch("json", `[{ "op": "replace", "path": "/spec/template/spec/providerSpec/value/userData/name", "value": "`+userDataSecretName+`" }]`)
+	}
+	return err
+}
+
+// SetPool configures the machineset so that new machines boot directly into the given MCP
+func (ms MachineSet) SetPool(poolName string) error {
+	return ms.SetUserDataSecret(fmt.Sprintf("%s-user-data-managed", poolName))
 }
 
 // GetCoreOsBootImage returns the configured coreOsBootImage in this machineset
@@ -555,8 +597,10 @@ func (ms MachineSet) GetCoreOsBootImage() (string, error) {
 		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.template}`
 	case AzurePlatform:
 		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.image}`
+	case BaremetalPlatform:
+		coreOsBootImagePath = `{.spec.template.spec.providerSpec.value.image}`
 	default:
-		e2e.Failf("Machineset.GetCoreOsBootImage method is only supported for GCP and AWS infrastructure")
+		e2e.Failf("Machineset.GetCoreOsBootImage method is only supported for GCP, AWS, Vsphere, Azure and Baremetal infrastructure")
 	}
 
 	return ms.Get(coreOsBootImagePath)
@@ -791,8 +835,10 @@ func (ms MachineSet) GetCoreOSBootImagePath(platform string) (string, error) {
 		patchCoreOsBootImagePath = "/spec/template/spec/providerSpec/value/template"
 	case AzurePlatform:
 		patchCoreOsBootImagePath = "/spec/template/spec/providerSpec/value/image"
+	case BaremetalPlatform:
+		patchCoreOsBootImagePath = "/spec/template/spec/providerSpec/value/image"
 	default:
-		return "", fmt.Errorf("Machineset.GetCoreOSBootImagePath method is only supported for GCP, Vsphere, Azure and AWS platforms")
+		return "", fmt.Errorf("Machineset.GetCoreOSBootImagePath method is only supported for GCP, Vsphere, Azure, AWS and Baremetal platforms")
 	}
 
 	return patchCoreOsBootImagePath, nil
