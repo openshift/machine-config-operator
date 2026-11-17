@@ -329,6 +329,7 @@ func resolveExistingTemplateVM(
 	tagManager *tags.Manager,
 	kubeClient clientset.Interface,
 	infraID, arch string,
+	additionalTrustBundle []byte,
 ) (vm *object.VirtualMachine, resolvedName string, created bool, err error) {
 
 	computedName := fmt.Sprintf("%s-rhcos-%s", infraID, failureDomain.Name)
@@ -395,7 +396,7 @@ func resolveExistingTemplateVM(
 		if ovaErr != nil {
 			return nil, "", false, ovaErr
 		}
-		ovaPath, ovaErr := cache.DownloadOva(ova)
+		ovaPath, ovaErr := cache.DownloadOva(ova, additionalTrustBundle)
 		if ovaErr != nil {
 			return nil, "", false, fmt.Errorf("failed to download %s: %w", ova.Location, ovaErr)
 		}
@@ -779,7 +780,7 @@ func buildSyntheticFailureDomain(providerSpec *machinev1beta1.VSphereMachineProv
 //   - reconcileSkipped: true when neither a real nor synthetic failure domain can be determined — the
 //     MachineSet is functional but cannot be managed for boot image updates; the caller should skip without degrading
 //   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
+func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string, additionalTrustBundle []byte) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -829,7 +830,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 	}
 	finder = finder.SetDatacenter(datacenter)
 
-	existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch)
+	existingTemplateVM, resolvedName, created, err := resolveExistingTemplateVM(ctx, finder, providerSpec, failureDomain, streamData, client, tagManager, kubeClient, infraID, arch, additionalTrustBundle)
 	if err != nil {
 		return "", false, false, err
 	}
@@ -880,7 +881,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 			}
 		}()
 
-		ovaPath, err := cache.DownloadOva(ova)
+		ovaPath, err := cache.DownloadOva(ova, additionalTrustBundle)
 		if err != nil {
 			return "", false, false, fmt.Errorf("failed to download %s: %w", ova.Location, err)
 		}

@@ -12,8 +12,11 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfginformersv1 "github.com/openshift/client-go/machineconfiguration/informers/externalversions/machineconfiguration/v1"
+	mcfglistersv1 "github.com/openshift/client-go/machineconfiguration/listers/machineconfiguration/v1"
 	mcopclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
@@ -66,6 +69,7 @@ type Controller struct {
 	infraLister          configlistersv1.InfrastructureLister
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 	clusterVersionLister configlistersv1.ClusterVersionLister
+	ccLister             mcfglistersv1.ControllerConfigLister
 
 	mcoCmListerSynced           cache.InformerSynced
 	vsphereSecretInformerSynced cache.InformerSynced
@@ -74,6 +78,7 @@ type Controller struct {
 	infraListerSynced           cache.InformerSynced
 	mcopListerSynced            cache.InformerSynced
 	clusterVersionListerSynced  cache.InformerSynced
+	ccListerSynced              cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -191,6 +196,7 @@ func New(
 	mcopClient mcopclientset.Interface,
 	mcopInformer mcopinformersv1.MachineConfigurationInformer,
 	clusterVersionInformer configinformersv1.ClusterVersionInformer,
+	ccInformer mcfginformersv1.ControllerConfigInformer,
 	fgHandler ctrlcommon.FeatureGatesHandler,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
@@ -215,6 +221,7 @@ func New(
 	ctrl.infraLister = infraInformer.Lister()
 	ctrl.mcopLister = mcopInformer.Lister()
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
+	ctrl.ccLister = ccInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
 	ctrl.vsphereSecretInformerSynced = vsphereSecretInformer.Informer().HasSynced
@@ -223,6 +230,7 @@ func New(
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
 	ctrl.mcopListerSynced = mcopInformer.Informer().HasSynced
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 
 	mapiMachineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMAPIMachineSet,
@@ -279,7 +287,7 @@ func (ctrl *Controller) Run(ctx context.Context) {
 
 	// Phase 1: sync core informers. The infra lister must be warm before we can
 	// determine the platform and decide whether CAPI informers are needed.
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.vsphereSecretInformerSynced, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.cpmsListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.vsphereSecretInformerSynced, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.cpmsListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced, ctrl.ccListerSynced) {
 		return
 	}
 
@@ -447,6 +455,23 @@ func (ctrl *Controller) updateVSphereCredentialsSecret(oldObj, newObj interface{
 
 	klog.Infof("vSphere credentials Secret updated, reconciling enrolled machine resources")
 	ctrl.enqueueEvent("VSphereCredentialsSecretUpdated")
+}
+
+// getAdditionalTrustBundle returns the PEM CA certificates that the operator merges
+// from the user CA bundle and the proxy's trusted CA into the ControllerConfig. It is
+// read from the informer cache on every sync so that updated or rotated CAs are used
+// by the next download without restarting the controller. A missing ControllerConfig
+// yields an empty bundle, which keeps the default trust roots.
+func (ctrl *Controller) getAdditionalTrustBundle() ([]byte, error) {
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if apierrors.IsNotFound(err) {
+		klog.Warningf("ControllerConfig %s not found; boot image downloads will only trust the default trust roots", ctrlcommon.ControllerConfigName)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ControllerConfig %s: %w", ctrlcommon.ControllerConfigName, err)
+	}
+	return cc.Spec.AdditionalTrustBundle, nil
 }
 
 // deleteVSphereCredentialsSecret triggers reconciliation when the dedicated
