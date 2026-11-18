@@ -47,6 +47,52 @@ func TestGetAdditionalTrustBundle(t *testing.T) {
 	assert.Equal(t, []byte("new-ca"), bundle)
 }
 
+func TestAddControllerConfigEnqueuesSync(t *testing.T) {
+	tests := []struct {
+		name          string
+		obj           interface{}
+		expectEnqueue bool
+	}{
+		{
+			name:          "cluster ControllerConfig created without a trust bundle",
+			obj:           newTestControllerConfig(ctrlcommon.ControllerConfigName, nil),
+			expectEnqueue: true,
+		},
+		{
+			name:          "cluster ControllerConfig created with a trust bundle",
+			obj:           newTestControllerConfig(ctrlcommon.ControllerConfigName, []byte("new-ca")),
+			expectEnqueue: true,
+		},
+		{
+			name:          "other ControllerConfig is ignored",
+			obj:           newTestControllerConfig("other", []byte("new-ca")),
+			expectEnqueue: false,
+		},
+		{
+			name:          "unexpected object type is ignored",
+			obj:           &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ControllerConfigName}},
+			expectEnqueue: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &Controller{queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())}
+			t.Cleanup(ctrl.queue.ShutDown)
+
+			ctrl.addControllerConfig(tc.obj)
+			if !tc.expectEnqueue {
+				assert.Zero(t, ctrl.queue.Len())
+				return
+			}
+			require.Equal(t, 1, ctrl.queue.Len())
+			event, _ := ctrl.queue.Get()
+			assert.Equal(t, "ControllerConfigAdded", event)
+			ctrl.queue.Done(event)
+		})
+	}
+}
+
 func TestUpdateControllerConfigEnqueuesOnTrustBundleChange(t *testing.T) {
 	name := ctrlcommon.ControllerConfigName
 
