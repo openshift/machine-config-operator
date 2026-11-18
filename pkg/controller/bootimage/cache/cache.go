@@ -134,7 +134,7 @@ func cacheFile(ova *stream.Artifact, filePath, cacheDir string, additionalTrustB
 	defer closeIdleConnections()
 
 	klog.Infof("Downloading bootimage to %s", filePath)
-	return downloadArtifact(client, ova, cacheDir)
+	return downloadArtifact(client, ova, cacheDir, klog.Errorf)
 }
 
 // DownloadOva obtains the OVA from its URL, puts it in the cache folder and returns

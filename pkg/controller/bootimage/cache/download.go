@@ -6,8 +6,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,8 +89,10 @@ func buildDownloadClient(base http.RoundTripper, loadSystemRoots func() (*x509.C
 // github.com/coreos/stream-metadata-go, which only supports the default HTTP client.
 // The integrity guarantees are unchanged: the data is written to a temporary file
 // in destdir that is removed on any failure, and only a fully verified and synced
-// file is renamed to its final name, overwriting any existing file.
-func downloadArtifact(client *http.Client, a *stream.Artifact, destdir string) (string, error) {
+// file is renamed to its final name, overwriting any existing file. On failure the
+// original error is returned; problems cleaning up the temporary file are only
+// reported through logError.
+func downloadArtifact(client *http.Client, a *stream.Artifact, destdir string, logError func(string, ...interface{})) (string, error) {
 	name, err := a.Name()
 	if err != nil {
 		return "", err
@@ -99,12 +103,10 @@ func downloadArtifact(client *http.Client, a *stream.Artifact, destdir string) (
 	if err != nil {
 		return "", err
 	}
-	finalized := false
+	closed, finalized := false, false
 	defer func() {
 		if !finalized {
-			// The download already failed; errors while cleaning up are ignored.
-			_ = w.Close()
-			_ = os.Remove(w.Name())
+			discardTempFile(w, closed, os.Remove, logError)
 		}
 	}()
 
@@ -117,8 +119,10 @@ func downloadArtifact(client *http.Client, a *stream.Artifact, destdir string) (
 	if err := w.Chmod(0o644); err != nil {
 		return "", err
 	}
-	if err := w.Close(); err != nil {
-		return "", err
+	closeErr := w.Close()
+	closed = true
+	if closeErr != nil {
+		return "", closeErr
 	}
 	if err := os.Rename(w.Name(), destfile); err != nil {
 		return "", err
@@ -126,6 +130,22 @@ func downloadArtifact(client *http.Client, a *stream.Artifact, destdir string) (
 	finalized = true
 
 	return destfile, nil
+}
+
+// discardTempFile closes the temporary file of a failed download, unless it is
+// already closed, and removes it. Cleanup failures are logged with the temporary
+// path instead of being returned, so that the caller still gets the original
+// download error and the controller status is not affected. A file that no longer
+// exists is not a failure.
+func discardTempFile(f *os.File, closed bool, remove func(string) error, logError func(string, ...interface{})) {
+	if !closed {
+		if err := f.Close(); err != nil {
+			logError("Failed to close temporary boot image download file %s: %v", f.Name(), err)
+		}
+	}
+	if err := remove(f.Name()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		logError("Failed to remove temporary boot image download file %s: %v", f.Name(), err)
+	}
 }
 
 // fetchArtifact writes the artifact to w and validates its SHA256 checksum. It is

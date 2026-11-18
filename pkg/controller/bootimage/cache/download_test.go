@@ -11,7 +11,9 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"math/big"
 	"net"
 	"net/http"
@@ -144,8 +146,17 @@ func downloadWithBundle(t *testing.T, a *stream.Artifact, bundle []byte) (string
 	defer closeIdleConnections()
 
 	dir := t.TempDir()
-	path, err := downloadArtifact(client, a, dir)
+	path, err := downloadArtifact(client, a, dir, t.Logf)
 	return dir, path, err
+}
+
+// logRecorder collects formatted log messages for a single test.
+type logRecorder struct {
+	messages []string
+}
+
+func (r *logRecorder) errorf(format string, args ...interface{}) {
+	r.messages = append(r.messages, fmt.Sprintf(format, args...))
 }
 
 // assertNoTempFiles verifies that no temporary download file remains in dir.
@@ -325,7 +336,7 @@ func TestDownloadArtifactThroughProxy(t *testing.T) {
 		defer closeIdleConnections()
 
 		dir := t.TempDir()
-		_, err = downloadArtifact(client, artifact, dir)
+		_, err = downloadArtifact(client, artifact, dir, t.Logf)
 		return connects, dir, err
 	}
 
@@ -375,7 +386,7 @@ func TestDownloadArtifactOverwritesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, testArtifactName), []byte("stale"), 0o644))
 
-	path, err := downloadArtifact(client, newTestArtifact(srv, testArtifactContent), dir)
+	path, err := downloadArtifact(client, newTestArtifact(srv, testArtifactContent), dir, t.Logf)
 	require.NoError(t, err)
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -406,6 +417,152 @@ func TestCacheFileUsesAdditionalTrustBundle(t *testing.T) {
 		assertNoDownloadLeftovers(t, dir)
 		assert.NoFileExists(t, filePath+".lock")
 	})
+}
+
+// TestDownloadArtifactReturnsOriginalErrorWhenCleanupFails verifies that a failure to
+// remove the temporary file neither replaces nor wraps the download error.
+func TestDownloadArtifactReturnsOriginalErrorWhenCleanupFails(t *testing.T) {
+	ca := newTestCA(t, "boot image test CA")
+	dir := t.TempDir()
+	// Registered after t.TempDir, so it runs first and the directory can be removed.
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	// Privileged processes (root or CAP_DAC_OVERRIDE) can still modify a read-only
+	// directory, so removal would not fail for them.
+	require.NoError(t, os.Chmod(dir, 0o555))
+	if probe, err := os.CreateTemp(dir, "probe-"); err == nil {
+		_ = probe.Close()
+		_ = os.Remove(probe.Name())
+		t.Skip("directory permissions do not prevent file removal for this process")
+	}
+	require.NoError(t, os.Chmod(dir, 0o755))
+
+	// The temporary file already exists when the request is served. Making the
+	// directory read-only then makes removing it fail once the download fails.
+	srv := ca.newTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Errorf("failed to make %s read-only: %v", dir, err)
+		}
+		http.NotFound(w, r)
+	}), nil, loopbackIPs)
+
+	client, closeIdleConnections, err := newDownloadClient(ca.pem)
+	require.NoError(t, err)
+	defer closeIdleConnections()
+
+	artifact := newTestArtifact(srv, testArtifactContent)
+	logs := &logRecorder{}
+	_, err = downloadArtifact(client, artifact, dir, logs.errorf)
+	require.EqualError(t, err, fmt.Sprintf("%s returned status: 404 Not Found", artifact.Location))
+
+	temps, globErr := filepath.Glob(filepath.Join(dir, ".coreos-artifact-*"))
+	require.NoError(t, globErr)
+	require.Len(t, temps, 1, "the temporary file must remain because its removal failed")
+	require.Len(t, logs.messages, 1)
+	assert.Contains(t, logs.messages[0], "Failed to remove temporary boot image download file "+temps[0])
+}
+
+// TestDownloadArtifactFailureAfterCloseIsNotNoisy verifies that when the download
+// fails after the temporary file was closed (here, because the final path is a
+// non-empty directory), the file is removed without a second close being reported
+// and the original error is returned.
+func TestDownloadArtifactFailureAfterCloseIsNotNoisy(t *testing.T) {
+	ca := newTestCA(t, "boot image test CA")
+	srv := ca.newLoopbackServer(t)
+
+	client, closeIdleConnections, err := newDownloadClient(ca.pem)
+	require.NoError(t, err)
+	defer closeIdleConnections()
+
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, testArtifactName)
+	require.NoError(t, os.Mkdir(blocker, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(blocker, "keep"), []byte("x"), 0o644))
+
+	logs := &logRecorder{}
+	_, err = downloadArtifact(client, newTestArtifact(srv, testArtifactContent), dir, logs.errorf)
+	var linkErr *os.LinkError
+	require.ErrorAs(t, err, &linkErr, "the rename error must be returned unchanged")
+	assert.Empty(t, logs.messages, "cleanup must not report the expected second close")
+	assertNoTempFiles(t, dir)
+}
+
+func TestDiscardTempFile(t *testing.T) {
+	newTempFile := func(t *testing.T) *os.File {
+		t.Helper()
+		f, err := os.CreateTemp(t.TempDir(), ".coreos-artifact-")
+		require.NoError(t, err)
+		return f
+	}
+
+	tests := []struct {
+		name string
+		// prepare returns whether the file is already closed and the remove function to use.
+		prepare      func(t *testing.T, f *os.File) (bool, func(string) error)
+		expectLogs   []string
+		expectExists bool
+	}{
+		{
+			name: "open file is closed and removed",
+			prepare: func(_ *testing.T, _ *os.File) (bool, func(string) error) {
+				return false, os.Remove
+			},
+		},
+		{
+			name: "already closed file is not closed again",
+			prepare: func(t *testing.T, f *os.File) (bool, func(string) error) {
+				require.NoError(t, f.Close())
+				return true, os.Remove
+			},
+		},
+		{
+			name: "unexpected close failure is logged",
+			prepare: func(t *testing.T, f *os.File) (bool, func(string) error) {
+				require.NoError(t, f.Close())
+				return false, os.Remove
+			},
+			expectLogs: []string{"Failed to close temporary boot image download file"},
+		},
+		{
+			name: "file that no longer exists is not reported",
+			prepare: func(t *testing.T, f *os.File) (bool, func(string) error) {
+				require.NoError(t, os.Remove(f.Name()))
+				return false, os.Remove
+			},
+		},
+		{
+			name: "removal failure is logged",
+			prepare: func(_ *testing.T, f *os.File) (bool, func(string) error) {
+				return false, func(name string) error {
+					return &fs.PathError{Op: "remove", Path: name, Err: fs.ErrPermission}
+				}
+			},
+			expectLogs:   []string{"Failed to remove temporary boot image download file"},
+			expectExists: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newTempFile(t)
+			closed, remove := tc.prepare(t, f)
+
+			logs := &logRecorder{}
+			discardTempFile(f, closed, remove, logs.errorf)
+
+			require.Len(t, logs.messages, len(tc.expectLogs))
+			for i, want := range tc.expectLogs {
+				assert.Contains(t, logs.messages[i], want)
+				assert.Contains(t, logs.messages[i], f.Name(), "the log must name the temporary file")
+			}
+			assert.ErrorIs(t, f.Close(), os.ErrClosed, "the file must be closed")
+			if tc.expectExists {
+				assert.FileExists(t, f.Name())
+			} else {
+				assert.NoFileExists(t, f.Name())
+			}
+		})
+	}
 }
 
 // fakeRoundTripper is an http.RoundTripper that is not an *http.Transport.
