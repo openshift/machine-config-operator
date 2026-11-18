@@ -57,8 +57,8 @@ contents:
                 {{if not (isOpenShiftManagedDefaultLB .) -}}
                 --user-managed-lb \
                 {{end -}}
-                {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
-                {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})"
+                {{range onPremPlatformAPIServerInternalIPsForFamilies . }}"{{.}}" {{end}} \
+                {{range onPremPlatformIngressIPsForFamilies . }}"{{.}}" {{end}})"
             DOMAINS="${IP4_DOMAINS:-} ${IP6_DOMAINS:-} {{.DNS.Spec.BaseDomain}}"
             if [[ -n "$NAMESERVER_IP" ]]; then
                 KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
