@@ -40,6 +40,7 @@ build_args=(
 	--log-level=DEBUG
 	--storage-driver vfs
 	--authfile="$BASE_IMAGE_PULL_CREDS"
+	--cert-dir /var/run/secrets/kubernetes.io/serviceaccount
 	--tag "$TAG"
 	--file="$build_context/Containerfile"
 	--build-arg HTTP_PROXY="$HTTP_PROXY"
