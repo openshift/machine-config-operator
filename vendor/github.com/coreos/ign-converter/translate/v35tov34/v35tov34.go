@@ -18,15 +18,15 @@ import (
 	"reflect"
 
 	"github.com/coreos/ignition/v2/config/translate"
+	"github.com/coreos/ignition/v2/config/util"
 	"github.com/coreos/ignition/v2/config/v3_4/types"
-
 	old_types "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/coreos/ignition/v2/config/validate"
 )
 
 // Copy of github.com/coreos/ignition/v2/config/v3_5/translate/translate.go
 // with the types & old_types imports reversed (the referenced file translates
-// from 3.5 -> 3.4 but as a result only touches fields that are understood by
+// from 3.4 -> 3.5 but as a result only touches fields that are understood by
 // the 3.4 spec).
 func translateIgnition(old old_types.Ignition) (ret types.Ignition) {
 	// use a new translator so we don't recurse infinitely
@@ -93,5 +93,33 @@ func checkValue(v reflect.Value) error {
 		return fmt.Errorf("invalid input config: 'Cex' type is not supported in spec v3.4")
 	}
 
+	return descend(v)
+}
+
+func descend(v reflect.Value) error {
+	k := v.Type().Kind()
+	switch {
+	case util.IsPrimitive(k):
+		return nil
+	case k == reflect.Struct:
+		for i := 0; i < v.NumField(); i += 1 {
+			err := checkValue(v.Field(i))
+			if err != nil {
+				return err
+			}
+		}
+	case k == reflect.Slice:
+		for i := 0; i < v.Len(); i += 1 {
+			err := checkValue(v.Index(i))
+			if err != nil {
+				return err
+			}
+		}
+	case k == reflect.Ptr:
+		v = v.Elem()
+		if v.IsValid() {
+			return checkValue(v)
+		}
+	}
 	return nil
 }

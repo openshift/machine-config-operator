@@ -3,11 +3,13 @@ package extended
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
@@ -279,10 +281,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 })
 
 func createMcAndVerifyIgnitionVersion(oc *exutil.CLI, stepText, mcName, ignitionVersion string) {
+	// The supported spec versions are built with the same helper that the MCO uses to report the error,
+	// so that the expected message does not go stale when a new Ignition spec version is supported.
+	// The regexp ends in "$" to make sure that no more versions than the expected ones are present.
 	var (
 		mcTemplate        = "change-worker-ign-version.yaml"
 		mcp               = GetCompactCompatiblePool(oc.AsAdmin())
-		expectedRDMessage = `parsing Ignition config failed: (unknown|invalid) version\. Supported spec versions: 2\.2,3\.0,3\.1,3\.2,3\.3,3\.4,3\.5$`
+		supportedVersions = regexp.QuoteMeta(strings.Join(ctrlcommon.IgnitionConverterSingleton().GetSupportedMinorVersions(), ","))
+		expectedRDMessage = `parsing Ignition config failed: (unknown|invalid) version\. Supported spec versions: ` + supportedVersions + `$`
 		expectedRDReason  = "^$" // empty string
 	)
 	exutil.By(fmt.Sprintf("Create machine config with %s", stepText))

@@ -96,9 +96,6 @@ go-deps:
 	go mod tidy
 	go mod vendor
 	go mod verify
-	# make scripts executable
-	chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
-	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.32.1

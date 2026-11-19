@@ -35,7 +35,7 @@ func Check2_3(cfg old.Config, fsMap map[string]string) error {
 	rpt := oldValidate.ValidateWithoutSource(reflect.ValueOf(cfg))
 	if rpt.IsFatal() || rpt.IsDeprecated() {
 		// disallow any deprecated fields
-		return fmt.Errorf("Invalid input config:\n%s", rpt.String())
+		return fmt.Errorf("invalid input config:\n%s", rpt.String())
 	}
 
 	if len(cfg.Networkd.Units) != 0 {
@@ -142,7 +142,7 @@ func Translate(cfg old.Config, fsMap map[string]string) (types.Config, error) {
 			},
 			Security: types.Security{
 				TLS: types.TLS{
-					CertificateAuthorities: translateCAs(cfg.Ignition.Security.TLS.CertificateAuthorities),
+					CertificateAuthorities: translateCAs(cfg.Ignition.Security.CertificateAuthorities),
 				},
 			},
 			Timeouts: types.Timeouts{
@@ -391,14 +391,14 @@ func translateNode(n old.Node, m map[string]string) types.Node {
 func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 	for _, f := range files {
 		// 2.x files are overwrite by default
-		if f.Node.Overwrite == nil {
-			f.Node.Overwrite = util.BoolP(true)
+		if f.Overwrite == nil {
+			f.Overwrite = util.BoolP(true)
 		}
 
 		// In spec 3, overwrite must be false if append is true
 		// i.e. spec 2 files with append true must be translated to spec 3 files with overwrite false
-		if f.FileEmbedded1.Append {
-			f.Node.Overwrite = util.BoolPStrict(false)
+		if f.Append {
+			f.Overwrite = util.BoolPStrict(false)
 		}
 
 		file := types.File{
@@ -411,7 +411,7 @@ func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 			Compression: util.StrP(f.Contents.Compression),
 			Source:      util.StrPStrict(f.Contents.Source),
 		}
-		c.Verification.Hash = f.FileEmbedded1.Contents.Verification.Hash
+		c.Verification.Hash = f.Contents.Verification.Hash
 
 		if f.Append {
 			file.Append = []types.FileContents{c}
