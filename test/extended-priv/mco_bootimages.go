@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
@@ -469,10 +470,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			wrongIgnitionVersion = "1.2.0"
 			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
 			clonedSecretName     = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
+			// The supported spec versions are built with the same helper that the MCO uses to report the error,
+			// so that the expected message does not go stale when a new Ignition spec version is supported.
+			supportedVersions = strings.Join(ctrlcommon.IgnitionConverterSingleton().GetSupportedMinorVersions(), ",")
 			// We make the the regexp end in a "$" to make sure that no more versions than the expected ones are present
 			expectedFailedMessageRegexp = regexp.QuoteMeta(fmt.Sprintf(mapiBaseErrorMessageTemplate+
 				" converting ignition stub failed: failed to parse Ignition config: parsing Ignition config failed:"+
-				" unknown version. Supported spec versions: 2.2,3.0,3.1,3.2,3.3,3.4,3.5", clonedMSName, clonedMSName)) + "$"
+				" unknown version. Supported spec versions: %s", clonedMSName, clonedMSName, supportedVersions)) + "$"
 		)
 
 		setWrongIgnitionVersion := func(userData string) (string, error) {
