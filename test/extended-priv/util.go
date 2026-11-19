@@ -1261,17 +1261,7 @@ func getMachineConfigControllerPod(oc *exutil.CLI) (string, error) {
 // skipTestIfNotIPI skips the test if the cluster is not IPI
 func skipTestIfNotIPI(oc *exutil.CLI) {
 	// We assume that if nodes cannot be scaled then the cluster is UPI
-	skipTestIfWorkersCannotBeScaled(oc)
-}
-
-// skipTestIfWorkersCannotBeScaled skips the current test if the worker pool cannot be scaled via machineset
-func skipTestIfWorkersCannotBeScaled(oc *exutil.CLI) {
-	canBeScaled, err := WorkersCanBeScaled(oc)
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Error decidign if worker nodes can be scaled using machinesets")
-
-	if !canBeScaled {
-		g.Skip("Worker nodes cannot be scaled using machinesets. This test cannot be execute if workers cannot be scaled via machineset, IPI clusters.")
-	}
+	SkipTestIfWorkersCannotBeScaled(oc)
 }
 
 // getAllKubeProxyPod returns the kube-rbac-proxy- pod for given namespace

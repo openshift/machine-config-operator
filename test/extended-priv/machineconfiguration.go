@@ -55,13 +55,16 @@ func (mc MachineConfiguration) SetPartialManagedBootImagesConfig(resource, apiGr
 }
 
 // SetNoneManagedBootImagesConfig configures MachineConfiguration so that no machinesets are updated.
-// If no apiGroups are specified, it includes MAPI and, when the ManagedBootImagesAWSCAPI
-// feature gate is enabled, also CAPI.
+// If no apiGroups are specified, it includes MAPI and, when CAPI boot image updates are
+// accepted (ManagedBootImagesAWSCAPI gate enabled and platform is AWS), also CAPI.
 func (mc MachineConfiguration) SetNoneManagedBootImagesConfig(resource string, apiGroups ...string) error {
 	if len(apiGroups) == 0 {
 		apiGroups = []string{MAPIApiGroup}
 		enabled, err := IsFeaturegateEnabled(mc.GetOC(), "ManagedBootImagesAWSCAPI")
-		if err == nil && enabled {
+		if err != nil {
+			return fmt.Errorf("error checking ManagedBootImagesAWSCAPI feature gate: %w", err)
+		}
+		if enabled && exutil.CheckPlatform(mc.GetOC()) == AWSPlatform {
 			apiGroups = append(apiGroups, CAPIApiGroup)
 		}
 	}

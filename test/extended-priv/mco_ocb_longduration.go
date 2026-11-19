@@ -216,7 +216,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:85843][OTP][Skipped:Disconnected] InternalRegistry OCB Verify new nodes boot directly with OCL image without unnecessary reboots [Disruptive]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())                  // This test requires scaling, which doesn't make sense in SNO or Compact
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())     // Skip test if worker node cannot be scaled
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())     // Skip test if worker node cannot be scaled
 		SkipTestIfCannotUseInternalRegistry(oc.AsAdmin()) // Skip test if cannot use internal registry
 
 		var (
@@ -682,7 +682,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 	g.It("[PolarionID:88801][OTP][Skipped:Disconnected] ExternalRegistry OCB Verify new nodes boot directly with OCL image without unnecessary reboots [Disruptive]", func() {
 		SkipIfCompactOrSNO(oc.AsAdmin())              // This test requires scaling, which doesn't make sense in SNO or Compact
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin()) // Skip test if worker node cannot be scaled
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin()) // Skip test if worker node cannot be scaled
 
 		var (
 			mcp      = GetCompactCompatiblePool(oc.AsAdmin())
