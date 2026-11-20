@@ -1,0 +1,14 @@
+{{if eq .NetworkType "OVNKubernetes" -}}
+name: ovs-kubelet-recovery.service
+contents: |
+  [Unit]
+  Description=Recover OVS-dependent Kubernetes boot chain
+  After=local-fs.target
+  StartLimitIntervalSec=20min
+  StartLimitBurst=3
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/sbin/ovs-kubelet-recovery
+  TimeoutStartSec=7min
+{{end -}}
