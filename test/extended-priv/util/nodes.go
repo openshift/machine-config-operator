@@ -13,6 +13,11 @@ func DebugNodeWithChroot(oc *CLI, nodeName string, cmd ...string) (string, error
 	return strings.Join([]string{stdOut, stdErr}, "\n"), err
 }
 
+// DebugNodeWithChrootStd runs a command on the node and returns stdout and stderr separately.
+func DebugNodeWithChrootStd(oc *CLI, nodeName string, cmd ...string) (string, string, error) {
+	return debugNode(oc, nodeName, []string{}, true, true, cmd...)
+}
+
 // DebugNodeWithOptions launches debug container with options e.g. --image
 func DebugNodeWithOptions(oc *CLI, nodeName string, options []string, cmd ...string) (string, error) {
 	stdOut, stdErr, err := debugNode(oc, nodeName, options, false, true, cmd...)

@@ -2,6 +2,8 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -17,6 +19,8 @@ import (
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -35,6 +39,22 @@ type NodeList struct {
 type SpaceUsage struct {
 	Used  int64
 	Avail int64
+}
+
+// NodeBlockDevice describes a block device and its dependent devices.
+type NodeBlockDevice struct {
+	Name       string            `json:"name"`
+	Type       string            `json:"type"`
+	PartLabel  string            `json:"partlabel"`
+	MajorMinor string            `json:"maj:min"`
+	Children   []NodeBlockDevice `json:"children"`
+}
+
+// NodeMount describes a mounted filesystem in the node's mount namespace.
+type NodeMount struct {
+	Target     string `json:"target"`
+	Source     string `json:"source"`
+	MajorMinor string `json:"maj:min"`
 }
 
 // NewNode construct a new node struct
@@ -131,6 +151,112 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	}
 
 	return stdout, stderr, err
+}
+
+// RunHostCommand executes a command once in the node's mount namespace and returns its stdout.
+func (n *Node) RunHostCommand(cmd ...string) (string, error) {
+	hostCommand := append([]string{"nsenter", "--target", "1", "--mount", "--root", "--"}, cmd...)
+	stdout, stderr, err := exutil.DebugNodeWithChrootStd(n.oc, n.name, hostCommand...)
+	if err != nil {
+		return "", fmt.Errorf("running %q on node %s: %w; stderr: %s", cmd, n, err, stderr)
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
+// ResolveHostPath resolves an existing path in the node's filesystem.
+func (n *Node) ResolveHostPath(hostPath string) (string, error) {
+	resolved, err := n.RunHostCommand("readlink", "-e", hostPath)
+	if err != nil {
+		return "", err
+	}
+	if resolved == "" || !filepath.IsAbs(resolved) {
+		return "", fmt.Errorf("cannot resolve %s on node %s", hostPath, n)
+	}
+	return resolved, nil
+}
+
+// GetBlockDevices returns the node's block-device dependency tree.
+func (n *Node) GetBlockDevices() ([]NodeBlockDevice, error) {
+	output, err := n.RunHostCommand("lsblk", "--json", "--paths", "--output", "NAME,TYPE,PARTLABEL,MAJ:MIN")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		BlockDevices []NodeBlockDevice `json:"blockdevices"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "blockdevices").IsArray() {
+		return nil, fmt.Errorf("invalid block-device output on node %s: %s", n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding block devices on node %s: %w", n, err)
+	}
+	return result.BlockDevices, nil
+}
+
+// GetMounts returns the node's mounted filesystems and their device numbers.
+func (n *Node) GetMounts() ([]NodeMount, error) {
+	output, err := n.RunHostCommand("findmnt", "--json", "--list", "--output", "TARGET,SOURCE,MAJ:MIN")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Filesystems []NodeMount `json:"filesystems"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "filesystems").IsArray() {
+		return nil, fmt.Errorf("invalid mount output on node %s: %s", n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding mounts on node %s: %w", n, err)
+	}
+	return result.Filesystems, nil
+}
+
+// MountForPath finds the most specific mount containing a path.
+func MountForPath(mounts []NodeMount, target string) (NodeMount, error) {
+	var selected NodeMount
+	for _, mount := range mounts {
+		mountPath := path.Clean(mount.Target)
+		if mountPath != "/" && target != mountPath && !strings.HasPrefix(target, mountPath+"/") {
+			continue
+		}
+		if len(mountPath) > len(selected.Target) {
+			selected = mount
+			selected.Target = mountPath
+		} else if mountPath == selected.Target && mount.MajorMinor != selected.MajorMinor {
+			return NodeMount{}, fmt.Errorf("multiple mounts cover %s", target)
+		}
+	}
+	if selected.Target == "" || selected.MajorMinor == "" {
+		return NodeMount{}, fmt.Errorf("cannot determine the block device backing %s", target)
+	}
+	return selected, nil
+}
+
+// GetDeviceSignatures reports the filesystem or partition signatures on a device.
+func (n *Node) GetDeviceSignatures(device string) ([]string, error) {
+	output, err := n.RunHostCommand("wipefs", "--json", "--output", "TYPE", device)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Signatures []struct {
+			Type string `json:"type"`
+		} `json:"signatures"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "signatures").IsArray() {
+		return nil, fmt.Errorf("invalid signatures for %s on node %s: %s", device, n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding signatures for %s on node %s: %w", device, n, err)
+	}
+	var signatures []string
+	for _, signature := range result.Signatures {
+		if signature.Type == "" {
+			return nil, fmt.Errorf("unknown signature on %s on node %s", device, n)
+		}
+		signatures = append(signatures, signature.Type)
+	}
+	return signatures, nil
 }
 
 // DebugNodeWithOptions launch debug container with options e.g. --image
@@ -1653,4 +1779,181 @@ func RestoreRpm(node *Node) error {
 		"nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm 2>/dev/null; "+
 			"rm -f /var/tmp/rpm-real "+fakeRpmRemotePath)
 	return err
+}
+
+// ErrBareMetalHostUnavailable indicates that a host can no longer be claimed.
+var ErrBareMetalHostUnavailable = errors.New("bare-metal host is not available")
+
+// bareMetalHostAvailable reports whether an inspected host can be claimed for provisioning.
+func bareMetalHostAvailable(hostJSON string) bool {
+	if !gjson.Valid(hostJSON) {
+		return false
+	}
+	host := gjson.Parse(hostJSON)
+	return host.Get("status.provisioning.state").String() == "available" &&
+		!host.Get("spec.externallyProvisioned").Bool() &&
+		host.Get("spec.consumerRef").Type == gjson.Null &&
+		host.Get("metadata.deletionTimestamp").String() == ""
+}
+
+// bareMetalHostMatchesSelector checks the MAPI MachineSet's existing host selector.
+func bareMetalHostMatchesSelector(hostJSON, machineSetSpec string) (bool, error) {
+	if !gjson.Valid(hostJSON) || !gjson.Valid(machineSetSpec) {
+		return false, fmt.Errorf("invalid host or MachineSet JSON")
+	}
+	selectorJSON := gjson.Get(machineSetSpec, "template.spec.providerSpec.value.hostSelector")
+	selector := labels.NewSelector()
+	for key, value := range selectorJSON.Get("matchLabels").Map() {
+		requirement, err := labels.NewRequirement(key, selection.Equals, []string{value.String()})
+		if err != nil {
+			return false, err
+		}
+		selector = selector.Add(*requirement)
+	}
+	for _, expression := range selectorJSON.Get("matchExpressions").Array() {
+		var values []string
+		for _, value := range expression.Get("values").Array() {
+			values = append(values, value.String())
+		}
+		requirement, err := labels.NewRequirement(expression.Get("key").String(), selection.Operator(expression.Get("operator").String()), values)
+		if err != nil {
+			return false, err
+		}
+		selector = selector.Add(*requirement)
+	}
+	hostLabels := labels.Set{}
+	for key, value := range gjson.Get(hostJSON, "metadata.labels").Map() {
+		hostLabels[key] = value.String()
+	}
+	return selector.Matches(hostLabels), nil
+}
+
+// BareMetalHostPinned checks both sides of the temporary host-to-MachineSet selector.
+func BareMetalHostPinned(hostJSON, machineSetSpec, label string) (bool, error) {
+	matches, err := bareMetalHostMatchesSelector(hostJSON, machineSetSpec)
+	if err != nil || !matches {
+		return false, err
+	}
+	hostLabels := gjson.Get(hostJSON, "metadata.labels").Map()
+	selectorLabels := gjson.Get(machineSetSpec, "template.spec.providerSpec.value.hostSelector.matchLabels").Map()
+	return label != "" && hostLabels[label].String() == "true" && selectorLabels[label].String() == "true", nil
+}
+
+// FindAvailableBareMetalHost finds a free host matching a MAPI MachineSet and an optional filter.
+// It never deprovisions workers; a nil host means no suitable host is available.
+func FindAvailableBareMetalHost(oc *exutil.CLI, machineSet ManagedMachineResource, filter func(string) error) (*Resource, error) {
+	ms, ok := machineSet.(*MachineSet)
+	if !ok {
+		return nil, fmt.Errorf("bare-metal host selection requires a MAPI MachineSet")
+	}
+	spec, err := ms.GetSpec()
+	if err != nil {
+		return nil, fmt.Errorf("getting spec for %s: %w", ms, err)
+	}
+	hosts := NewNamespacedResourceList(oc, "baremetalhost.metal3.io", MachineAPINamespace)
+	hosts.SetItemsFilter(`?(@.status.provisioning.state=="available")`)
+	all, err := hosts.GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("listing available BareMetalHosts: %w", err)
+	}
+	for _, host := range all {
+		data, err := host.GetCleanJSON()
+		if err != nil {
+			return nil, fmt.Errorf("getting %s: %w", host, err)
+		}
+		if !bareMetalHostAvailable(data) {
+			continue
+		}
+		matches, err := bareMetalHostMatchesSelector(data, spec)
+		if err != nil {
+			return nil, fmt.Errorf("checking host selector for %s: %w", ms, err)
+		}
+		if !matches {
+			continue
+		}
+		if filter != nil {
+			if err := filter(data); err != nil {
+				logger.Infof("Skipping host %s: %s", host, err)
+				continue
+			}
+		}
+		return host, nil
+	}
+	return nil, nil
+}
+
+// PinBareMetalHost adds a temporary host label and a matching MAPI MachineSet selector.
+// The returned cleanup removes the label; it does not reserve the host against other consumers.
+func PinBareMetalHost(machineSet ManagedMachineResource, host *Resource) (string, func() error, error) {
+	if _, ok := machineSet.(*MachineSet); !ok {
+		return "", nil, fmt.Errorf("bare-metal host pinning requires a MAPI MachineSet")
+	}
+	data, err := host.GetCleanJSON()
+	if err != nil {
+		return "", nil, fmt.Errorf("getting %s: %w", host, err)
+	}
+	if !bareMetalHostAvailable(data) {
+		return "", nil, fmt.Errorf("%s: %w", host, ErrBareMetalHostUnavailable)
+	}
+	label := "machineconfiguration.openshift.io/bmh-" + exutil.GetRandomString()
+	patch, err := json.Marshal(map[string]interface{}{
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"providerSpec": map[string]interface{}{
+						"value": map[string]interface{}{
+							"hostSelector": map[string]interface{}{
+								"matchLabels": map[string]string{label: "true"},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := host.AddLabel(label, "true"); err != nil {
+		return "", nil, fmt.Errorf("labeling %s: %w", host, err)
+	}
+	cleanup := func() error { return host.RemoveLabel(label) }
+	if err := machineSet.Patch("merge", string(patch)); err != nil {
+		patchErr := fmt.Errorf("selecting %s in %s: %w", host, machineSet, err)
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			return label, cleanup, errors.Join(patchErr, fmt.Errorf("removing label from %s: %w", host, cleanupErr))
+		}
+		return "", nil, patchErr
+	}
+	return label, cleanup, nil
+}
+
+// VerifyBareMetalHostNode checks that a host is consumed by the expected MachineSet and node.
+func VerifyBareMetalHostNode(oc *exutil.CLI, host *Resource, machineSet ManagedMachineResource, node *Node) error {
+	if _, ok := machineSet.(*MachineSet); !ok {
+		return fmt.Errorf("bare-metal host verification requires a MAPI MachineSet")
+	}
+	consumer, err := host.Get(`{.spec.consumerRef.name}`)
+	if err != nil {
+		return err
+	}
+	if consumer == "" {
+		return fmt.Errorf("host %s has no Machine consumer", host)
+	}
+	machine := NewMachine(oc, MachineAPINamespace, consumer)
+	owner, err := machine.GetLabel("machine.openshift.io/cluster-api-machineset")
+	if err != nil {
+		return err
+	}
+	if owner != machineSet.GetName() {
+		return fmt.Errorf("host %s is consumed by MachineSet %s, not %s", host, owner, machineSet)
+	}
+	ownedNode, err := machine.GetNode()
+	if err != nil {
+		return err
+	}
+	if ownedNode.GetName() != node.GetName() {
+		return fmt.Errorf("host %s belongs to node %s, not %s", host, ownedNode, node)
+	}
+	return nil
 }
