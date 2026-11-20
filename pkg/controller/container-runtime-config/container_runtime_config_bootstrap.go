@@ -33,7 +33,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			}
 			role := pool.Name
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, fgHandler)
 			if err != nil {
 				return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
 			}

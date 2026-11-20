@@ -319,7 +319,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		return ctrlcommon.SecretWithStringDataMerged(secret), nil
 	}
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts, getBGPVIPSecret)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, pullSecretBytes, apiServer, groupOpts, getBGPVIPSecret, fgHandler)
 	if err != nil {
 		return err
 	}
@@ -327,7 +327,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg, clusterImagePolicies, imagePolicies, fgHandler)
 	if err != nil {
 		return err
 	}

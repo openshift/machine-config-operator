@@ -548,10 +548,11 @@ func (ctrl *Controller) handleQueueErr(queue workqueue.TypedRateLimitingInterfac
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string, fgHandler ctrlcommon.FeatureGatesHandler) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
+		FeatureGates:         fgHandler,
 	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
@@ -594,10 +595,11 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
 }
 
-func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, string, error) {
+func generateOriginalCredentialProviderConfig(templateDir string, cc *mcfgv1.ControllerConfig, role string, fgHandler ctrlcommon.FeatureGatesHandler) (*ign3types.File, string, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{
 		ControllerConfigSpec: &cc.Spec,
+		FeatureGates:         fgHandler,
 	}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
@@ -782,7 +784,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
-		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
+		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role, ctrl.fgHandler)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
@@ -1045,7 +1047,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies, ctrl.fgHandler)
 			if err != nil {
 				return err
 			}
@@ -1117,7 +1119,7 @@ func (ctrl *Controller) syncCRIOCredentialProviderConfig(key string) error {
 		}
 
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			credentialProviderConfigIgn, overlappedEntries, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, pool.Name, crioCredentialProviderConfig)
+			credentialProviderConfigIgn, overlappedEntries, err := crioCredentialProviderConfigIgnition(ctrl.templatesDir, controllerConfig, pool.Name, crioCredentialProviderConfig, ctrl.fgHandler)
 			if err != nil {
 				ctrl.syncCRIOCredentialProviderConfigStatusOnly(err, apicfgv1.ConditionTypeMachineConfigRendered, apicfgv1.ReasonMachineConfigRenderingFailed, "could not generate CRIOCredentialProvider Ignition config: %v", err)
 				return err
@@ -1224,6 +1226,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
 	icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet,
 	clusterScopePolicies map[string]signature.PolicyRequirements, scopeNamespacePolicies map[string]map[string]signature.PolicyRequirements,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) (*ign3types.Config, error) {
 	var (
 		registriesTOML               []byte
@@ -1234,7 +1237,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role, fgHandler)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
@@ -1367,6 +1370,7 @@ func (ctrl *Controller) syncImagePolicyStatusOnly(namespace, imagepolicy, condit
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
 	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image, clusterImagePolicies []*apicfgv1.ClusterImagePolicy, imagePolicies []*apicfgv1.ImagePolicy,
+	fgHandler ctrlcommon.FeatureGatesHandler,
 ) ([]*mcfgv1.MachineConfig, error) {
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
@@ -1399,7 +1403,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies)
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules, idmsRules, itmsRules, clusterScopePolicies, scopeNamespacePolicies, fgHandler)
 		if err != nil {
 			return nil, err
 		}
@@ -1521,7 +1525,7 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	return pools, nil
 }
 
-func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig) (*ign3types.Config, []string, error) {
+func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string, crioCredentialProviderConfig *apicfgv1.CRIOCredentialProviderConfig, fgHandler ctrlcommon.FeatureGatesHandler) (*ign3types.Config, []string, error) {
 	var (
 		credProviderConfigYaml           []byte
 		overlappedEntries                []string
@@ -1529,7 +1533,7 @@ func crioCredentialProviderConfigIgnition(templateDir string, controllerConfig *
 		contents                         []byte
 	)
 
-	originalCredProviderConfigIgn, credProviderConfigPath, err := generateOriginalCredentialProviderConfig(templateDir, controllerConfig, role)
+	originalCredProviderConfigIgn, credProviderConfigPath, err := generateOriginalCredentialProviderConfig(templateDir, controllerConfig, role, fgHandler)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not generate original CRIOCredentialProvider config for role %s: %w", role, err)
 	}
