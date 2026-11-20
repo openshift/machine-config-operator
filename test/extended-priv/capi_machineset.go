@@ -41,17 +41,42 @@ func (ms CAPIMachineSet) String() string {
 	return ms.GetName()
 }
 
-// Delete removes the CAPI MachineSet and its associated infrastructure template
+// DeleteCAPIManagedTemplates deletes all CAPI infrastructure templates labeled with CAPIManagedTemplateLabel.
+func DeleteCAPIManagedTemplates(oc *exutil.CLI) {
+	for _, kind := range []string{"awsmachinetemplates", "gcpmachinetemplates", "azuremachinetemplates", "vspheremachinetemplates"} {
+		oc.AsAdmin().WithoutNamespace().Run("delete").Args(kind, "-n", ClusterAPINamespace, "-l", CAPIManagedTemplateLabel, "--ignore-not-found").Output()
+	}
+}
+
+// DeleteManagedTemplates deletes all infrastructure templates labeled as managed by this machineset.
+func (ms CAPIMachineSet) DeleteManagedTemplates() error {
+	kind, err := ms.getInfrastructureTemplateKind()
+	if err != nil {
+		return fmt.Errorf("error getting infrastructure template kind: %w", err)
+	}
+
+	kindLower := strings.ToLower(kind) + "s"
+	label := CAPIManagedTemplateLabel + "=" + ms.GetName()
+	_, err = ms.oc.AsAdmin().WithoutNamespace().Run("delete").Args(kindLower, "-n", ms.GetNamespace(), "-l", label, "--ignore-not-found").Output()
+	return err
+}
+
+// Delete removes the CAPI MachineSet, its current infrastructure template,
+// and any intermediate templates created by recreateTemplateWithModification.
 func (ms CAPIMachineSet) Delete(extraParams ...string) error {
 	tmplRes, err := ms.getInfrastructureTemplateResource()
 	if err != nil {
 		logger.Errorf("Error getting infrastructure template for %s: %v. Proceeding with machineset deletion.", ms.GetName(), err)
 	}
 
+	if delErr := ms.DeleteManagedTemplates(); delErr != nil {
+		logger.Errorf("Error deleting managed templates for %s: %v", ms.GetName(), delErr)
+	}
+
 	msErr := ms.Resource.Delete(extraParams...)
 
 	if tmplRes != nil {
-		if delErr := tmplRes.Delete(); delErr != nil {
+		if delErr := tmplRes.Delete("--ignore-not-found"); delErr != nil {
 			logger.Errorf("Error deleting infrastructure template %s: %v", tmplRes.GetName(), delErr)
 			if msErr == nil {
 				msErr = delErr
@@ -328,7 +353,7 @@ func (ms CAPIMachineSet) GetCoreOSBootImagePath(platform string) (string, error)
 }
 
 // SetCoreOsBootImage sets the boot image in the infrastructure template.
-// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
+// CAPI infrastructure templates are immutable, so this method creates a new template and updates the machineset.
 func (ms CAPIMachineSet) SetCoreOsBootImage(coreosBootImage string) error {
 	bootImagePath, err := ms.GetCoreOSBootImagePath(exutil.CheckPlatform(ms.oc))
 	if err != nil {
@@ -350,38 +375,34 @@ func (ms CAPIMachineSet) getDisksPath(platform string) (string, error) {
 	}
 }
 
-// recreateTemplateWithModification deletes and re-creates the immutable infrastructure template with a modification function applied
+// SetInfrastructureTemplate updates the machineset's infrastructureRef to point to a different template
+func (ms CAPIMachineSet) SetInfrastructureTemplate(newTemplateName string) error {
+	logger.Infof("Updating machineset %s to point to template %s", ms.GetName(), newTemplateName)
+	return ms.Patch("merge", fmt.Sprintf(`{"spec":{"template":{"spec":{"infrastructureRef":{"name":"%s"}}}}}`, newTemplateName))
+}
+
+// recreateTemplateWithModification creates a new infrastructure template with the modification applied
+// and updates the machineset to point to it.
 func (ms CAPIMachineSet) recreateTemplateWithModification(modifyFunc func(string) (string, error)) error {
-	tmplRes, err := ms.getInfrastructureTemplateResource()
+	newTemplateName := ms.GetName() + "-" + exutil.GetRandomString()
+
+	newTmpl, err := ms.duplicateInfrastructureTemplate(newTemplateName, ms.GetName(), modifyFunc)
 	if err != nil {
 		return err
 	}
 
-	templateName := tmplRes.GetName()
-	templateKind := tmplRes.GetKind()
-	templateNamespace := tmplRes.GetNamespace()
-	templateOC := tmplRes.GetOC()
-
-	jsonRes, err := GetClonedResourceJSONString(tmplRes, templateName, templateNamespace, modifyFunc)
-	if err != nil {
-		return fmt.Errorf("error preparing infrastructure template JSON: %w", err)
-	}
-
-	logger.Infof("Deleting immutable infrastructure template %s to re-create it with modifications", templateName)
-	if err := tmplRes.Delete(); err != nil {
-		return fmt.Errorf("error deleting infrastructure template %s: %w", templateName, err)
-	}
-
-	_, err = CreateResourceFromJSON(templateOC, templateKind, templateName, templateNamespace, jsonRes)
-	if err != nil {
-		return fmt.Errorf("error re-creating infrastructure template %s: %w", templateName, err)
+	if err := ms.SetInfrastructureTemplate(newTemplateName); err != nil {
+		if delErr := newTmpl.Delete(); delErr != nil {
+			logger.Errorf("Failed to clean up new template %s after machineset patch failure: %v", newTemplateName, delErr)
+		}
+		return fmt.Errorf("error updating machineset %s to reference new template: %w", ms.GetName(), err)
 	}
 
 	return nil
 }
 
 // PatchDisks sets the disks field in the CAPI infrastructure template. disksJSON is a raw JSON array.
-// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
+// CAPI infrastructure templates are immutable, so this method creates a new template and updates the machineset.
 func (ms CAPIMachineSet) PatchDisks(platform, disksJSON string) error {
 	disksField, err := ms.getDisksPath(platform)
 	if err != nil || disksField == "" {
@@ -394,7 +415,7 @@ func (ms CAPIMachineSet) PatchDisks(platform, disksJSON string) error {
 
 // AppendDisks appends disk objects to the existing disks array in the CAPI infrastructure template.
 // disksJSON is a raw JSON array; each element is appended individually.
-// CAPI infrastructure templates are immutable, so this method deletes and re-creates the template.
+// CAPI infrastructure templates are immutable, so this method creates a new template and updates the machineset.
 func (ms CAPIMachineSet) AppendDisks(platform string, disks ...string) error {
 	disksField, err := ms.getDisksPath(platform)
 	if err != nil || disksField == "" {
@@ -426,7 +447,16 @@ func (ms CAPIMachineSet) GetArchitecture() (architecture.Architecture, error) {
 		}
 
 		if len(nodes) == 0 {
-			return architecture.UNKNOWN, fmt.Errorf("CAPI machineset %s has no replicas, so we cannot get the architecture from any existing node", ms.GetName())
+			logger.Infof("CAPI machineset %s has no replicas. Getting the architecture from a master node", ms.GetName())
+			masterMCP := NewMachineConfigPool(ms.GetOC().AsAdmin(), MachineConfigPoolMaster)
+			nodes, err = masterMCP.GetNodes()
+			if err != nil {
+				return architecture.UNKNOWN, err
+			}
+
+			if len(nodes) == 0 {
+				return architecture.UNKNOWN, fmt.Errorf("CAPI machineset %s has no replicas and no master nodes found, so we cannot get the architecture", ms.GetName())
+			}
 		}
 
 		narch, err := nodes[0].GetArchitecture()
@@ -465,8 +495,8 @@ func (ms CAPIMachineSet) SetAutoscalerLabels(labels string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal labels: %w", err)
 	}
-	return ms.Patch("json",
-		fmt.Sprintf(`[{"op": "add", "path": "/metadata/annotations/capacity.cluster-autoscaler.kubernetes.io~1labels", "value": %s}]`,
+	return ms.Patch("merge",
+		fmt.Sprintf(`{"metadata":{"annotations":{"capacity.cluster-autoscaler.kubernetes.io/labels":%s}}}`,
 			string(marshaledLabels)))
 }
 
@@ -501,13 +531,25 @@ func (ms CAPIMachineSet) SetPool(poolName string) error {
 
 // duplicateInfrastructureTemplate clones the infrastructure template referenced by this machineset
 // with a new name, optionally applying extra modifications to the cloned JSON before creation.
-func (ms CAPIMachineSet) duplicateInfrastructureTemplate(newTemplateName string, extraModifications func(string) (string, error)) (*Resource, error) {
+// The cloned template is labeled with ownerName for garbage collection by DeleteManagedTemplates.
+func (ms CAPIMachineSet) duplicateInfrastructureTemplate(newTemplateName, ownerName string, extraModifications func(string) (string, error)) (*Resource, error) {
 	tmplRes, err := ms.getInfrastructureTemplateResource()
 	if err != nil {
 		return nil, err
 	}
 
-	clonedTmpl, err := CloneResource(tmplRes, newTemplateName, ms.GetNamespace(), extraModifications)
+	labeledModifyFunc := func(resString string) (string, error) {
+		resString, err := sjson.Set(resString, "metadata.labels."+strings.ReplaceAll(CAPIManagedTemplateLabel, "/", "\\/"), ownerName)
+		if err != nil {
+			return "", err
+		}
+		if extraModifications != nil {
+			return extraModifications(resString)
+		}
+		return resString, nil
+	}
+
+	clonedTmpl, err := CloneResource(tmplRes, newTemplateName, ms.GetNamespace(), labeledModifyFunc)
 	if err != nil {
 		return nil, fmt.Errorf("error cloning infrastructure template %s: %w", tmplRes.GetName(), err)
 	}
@@ -522,7 +564,7 @@ func (ms CAPIMachineSet) Duplicate(newName string) (ManagedMachineResource, erro
 	newTemplateName := newName
 
 	// Clone the infrastructure template
-	clonedTmpl, err := ms.duplicateInfrastructureTemplate(newTemplateName, nil)
+	clonedTmpl, err := ms.duplicateInfrastructureTemplate(newTemplateName, newName, nil)
 	if err != nil {
 		return newMs, err
 	}
@@ -581,7 +623,7 @@ func (ms CAPIMachineSet) DuplicateWithBootImage(newName, bootImage string) (Mana
 	jsonBootImagePath := strings.ReplaceAll(strings.TrimPrefix(bootImagePath, "/"), "/", ".")
 
 	// Clone the infrastructure template with the boot image modified at creation time
-	clonedTmpl, err := ms.duplicateInfrastructureTemplate(newTemplateName, func(resString string) (string, error) {
+	clonedTmpl, err := ms.duplicateInfrastructureTemplate(newTemplateName, newName, func(resString string) (string, error) {
 		return sjson.SetRaw(resString, jsonBootImagePath, QuoteIfNotJSON(bootImage))
 	})
 	if err != nil {
@@ -639,6 +681,10 @@ func (ms CAPIMachineSet) GetVSphereFailureDomain() (string, error) {
 // GetVSphereConnectionInfo is not applicable for CAPI MachineSets
 func (ms CAPIMachineSet) GetVSphereConnectionInfo() (*exutil.VSphereConnectionInfo, error) {
 	return nil, fmt.Errorf("GetVSphereConnectionInfo is not supported for CAPI MachineSets")
+}
+
+func (ms CAPIMachineSet) GetAPIGroup() string {
+	return CAPIApiGroup
 }
 
 // GetAll returns a []*CAPIMachineSet list with all existing CAPI machinesets

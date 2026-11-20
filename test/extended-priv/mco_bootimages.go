@@ -21,6 +21,16 @@ import (
 const mapiBaseErrorMessageTemplate = `1 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 0 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
 	` error syncing MAPI MachineSet %s: failed to reconcile machineset %s, err:`
 
+const capiBaseErrorMessageTemplate = `0 Degraded MAPI MachineSets | 0 Degraded ControlPlaneMachineSets | 1 Degraded CAPI MachineSets | 0 Degraded CAPI MachineDeployments | Error(s):` +
+	` error syncing CAPI MachineSet %s: failed to reconcile machineset %s, err:`
+
+func getBaseErrorMessageTemplate(ms ManagedMachineResource) string {
+	if ms.GetAPIGroup() == CAPIApiGroup {
+		return capiBaseErrorMessageTemplate
+	}
+	return mapiBaseErrorMessageTemplate
+}
+
 // backdatedImageRunID is generated once per test binary process, so every vSphere backdated
 // template this run uploads gets a name unique to that run. Without it, every run uploads under
 // the exact same literal name regardless of which failure domain/folder it lands in — so a leftover
@@ -39,8 +49,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		machineConfiguration *MachineConfiguration
 	)
 
+	g.AfterEach(func() {
+		DeleteCAPIManagedTemplates(oc)
+	})
+
 	g.JustBeforeEach(func() {
-		// Skip if no MAPI machineset. Boot image tests do not support CAPI yet
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
 		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
@@ -109,7 +122,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Opt-in boot images update")
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, "", ""),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, firstMachineSet.GetAPIGroup(), "", ""),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -161,7 +174,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Opt-in boot images update")
 		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
+			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup()),
 		).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -269,7 +282,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Opt-in boot images update")
 
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -358,17 +371,25 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 			clonedMSName                = "cloned-tc-74751-copy"
 			labelName                   = "test"
 			labelValue                  = "update"
-			fakearch                    = "fake-arch"
-			expectedFailedMessageRegexp = regexp.QuoteMeta("Error(s): error syncing MAPI MachineSet " +
-				clonedMSName +
-				": failed to fetch arch during machineset sync: invalid architecture value found in annotation: " + fakearch)
-
-			arch = machineSet.GetArchitectureOrFail()
+			fakearch = "fake-arch"
+			arch     = machineSet.GetArchitectureOrFail()
+			msType   = "MAPI"
 		)
+		if machineSet.GetAPIGroup() == CAPIApiGroup {
+			msType = "CAPI"
+		}
+		syncContext := "machineset"
+		if msType == "CAPI" {
+			syncContext = "CAPI MachineSet"
+		}
+		expectedFailedMessageRegexp := regexp.QuoteMeta("Error(s): error syncing " + msType + " MachineSet " +
+			clonedMSName +
+			": failed to fetch arch during " + syncContext + " sync: invalid architecture value found in annotation: " + fakearch)
+
 		exutil.By("Opt-in boot images update")
 
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -502,9 +523,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// Not supported in Vsphere
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
 
+		machineSet := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
+
+		apiGroup := machineSet.GetAPIGroup()
+
 		exutil.By("To check the default opt-in in machieconfiguration")
 		if !strings.Contains(machineConfiguration.GetSpecOrFail(), "managedBootImages") {
-			checkManagedBootImagesStatus(machineConfiguration, "All")
+			checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
 		} else {
 			o.Expect(machineConfiguration.GetSpecOrFail()).Should(o.ContainSubstring(machineConfiguration.GetOrFail(`{.status.managedBootImagesStatus.machineManagers[0].selection.mode}`)))
 		}
@@ -512,24 +537,24 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("To patch the Partial Mode in machineConfiguration")
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, "", ""),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, apiGroup, "", ""),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, "Partial")
+		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "Partial")
 		logger.Infof("OK\n")
 
 		exutil.By("To patch the All Mode in machieConfiguration")
 		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource),
+			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, apiGroup),
 		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, "All")
+		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
 		logger.Infof("OK\n")
 
 		exutil.By("Opt-out boot images update")
 		o.Expect(machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource)).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, "None")
+		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "None")
 		logger.Infof("OK\n")
 	})
 
@@ -552,7 +577,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		exutil.By("Opt-in boot images update")
 
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -642,7 +667,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 
 		exutil.By("Opt-in boot images update")
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -916,7 +941,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 
 	exutil.By("Opt-in boot images update")
 	o.Expect(
-		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 	logger.Infof("OK!\n")
 
@@ -972,7 +997,7 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 
 	exutil.By("Remove the machineset from the updated list")
 	o.Expect(
-		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, secondLabelValue),
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, secondLabelValue),
 	).To(o.Succeed(), "Error re-configuring the Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 	logger.Infof("OK!\n")
 
@@ -987,14 +1012,14 @@ func testUserDataUpdateFailure(oc *exutil.CLI, clonedMSName, clonedSecretName, e
 }
 
 // checkManagedBootImagesStatus helps to verify the mode is updated in ManagedBootStatus after we patch the new changes in managedBootImages spec field
-func checkManagedBootImagesStatus(mc *MachineConfiguration, mode string) {
+func checkManagedBootImagesStatus(mc *MachineConfiguration, apiGroup, mode string) {
 	exutil.By("Check the ManagedBootImage Status")
 	o.Eventually(func() (string, error) {
-		mbiStatus, err := mc.Get(`{.status.managedBootImagesStatus.machineManagers[0].selection.mode}`)
+		mbiStatus, err := mc.GetManagedBootImagesModeForManager(MachineSetResource, apiGroup)
 		logger.Infof("%s", mbiStatus)
 		return mbiStatus, err
 	}, "5m", "10s").
-		Should(o.Equal(mode), "Error: The %s mode does not match even after patched", mode)
+		Should(o.Equal(mode), "Error: The %s mode does not match even after patched for apiGroup %s", mode, apiGroup)
 }
 
 // getBackdatedBootImage returns a valid boot image value for testing based on platform

@@ -2,6 +2,7 @@ package extended
 
 import (
 	"fmt"
+	"strings"
 
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -40,22 +41,38 @@ func (mc MachineConfiguration) RemoveManagedBootImagesConfig() error {
 }
 
 // SetAllManagedBootImagesConfig configures MachineConfiguration so that all machinesets are updated if necessary
-func (mc MachineConfiguration) SetAllManagedBootImagesConfig(resource string) error {
-	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource": "`+resource+`","apiGroup": "machine.openshift.io","selection": {"mode": "All"}}]}}}`)
+func (mc MachineConfiguration) SetAllManagedBootImagesConfig(resource, apiGroup string) error {
+	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource": "`+resource+`","apiGroup": "`+apiGroup+`","selection": {"mode": "All"}}]}}}`)
 }
 
-// SetPartialManagedBootImagesConfig  configures MachineConfiguration so that only the machinesets with the given label are updated if necessary
-func (mc MachineConfiguration) SetPartialManagedBootImagesConfig(resource, label, value string) error {
+// SetPartialManagedBootImagesConfig configures MachineConfiguration so that only the machinesets with the given label are updated if necessary
+func (mc MachineConfiguration) SetPartialManagedBootImagesConfig(resource, apiGroup, label, value string) error {
 	if label == "" && value == "" {
-		return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"`+resource+`","apiGroup":"machine.openshift.io","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{}}}}}]}}}`)
+		return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"`+resource+`","apiGroup":"`+apiGroup+`","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{}}}}}]}}}`)
 	}
 
-	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"`+resource+`","apiGroup":"machine.openshift.io","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{"`+label+`":"`+value+`"}}}}}]}}}`)
+	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource":"`+resource+`","apiGroup":"`+apiGroup+`","selection":{"mode":"Partial","partial":{"machineResourceSelector":{"matchLabels":{"`+label+`":"`+value+`"}}}}}]}}}`)
 }
 
-// SetNoneManagedBootImagesConfig configures MachineConfiguration so that no machinesets are updated
-func (mc MachineConfiguration) SetNoneManagedBootImagesConfig(resource string) error {
-	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[{"resource": "`+resource+`","apiGroup": "machine.openshift.io","selection": {"mode": "None"}}]}}}`)
+// SetNoneManagedBootImagesConfig configures MachineConfiguration so that no machinesets are updated.
+// If no apiGroups are specified, it includes MAPI and, when CAPI boot image updates are
+// accepted (ManagedBootImagesAWSCAPI gate enabled and platform is AWS), also CAPI.
+func (mc MachineConfiguration) SetNoneManagedBootImagesConfig(resource string, apiGroups ...string) error {
+	if len(apiGroups) == 0 {
+		apiGroups = []string{MAPIApiGroup}
+		enabled, err := IsFeaturegateEnabled(mc.GetOC(), "ManagedBootImagesAWSCAPI")
+		if err != nil {
+			return fmt.Errorf("error checking ManagedBootImagesAWSCAPI feature gate: %w", err)
+		}
+		if enabled && exutil.CheckPlatform(mc.GetOC()) == AWSPlatform {
+			apiGroups = append(apiGroups, CAPIApiGroup)
+		}
+	}
+	managers := make([]string, 0, len(apiGroups))
+	for _, ag := range apiGroups {
+		managers = append(managers, `{"resource":"`+resource+`","apiGroup":"`+ag+`","selection":{"mode":"None"}}`)
+	}
+	return mc.Patch("merge", `{"spec":{"managedBootImages":{"machineManagers":[`+strings.Join(managers, ",")+`]}}}`)
 }
 
 // EnableIrreconcilableValidationOverrides enables irreconcilableValidationOverrides for storage

@@ -879,7 +879,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:77784][OTP] Implement a Controller Path for Managing User-Data Secrets and Rotating MCS TLS Certificates [Disruptive]", func() {
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 
 		var (
 			mcsCaSecret                 = NewSecret(oc.AsAdmin(), "openshift-machine-config-operator", "machine-config-server-ca")
