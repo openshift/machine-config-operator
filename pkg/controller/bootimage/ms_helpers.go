@@ -31,7 +31,7 @@ import (
 // Returns the oldest RHCOS version across all marketplace MAPI MachineSets
 // (empty for non-marketplace clusters). The caller uses this for skew enforcement.
 // nolint:dupl // I separated this from syncControlPlaneMachineSets for readability
-func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
+func (ctrl *Controller) syncMAPIMachineSets(ctx context.Context, reason string) string {
 	ctrl.mapiStats = MachineResourceStats{}
 
 	// Get MachineConfiguration to determine which resources are enrolled
@@ -40,7 +40,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 		klog.Errorf("Failed to get MachineConfiguration: %v", err)
 		ctrl.mapiStats.erroredCount++
 		ctrl.mapiStats.syncErr = fmt.Errorf("failed to get MachineConfiguration while enqueueing MAPI MachineSets: %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -49,7 +49,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 		klog.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %v", err)
 		ctrl.mapiStats.erroredCount++
 		ctrl.mapiStats.syncErr = fmt.Errorf("failed to create a machineset selector while enqueueing MAPI machineset %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 	if !machineManagerFound {
@@ -66,7 +66,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 		klog.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %v", err)
 		ctrl.mapiStats.erroredCount++
 		ctrl.mapiStats.syncErr = fmt.Errorf("failed to fetch MachineSet list while enqueueing MAPI MachineSets %w", err)
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 		return ""
 	}
 
@@ -87,7 +87,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 			klog.Errorf("failed to fetch coreos-bootimages config map: %v", err)
 			ctrl.mapiStats.erroredCount++
 			ctrl.mapiStats.syncErr = fmt.Errorf("failed to fetch coreos-bootimages config map: %w", err)
-			ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+			ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 			return ""
 		}
 	}
@@ -96,11 +96,11 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 
 	// Signal start of reconciliation process, by setting progressing to true
 	var syncErrors []error
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 
 	var rhcosVersion string
 	for _, machineSet := range mapiMachineSets {
-		reconcileSkipped, version, err := ctrl.syncMAPIMachineSet(machineSet, configMap)
+		reconcileSkipped, version, err := ctrl.syncMAPIMachineSet(ctx, machineSet, configMap)
 		if err == nil {
 			ctrl.mapiStats.inProgress++
 		} else {
@@ -119,10 +119,10 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 			}
 		}
 		// Update progressing conditions every step of the loop
-		ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
+		ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateProgressing)
 	}
 	ctrl.mapiStats.syncErr = kubeErrs.NewAggregate(syncErrors)
-	ctrl.updateConditions(reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
+	ctrl.updateConditions(ctx, reason, nil, opv1.MachineConfigurationBootImageUpdateDegraded)
 	return rhcosVersion
 }
 
@@ -132,7 +132,7 @@ func (ctrl *Controller) syncMAPIMachineSets(reason string) string {
 // error immediately, the condition is surfaced via skew enforcement.
 // reconcileSkipped=false means a patch was applied, the MachineSet was already up to
 // date, or it is out of scope for the MAPI path (e.g. migrated to CAPI authority).
-func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, string, error) {
+func (ctrl *Controller) syncMAPIMachineSet(ctx context.Context, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap) (bool, string, error) {
 
 	startTime := time.Now()
 	klog.V(4).Infof("Started syncing MAPI machineset %q (%v)", machineSet.Name, startTime)
@@ -206,7 +206,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 	}
 
 	// Check if the this MachineSet requires an update
-	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(ctx, infra, machineSet, configMap, arch, ctrl.kubeClient)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}
@@ -220,7 +220,7 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 			return false, "", fmt.Errorf("refusing to reconcile machineset %s, hot loop detected. Please opt-out of boot image updates, adjust your machine provisioning workflow to prevent hot loops and opt back in to resume boot image updates", machineSet.Name)
 		}
 		klog.Infof("Patching MAPI machineset %s", machineSet.Name)
-		if err := ctrl.patchMachineSet(machineSet, newMachineSet); err != nil {
+		if err := ctrl.patchMachineSet(ctx, machineSet, newMachineSet); err != nil {
 			return false, "", err
 		}
 		ctrl.recordMAPIBootImageState(newMachineSet, configMap, infra, arch)
@@ -272,7 +272,7 @@ func (ctrl *Controller) recordMAPIBootImageState(machineSet *machinev1beta1.Mach
 
 // This function patches the machineset object using the machineClient
 // Returns an error if marshsalling or patching fails.
-func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1beta1.MachineSet) error {
+func (ctrl *Controller) patchMachineSet(ctx context.Context, oldMachineSet, newMachineSet *machinev1beta1.MachineSet) error {
 	machineSetMarshal, err := json.Marshal(oldMachineSet)
 	if err != nil {
 		return fmt.Errorf("unable to marshal old machineset: %w", err)
@@ -285,7 +285,7 @@ func (ctrl *Controller) patchMachineSet(oldMachineSet, newMachineSet *machinev1b
 	if err != nil {
 		return fmt.Errorf("unable to create patch for new machineset: %w", err)
 	}
-	_, err = ctrl.machineClient.MachineV1beta1().MachineSets(MachineAPINamespace).Patch(context.TODO(), oldMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = ctrl.machineClient.MachineV1beta1().MachineSets(MachineAPINamespace).Patch(ctx, oldMachineSet.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to patch new machineset: %w", err)
 	}
