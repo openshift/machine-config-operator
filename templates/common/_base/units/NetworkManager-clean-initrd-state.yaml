@@ -7,6 +7,11 @@ contents: |
   ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
   # This is opt-in for some deployment types, and opt-out for others.
   ConditionPathExists=/var/lib/mco/nm-clean-initrd-state
+  # Never touch initramfs networking when root is on iSCSI: flushing the
+  # addresses of the NIC that carries the iSCSI session cuts off the root disk.
+  # coreos-teardown-initramfs keeps networking up for the same reason.
+  ConditionKernelCommandLine=!rd.iscsi.firmware
+  ConditionKernelCommandLine=!netroot
   Wants=network-pre.target
   Before=network-pre.target
 
