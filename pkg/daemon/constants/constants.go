@@ -157,6 +157,11 @@ const (
 	IRIRegistryServiceName = "iri-registry.service"
 	IRIRegistryDataPath    = "/var/lib/iri-registry"
 
+	// IRIRegistryHtpasswdPath is the htpasswd file backing IRI registry basic
+	// auth, rendered by the InternalReleaseImage controller into the master
+	// MachineConfig.
+	IRIRegistryHtpasswdPath = IRIRegistryConfigPath + "/auth/htpasswd"
+
 	// rpm-ostree command arguments
 	RPMOSTreeUpdateArg    = "update"
 	RPMOSTreeInstallArg   = "--install"
