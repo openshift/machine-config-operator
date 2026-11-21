@@ -234,7 +234,7 @@ func (c configDriftTest) Run(t *testing.T) {
 					t.Skip()
 				}
 
-				c.runDegradeAndRecover(t, configDriftFilename, configDriftFileContents, func() {
+				c.runDegradeAndRecoverAfterReboot(t, configDriftFilename, configDriftFileContents, func() {
 					t.Logf("Setting forcefile to initiate recovery (%s)", constants.MachineConfigDaemonForceFile)
 					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
 				})
@@ -344,6 +344,17 @@ func (c configDriftTest) runDegradeAndRecoverContentRevert(t *testing.T, filenam
 }
 
 func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFileContents string, recoverFunc func()) {
+	c.runDegradeAndRecoverInternal(t, filename, expectedFileContents, false, recoverFunc)
+}
+
+// runDegradeAndRecoverAfterReboot uses a longer timeout when waiting for
+// recovery, because the recovery action (e.g. touching the forcefile) triggers
+// a full node reboot which takes longer than the default 5-minute window.
+func (c configDriftTest) runDegradeAndRecoverAfterReboot(t *testing.T, filename, expectedFileContents string, recoverFunc func()) {
+	c.runDegradeAndRecoverInternal(t, filename, expectedFileContents, true, recoverFunc)
+}
+
+func (c configDriftTest) runDegradeAndRecoverInternal(t *testing.T, filename, expectedFileContents string, rebootExpected bool, recoverFunc func()) {
 	mutateFileOnNode(t, c.ClientSet, c.node, filename, "not-the-data")
 	defer mutateFileOnNode(t, c.ClientSet, c.node, filename, expectedFileContents)
 
@@ -353,8 +364,14 @@ func (c configDriftTest) runDegradeAndRecover(t *testing.T, filename, expectedFi
 	// Run the recovery function.
 	recoverFunc()
 
-	// Verify that the node and MCP recover.
-	assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+	// Verify that the node and MCP recover. Use a longer timeout when a
+	// reboot is expected because the node must fully cycle (shut down, boot,
+	// MCD apply, state annotation update) before the Done state is visible.
+	if rebootExpected {
+		assertNodeAndMCPIsRecoveredAfterReboot(t, c.ClientSet, c.node, c.mcp)
+	} else {
+		assertNodeAndMCPIsRecovered(t, c.ClientSet, c.node, c.mcp)
+	}
 }
 
 func mutateFileOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename, contents string) {
@@ -398,14 +415,19 @@ func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node core
 
 func assertNodeReachesState(t *testing.T, cs *framework.ClientSet, target corev1.Node, stateFunc func(corev1.Node) bool) {
 	t.Helper()
+	assertNodeReachesStateWithTimeout(t, cs, target, 5*time.Minute, stateFunc)
+}
 
-	maxWait := 5 * time.Minute
+func assertNodeReachesStateWithTimeout(t *testing.T, cs *framework.ClientSet, target corev1.Node, maxWait time.Duration, stateFunc func(corev1.Node) bool) {
+	t.Helper()
 
-	end, err := pollForResourceState(maxWait, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), target.Name, metav1.GetOptions{})
-		return stateFunc(*node), err
+	end, err := pollForResourceState(maxWait, func(ctx context.Context) (bool, error) {
+		node, err := cs.CoreV1Interface.Nodes().Get(ctx, target.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		return stateFunc(*node), nil
 	})
-
 	if err != nil {
 		t.Fatalf("Node %s did not reach expected state (took %v): %s", target.Name, end, err)
 	}
@@ -415,14 +437,19 @@ func assertNodeReachesState(t *testing.T, cs *framework.ClientSet, target corev1
 
 func assertPoolReachesState(t *testing.T, cs *framework.ClientSet, target mcfgv1.MachineConfigPool, stateFunc func(mcfgv1.MachineConfigPool) bool) {
 	t.Helper()
+	assertPoolReachesStateWithTimeout(t, cs, target, 5*time.Minute, stateFunc)
+}
 
-	maxWait := 5 * time.Minute
+func assertPoolReachesStateWithTimeout(t *testing.T, cs *framework.ClientSet, target mcfgv1.MachineConfigPool, maxWait time.Duration, stateFunc func(mcfgv1.MachineConfigPool) bool) {
+	t.Helper()
 
-	end, err := pollForResourceState(maxWait, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(context.TODO(), target.Name, metav1.GetOptions{})
-		return stateFunc(*mcp), err
+	end, err := pollForResourceState(maxWait, func(ctx context.Context) (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(ctx, target.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		return stateFunc(*mcp), nil
 	})
-
 	if err != nil {
 		t.Fatalf("MachineConfigPool %s did not reach expected state (took %v): %s", target.Name, end, err)
 	}
@@ -430,7 +457,7 @@ func assertPoolReachesState(t *testing.T, cs *framework.ClientSet, target mcfgv1
 	t.Logf("MachineConfigPool %s reached expected state (took %v)", target.Name, end)
 }
 
-func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) (time.Duration, error) {
+func pollForResourceState(timeout time.Duration, pollFunc func(context.Context) (bool, error)) (time.Duration, error) {
 	// This wraps wait.PollImmediate() for the following reason:
 	//
 	// If the control plane is temporarily unavailable (e.g., when running in a
@@ -450,8 +477,8 @@ func pollForResourceState(timeout time.Duration, pollFunc func() (bool, error)) 
 
 	ctx := context.Background()
 
-	waitErr := wait.PollUntilContextTimeout(ctx, 1*time.Second, timeout, true, func(_ context.Context) (bool, error) {
-		result, err := pollFunc()
+	waitErr := wait.PollUntilContextTimeout(ctx, 1*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+		result, err := pollFunc(ctx)
 		lastErr = err
 		return result, nil
 	})
