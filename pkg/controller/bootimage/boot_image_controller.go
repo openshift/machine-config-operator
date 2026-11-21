@@ -67,13 +67,13 @@ type Controller struct {
 	mcopLister           mcoplistersv1.MachineConfigurationLister
 	clusterVersionLister configlistersv1.ClusterVersionLister
 
-	mcoCmListerSynced           cache.InformerSynced
-	vsphereSecretInformerSynced cache.InformerSynced
-	mapiMachineSetListerSynced  cache.InformerSynced
-	cpmsListerSynced            cache.InformerSynced
-	infraListerSynced           cache.InformerSynced
-	mcopListerSynced            cache.InformerSynced
-	clusterVersionListerSynced  cache.InformerSynced
+	mcoCmListerSynced               cache.InformerSynced
+	credentialsSecretInformerSynced cache.InformerSynced
+	mapiMachineSetListerSynced      cache.InformerSynced
+	cpmsListerSynced                cache.InformerSynced
+	infraListerSynced               cache.InformerSynced
+	mcopListerSynced                cache.InformerSynced
+	clusterVersionListerSynced      cache.InformerSynced
 
 	queue workqueue.TypedRateLimitingInterface[string]
 
@@ -184,7 +184,7 @@ func New(
 	machineClient machineclientset.Interface,
 	dynamicClient dynamic.Interface,
 	mcoCmInfomer coreinformersv1.ConfigMapInformer,
-	vsphereSecretInformer coreinformersv1.SecretInformer,
+	credentialsSecretInformer coreinformersv1.SecretInformer,
 	mapiMachineSetInformer mapimachineinformersv1beta1.MachineSetInformer,
 	cpmsInformer mapimachineinformersv1.ControlPlaneMachineSetInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
@@ -217,7 +217,7 @@ func New(
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 
 	ctrl.mcoCmListerSynced = mcoCmInfomer.Informer().HasSynced
-	ctrl.vsphereSecretInformerSynced = vsphereSecretInformer.Informer().HasSynced
+	ctrl.credentialsSecretInformerSynced = credentialsSecretInformer.Informer().HasSynced
 	ctrl.mapiMachineSetListerSynced = mapiMachineSetInformer.Informer().HasSynced
 	ctrl.cpmsListerSynced = cpmsInformer.Informer().HasSynced
 	ctrl.infraListerSynced = infraInformer.Informer().HasSynced
@@ -245,10 +245,18 @@ func New(
 		DeleteFunc: ctrl.deleteConfigMap,
 	})
 
-	vsphereSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	// The Secret informer is scoped to the MCO namespace and serves the dedicated
+	// per-platform credentials Secrets; each handler filters for its own Secret.
+	credentialsSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addVSphereCredentialsSecret,
 		UpdateFunc: ctrl.updateVSphereCredentialsSecret,
 		DeleteFunc: ctrl.deleteVSphereCredentialsSecret,
+	})
+
+	credentialsSecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addAWSCredentialsSecret,
+		UpdateFunc: ctrl.updateAWSCredentialsSecret,
+		DeleteFunc: ctrl.deleteAWSCredentialsSecret,
 	})
 
 	mcopInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -279,7 +287,7 @@ func (ctrl *Controller) Run(ctx context.Context) {
 
 	// Phase 1: sync core informers. The infra lister must be warm before we can
 	// determine the platform and decide whether CAPI informers are needed.
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.vsphereSecretInformerSynced, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.cpmsListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.credentialsSecretInformerSynced, ctrl.mcoCmListerSynced, ctrl.mapiMachineSetListerSynced, ctrl.cpmsListerSynced, ctrl.infraListerSynced, ctrl.mcopListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -458,6 +466,45 @@ func (ctrl *Controller) deleteVSphereCredentialsSecret(obj interface{}) {
 
 	klog.Infof("vSphere credentials Secret deleted, reconciling enrolled machine resources")
 	ctrl.enqueueEvent("VSphereCredentialsSecretDeleted")
+}
+
+func isAWSCredentialsSecret(obj interface{}) bool {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	return err == nil && key == ctrlcommon.MCONamespace+"/"+ctrlcommon.AWSCredentialsSecretName
+}
+
+// addAWSCredentialsSecret triggers reconciliation when the dedicated AWS
+// credentials Secret is created, for example once the Cloud Credential Operator
+// provisions it after an upgrade. Other Secrets in the MCO namespace are ignored.
+func (ctrl *Controller) addAWSCredentialsSecret(obj interface{}) {
+	ctrl.enqueueAWSCredentialsSecretEvent(obj, "Added")
+}
+
+// updateAWSCredentialsSecret triggers reconciliation when credential data in the
+// dedicated AWS Secret changes, so rotated or corrected credentials are used
+// immediately. Metadata-only updates are ignored.
+func (ctrl *Controller) updateAWSCredentialsSecret(oldObj, newObj interface{}) {
+	oldSecret, oldOK := oldObj.(*corev1.Secret)
+	newSecret, newOK := newObj.(*corev1.Secret)
+	if !oldOK || !newOK || reflect.DeepEqual(oldSecret.Data, newSecret.Data) {
+		return
+	}
+	ctrl.enqueueAWSCredentialsSecretEvent(newObj, "Updated")
+}
+
+// deleteAWSCredentialsSecret triggers reconciliation when the dedicated AWS
+// Secret is removed so that its absence is reflected in status.
+func (ctrl *Controller) deleteAWSCredentialsSecret(obj interface{}) {
+	ctrl.enqueueAWSCredentialsSecretEvent(obj, "Deleted")
+}
+
+func (ctrl *Controller) enqueueAWSCredentialsSecretEvent(obj interface{}, action string) {
+	if !isAWSCredentialsSecret(obj) {
+		return
+	}
+
+	klog.Infof("AWS credentials Secret %s, reconciling enrolled machine resources", strings.ToLower(action))
+	ctrl.enqueueEvent("AWSCredentialsSecret" + action)
 }
 
 // addMAPIMachineSet handles the addition of a MAPI MachineSet by triggering
