@@ -1,110 +1,15 @@
 package extended
 
 import (
+	"errors"
 	"fmt"
-	"strings"
+	"slices"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 )
-
-func platformBasedDisksPatch(platform string, ms ManagedMachineResource) error {
-	_, isCAPI := ms.(*CAPIMachineSet)
-	switch platform {
-	case AWSPlatform:
-		if isCAPI {
-			return ms.AppendDisks(platform,
-				`{"deviceName":"/dev/sdb","encrypted":false,"iops":0,"size":120,"type":"gp3"}`,
-				`{"deviceName":"/dev/sdc","encrypted":false,"iops":0,"size":120,"type":"gp3"}`,
-			)
-		}
-		return ms.AppendDisks(platform,
-			`{"deviceName":"/dev/sdb","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}`,
-			`{"deviceName":"/dev/sdc","ebs":{"encrypted":false,"iops":0,"volumeSize":120,"volumeType":"gp3"}}`,
-		)
-	case GCPPlatform:
-		return ms.AppendDisks(platform,
-			`{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}`,
-			`{"autoDelete":true,"boot":false,"sizeGb":16,"type":"pd-standard"}`,
-		)
-	case AzurePlatform:
-		return ms.PatchDisks(platform, `[{"nameSuffix":"disk1","diskSizeGB":16,"lun":0,"deletionPolicy":"Delete"},{"nameSuffix":"disk2","diskSizeGB":16,"lun":1,"deletionPolicy":"Delete"}]`)
-	case VspherePlatform:
-		return ms.PatchDisks(platform, `[{"name":"data-disk-1","sizeGiB":16},{"name":"data-disk-2","sizeGiB":16}]`)
-	case BaremetalPlatform:
-		return nil
-	default:
-		return fmt.Errorf("Unknown platform: %v", platform)
-	}
-}
-
-func platformBasedDisksNames(platform string) []string {
-	switch platform {
-	case AWSPlatform:
-		// See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/nvme-ebs-volumes.html
-		return []string{
-			"/dev/nvme1n1",
-			"/dev/nvme2n1",
-			"/dev/nvme3n1",
-			"/dev/nvme4n1",
-		}
-	case GCPPlatform:
-		// See: https://docs.cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm#persistent-disk-id
-		return []string{
-			"/dev/disk/by-id/google-persistent-disk-1",
-			"/dev/disk/by-id/google-persistent-disk-2",
-			"/dev/disk/by-id/google-persistent-disk-3",
-			"/dev/disk/by-id/google-persistent-disk-4",
-		}
-	case AzurePlatform:
-		// See: https://learn.microsoft.com/en-us/troubleshoot/azure/virtual-machines/linux/troubleshoot-device-names-problems
-		return []string{
-			"/dev/disk/azure/scsi1/lun0",
-			"/dev/disk/azure/scsi1/lun1",
-			"/dev/disk/azure/scsi1/lun2",
-			"/dev/disk/azure/scsi1/lun3",
-		}
-	case VspherePlatform:
-		// vSphere data disks are added sequentially to the SCSI controller starting
-		// at unit 1 (unit 0 is the boot disk), so /dev/sd[b-e] mapping is stable
-		// for simple configurations without extra SCSI controllers.
-		return []string{
-			"/dev/sdb",
-			"/dev/sdc",
-			"/dev/sdd",
-			"/dev/sde",
-		}
-	case BaremetalPlatform:
-		return []string{
-			"/dev/vda",
-			"/dev/vdb",
-			"/dev/vdc",
-			"/dev/vdd",
-		}
-	}
-	return []string{}
-}
-
-// discoverNVMeByPathDisks discovers the /dev/disk/by-path/ entries for non-boot NVMe
-// devices on an AWS node. These PCI-based paths are stable per instance type, unlike
-// /dev/nvmeXn1 which depends on device enumeration order.
-func discoverNVMeByPathDisks(node *Node) []string {
-	script := `for p in /dev/disk/by-path/*nvme*; do [[ $p == *part* ]] && continue; ls ${p}-part* &>/dev/null && continue; echo "$p"; done | sort`
-	stdout, _, err := node.DebugNodeWithChrootStd("bash", "-c", script)
-	o.ExpectWithOffset(1, err).NotTo(o.HaveOccurred(), "Failed to discover NVMe by-path disks on node %s", node.GetName())
-
-	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			paths = append(paths, line)
-		}
-	}
-	logger.Infof("Discovered %d non-boot NVMe by-path disks on node %s: %v", len(paths), node.GetName(), paths)
-	return paths
-}
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
 	defer g.GinkgoRecover()
@@ -173,14 +78,45 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes have irreconcilable changes as expected!\n")
 	})
 
-	g.It("[PolarionID:84219] Verify irreconcilable changes on new and existing nodes after scale up [Disruptive]", g.Label("Lifecycle:informing", "Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere"), func() {
+	g.It("[PolarionID:84219] Verify irreconcilable changes on new and existing nodes after scale up [Disruptive]", g.Label("Lifecycle:informing", "Platform:aws", "Platform:gce", "Platform:azure", "Platform:vsphere", "Platform:baremetal"), func() {
 		var (
 			machineconfiguration = GetMachineConfiguration(oc)
 			mcName               = "irreconcilable-scaleup-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
+			machineset           ManagedMachineResource
+			bareMetalHost        *Resource
+			bareMetalDisks       []string
+			hostLabel            string
+			removeHostLabel      func() error
+			testNode             *Node
+			scaleAttempted       bool
 		)
-
-		SkipTestIfWorkersCannotBeScaled(oc)
+		if platform == BaremetalPlatform {
+			if !IsCapabilityEnabled(oc, "MachineAPI") {
+				g.Skip("MachineAPI capability is disabled; bare-metal workers cannot be scaled")
+			}
+			var err error
+			machineset, err = GetValidManagedMachineResource(oc, MAPI)
+			if err != nil {
+				g.Skip(fmt.Sprintf("No suitable bare-metal MAPI MachineSet: %s", err))
+			}
+			bareMetalHost, err = FindAvailableBareMetalHost(oc, machineset, func(data string) error {
+				var diskErr error
+				bareMetalDisks, diskErr = bareMetalTestDisks(data)
+				return diskErr
+			})
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error checking bare-metal test hosts")
+			if bareMetalHost == nil {
+				g.Skip("No free CI spare worker has verified non-root test disks and a matching host selector")
+			}
+			defer SafeCleanup(func() {
+				if removeHostLabel != nil {
+					o.Expect(removeHostLabel()).To(o.Succeed(), "Error removing test label from host %s", bareMetalHost)
+				}
+			})
+		} else {
+			SkipTestIfWorkersCannotBeScaled(oc)
+		}
 		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
 		initialNodeCount := len(mcp.GetNodesOrFail())
 
@@ -197,22 +133,64 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 2: Create duplicate machineset with custom disks")
-		machineset := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
+		if machineset == nil {
+			machineset = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
+		}
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		defer SafeCleanup(func() {
-			if newMS.Exists() {
+			machineSetExists := newMS != nil && newMS.Exists()
+			if machineSetExists {
+				if bareMetalHost != nil && scaleAttempted {
+					if testNode == nil {
+						nodes, nodeErr := newMS.GetNodes()
+						if nodeErr == nil && len(nodes) == 1 {
+							testNode = nodes[0]
+						}
+					}
+					if testNode == nil {
+						o.Expect(testNode).NotTo(o.BeNil(), "Cannot verify test disk cleanup: the bare-metal test node is inaccessible")
+					} else {
+						identityErr := VerifyBareMetalHostNode(oc, bareMetalHost, newMS, testNode)
+						o.Expect(identityErr).To(o.Succeed(), "Cannot verify host identity for disk cleanup")
+						if identityErr == nil {
+							o.Expect(cleanBareMetalTestDisks(testNode, bareMetalDisks)).To(o.Succeed(), "Error cleaning test disks")
+						}
+					}
+				}
 				err := newMS.ScaleTo(0)
 				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.WaitUntilReady("10m")
+				readyTimeout := "10m"
+				if bareMetalHost != nil {
+					readyTimeout = "20m"
+				}
+				err = newMS.WaitUntilReady(readyTimeout)
 				o.Expect(err).NotTo(o.HaveOccurred())
 				err = newMS.Delete()
 				o.Expect(err).NotTo(o.HaveOccurred())
 				o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
 					"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+				if bareMetalHost != nil && scaleAttempted {
+					o.Eventually(func() (bool, error) {
+						data, err := bareMetalHost.GetCleanJSON()
+						if err != nil {
+							return false, err
+						}
+						return bareMetalHostAvailable(data), nil
+					}, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
+				}
+			} else if bareMetalHost != nil && scaleAttempted {
+				o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
 			}
 		})
+		if bareMetalHost != nil {
+			hostLabel, removeHostLabel, err = PinBareMetalHost(newMS, bareMetalHost)
+			if errors.Is(err, ErrBareMetalHostUnavailable) {
+				g.Skip(fmt.Sprintf("Cannot select host: %s", err))
+			}
+			o.Expect(err).To(o.Succeed(), "Error selecting host %s", bareMetalHost)
+		}
 
 		err = platformBasedDisksPatch(platform, newMS)
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -221,6 +199,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		// node first to discover the stable /dev/disk/by-path/ entries, then use
 		// those paths in the MachineConfig so Ignition can reliably find the disks.
 		disks := platformBasedDisksNames(platform)
+		if bareMetalHost != nil {
+			disks = bareMetalDisks
+		}
 		var probeNode *Node
 		if platform == AWSPlatform {
 			exutil.By("Step 2.5: Scale up probe node to discover disk paths")
@@ -238,6 +219,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 
 		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
+		if bareMetalHost != nil {
+			o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
+		}
 
 		defer SafeCleanup(func() {
 			if mc.Exists() {
@@ -272,7 +256,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		logger.Infof("All worker nodes report irreconcilable storage changes!\n")
 
 		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
-		var testNode *Node
+		if bareMetalHost != nil {
+			data, err := bareMetalHost.GetCleanJSON()
+			o.Expect(err).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
+			verifiedDisks, err := bareMetalTestDisks(data)
+			if err != nil || !slices.Equal(verifiedDisks, bareMetalDisks) {
+				g.Skip(fmt.Sprintf("Host %s no longer has verified test disks: %v", bareMetalHost, err))
+			}
+			matches, err := BareMetalHostPinned(data, newMS.GetSpecOrFail(), hostLabel)
+			if err != nil || !matches {
+				g.Skip(fmt.Sprintf("Host %s no longer matches the test MachineSet selector: %v", bareMetalHost, err))
+			}
+		}
 		if platform == AWSPlatform {
 			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
 			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
@@ -286,14 +281,26 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			}
 			o.Expect(testNode).NotTo(o.BeNil(), "Could not identify test node among scaled-up nodes")
 		} else {
+			if bareMetalHost != nil {
+				scaleAttempted = true
+			}
 			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+			readyTimeout := "10m"
+			if bareMetalHost != nil {
+				readyTimeout = "20m"
+			}
+			o.Expect(newMS.WaitUntilReady(readyTimeout)).To(o.Succeed())
 
 			testNodes := newMS.GetNodesOrFail()
 			o.Expect(testNodes).To(o.HaveLen(1))
 			testNode = testNodes[0]
 		}
 		logger.Infof("Test node is: %s", testNode.GetName())
+		if bareMetalHost != nil {
+			o.Expect(VerifyBareMetalHostNode(oc, bareMetalHost, newMS, testNode)).To(o.Succeed(), "Test node is not on the selected host")
+			o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+				"MCP counts did not settle after scale-up.\n%s", mcp.PrettyString())
+		}
 
 		exutil.By("Step 6: Verify test node has no irreconcilable changes")
 		o.Eventually(testNode.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(), "Test node should have no irreconcilable changes")
