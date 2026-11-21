@@ -289,6 +289,9 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-master", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-container-runtime", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-kubelet", map[string]string{"node-role/master": ""}, "dummy://base", nil),
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
@@ -319,6 +322,248 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	f.run(getKey(mcp, t))
 }
 
+func TestValidateRequiredMachineConfigsExist(t *testing.T) {
+	tests := []struct {
+		name          string
+		poolName      string
+		selector      *metav1.LabelSelector
+		configNames   []string
+		expectedError []string
+	}{
+		{
+			name:     "missing selector does not require base configs",
+			poolName: "custom",
+		},
+		{
+			name:     "custom role is not validated against built-in configs",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "custom"},
+			},
+		},
+		{
+			name:     "selector without a role constraint does not require base configs",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"pool-type": "infra"},
+			},
+		},
+		{
+			name:     "custom pool selecting worker role requires worker base configs",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "worker"},
+			},
+			expectedError: []string{
+				"required worker MachineConfigs",
+				"00-worker",
+				"01-worker-container-runtime",
+				"01-worker-kubelet",
+			},
+		},
+		{
+			name:     "non-role requirements do not affect role inference",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"pool-type": "infra"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   []string{"worker"},
+				}},
+			},
+			expectedError: []string{
+				"required worker MachineConfigs",
+				"00-worker",
+				"01-worker-container-runtime",
+				"01-worker-kubelet",
+			},
+		},
+		{
+			name:     "In selects built-in roles and ignores custom roles",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   []string{"custom", "worker"},
+				}},
+			},
+			expectedError: []string{
+				"required worker MachineConfigs",
+				"00-worker",
+				"01-worker-container-runtime",
+				"01-worker-kubelet",
+			},
+		},
+		{
+			name:     "In matching multiple built-in roles is rejected",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   []string{"master", "worker"},
+				}},
+			},
+			expectedError: []string{
+				"selector matches multiple built-in roles",
+				"master",
+				"worker",
+			},
+		},
+		{
+			name:     "role requirements are combined with AND",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      mcfgv1.MachineConfigRoleLabelKey,
+						Operator: metav1.LabelSelectorOpIn,
+						Values:   []string{"master", "worker"},
+					},
+					{
+						Key:      mcfgv1.MachineConfigRoleLabelKey,
+						Operator: metav1.LabelSelectorOpNotIn,
+						Values:   []string{"master"},
+					},
+				},
+			},
+			expectedError: []string{
+				"required worker MachineConfigs",
+				"00-worker",
+				"01-worker-container-runtime",
+				"01-worker-kubelet",
+			},
+		},
+		{
+			name:     "MatchLabels and MatchExpressions are combined with AND",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "worker"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values:   []string{"worker"},
+				}},
+			},
+		},
+		{
+			name:     "NotIn validates the remaining built-in role",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values:   []string{"master", "worker"},
+				}},
+			},
+			expectedError: []string{
+				"required arbiter MachineConfigs",
+				"00-arbiter",
+				"01-arbiter-container-runtime",
+				"01-arbiter-kubelet",
+			},
+		},
+		{
+			name:     "Exists matching multiple built-in roles is rejected",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpExists,
+				}},
+			},
+			expectedError: []string{
+				"selector matches multiple built-in roles",
+				"arbiter",
+				"master",
+				"worker",
+			},
+		},
+		{
+			name:     "NotIn excluding every built-in role needs no base configs",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values:   []string{"master", "worker", "arbiter"},
+				}},
+			},
+		},
+		{
+			name:     "DoesNotExist selects no built-in role",
+			poolName: "custom",
+			selector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      mcfgv1.MachineConfigRoleLabelKey,
+					Operator: metav1.LabelSelectorOpDoesNotExist,
+				}},
+			},
+		},
+		{
+			name:     "incomplete master base configs are rejected",
+			poolName: "master",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "master"},
+			},
+			configNames: []string{
+				"50-master-dnsmasq",
+				"99-master-ssh",
+			},
+			expectedError: []string{
+				"00-master",
+				"01-master-container-runtime",
+				"01-master-kubelet",
+			},
+		},
+		{
+			name:     "incomplete master base configs are rejected with one required config",
+			poolName: "master",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "master"},
+			},
+			configNames:   []string{"00-master"},
+			expectedError: []string{"01-master-container-runtime", "01-master-kubelet"},
+		},
+		{
+			name:     "complete master base configs are accepted",
+			poolName: "master",
+			selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "master"},
+			},
+			configNames: []string{
+				"00-master",
+				"01-master-container-runtime",
+				"01-master-kubelet",
+				"99-master-ssh",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := helpers.NewMachineConfigPool(tt.poolName, tt.selector, nil, "")
+			configs := make([]*mcfgv1.MachineConfig, 0, len(tt.configNames))
+			for _, name := range tt.configNames {
+				configs = append(configs, helpers.NewMachineConfig(name, nil, "", nil))
+			}
+
+			err := validateRequiredMachineConfigsExist(pool, configs)
+			if len(tt.expectedError) == 0 {
+				assert.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			for _, expected := range tt.expectedError {
+				assert.Contains(t, err.Error(), expected)
+			}
+		})
+	}
+}
+
 // Testing that ignition validation in generateRenderedMachineConfig() correctly finds MCs that contain invalid ignconfigs.
 // generateRenderedMachineConfig should return an error when one of the MCs in configs contains an invalid ignconfig.
 func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
@@ -333,6 +578,9 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-master", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-container-runtime", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-kubelet", map[string]string{"node-role/master": ""}, "dummy://base", nil),
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
@@ -378,6 +626,9 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-master", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-container-runtime", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-kubelet", map[string]string{"node-role/master": ""}, "dummy://base", nil),
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
@@ -511,6 +762,9 @@ func TestDoNothing(t *testing.T) {
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-master", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-container-runtime", map[string]string{"node-role/master": ""}, "dummy://base", nil),
+		helpers.NewMachineConfig("01-master-kubelet", map[string]string{"node-role/master": ""}, "dummy://base", nil),
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{files[0]}),
 		helpers.NewMachineConfig("05-extra-master", map[string]string{"node-role/master": ""}, "dummy://1", []ign3types.File{files[1]}),
 	}
@@ -1226,6 +1480,13 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
+	baseConfigs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-worker", map[string]string{"machineconfiguration.openshift.io/role": "worker"}, "", nil),
+		helpers.NewMachineConfig("01-worker-container-runtime", map[string]string{"machineconfiguration.openshift.io/role": "worker"}, "", nil),
+		helpers.NewMachineConfig("01-worker-kubelet", map[string]string{"machineconfiguration.openshift.io/role": "worker"}, "", nil),
+	}
+	configs := append(baseConfigs, runcMC)
+
 	osImageStream := &mcfgv1.OSImageStream{
 		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.ClusterInstanceNameOSImageStream},
 		Status: mcfgv1.OSImageStreamStatus{
@@ -1242,7 +1503,7 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 	_, _, err := RunBootstrap(
 		context.Background(),
 		[]*mcfgv1.MachineConfigPool{pool},
-		[]*mcfgv1.MachineConfig{runcMC},
+		configs,
 		cc,
 		osImageStream,
 		nil,
@@ -1250,6 +1511,38 @@ func TestRunBootstrapBlocksRuncOnRHEL10(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runc")
 	assert.Contains(t, err.Error(), "not available")
+}
+
+func TestRunBootstrapRequiresBaseMachineConfigs(t *testing.T) {
+	pool := &mcfgv1.MachineConfigPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "master"},
+		Spec: mcfgv1.MachineConfigPoolSpec{
+			MachineConfigSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{mcfgv1.MachineConfigRoleLabelKey: "master"},
+			},
+		},
+	}
+
+	_, _, err := RunBootstrap(
+		context.Background(),
+		[]*mcfgv1.MachineConfigPool{pool},
+		[]*mcfgv1.MachineConfig{
+			helpers.NewMachineConfig(
+				"99-master-ssh",
+				map[string]string{mcfgv1.MachineConfigRoleLabelKey: "master"},
+				"",
+				nil,
+			),
+		},
+		newControllerConfig(ctrlcommon.ControllerConfigName),
+		nil,
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required master MachineConfigs")
+	assert.Contains(t, err.Error(), "00-master")
+	assert.Contains(t, err.Error(), "01-master-container-runtime")
+	assert.Contains(t, err.Error(), "01-master-kubelet")
 }
 
 func TestValidateNoOSStreamDowngrade(t *testing.T) {
