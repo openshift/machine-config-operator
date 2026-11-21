@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/utils/ptr"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -483,17 +482,17 @@ func generateAndApplyMachineConfigNodesOnce(
 			for _, imageSet := range newMCNode.Status.PinnedImageSets {
 				// By default, a PinnedImageSet reference must include the name of the PIS and the desired generation
 				pisApplyConfig := &machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
-					DesiredGeneration: ptr.To(imageSet.DesiredGeneration),
-					Name:              ptr.To(imageSet.Name),
+					DesiredGeneration: new(imageSet.DesiredGeneration),
+					Name:              new(imageSet.Name),
 				}
 				// Only set `CurrentGeneration` value when we are currently on a valid generation (imageSet.CurrentGeneration value is non-0)
 				if imageSet.CurrentGeneration != 0 {
-					pisApplyConfig.CurrentGeneration = ptr.To(imageSet.CurrentGeneration)
+					pisApplyConfig.CurrentGeneration = new(imageSet.CurrentGeneration)
 				}
 				// Only set `LastFailedGeneration` value when it is a non-default (non-0) value
 				if imageSet.LastFailedGeneration != 0 {
-					pisApplyConfig.LastFailedGeneration = ptr.To(imageSet.LastFailedGeneration)
-					pisApplyConfig.LastFailedGenerationError = ptr.To(imageSet.LastFailedGenerationError)
+					pisApplyConfig.LastFailedGeneration = new(imageSet.LastFailedGeneration)
+					pisApplyConfig.LastFailedGenerationError = new(imageSet.LastFailedGenerationError)
 				}
 
 				statusApplyConfig = statusApplyConfig.WithPinnedImageSets(pisApplyConfig)
