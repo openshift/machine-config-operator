@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -785,4 +786,118 @@ func newTestListener() (net.Listener, error) {
 // Stop stops the fake remote runtime.
 func (f *FakeRuntime) Stop() {
 	f.server.Stop()
+}
+
+func TestCreateApplyConfigForImageSetClearsFailureIndependently(t *testing.T) {
+	p := &PinnedImageSetManager{
+		cache: newImageCache(16),
+	}
+
+	failed := &mcfgv1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pinned", UID: "uid-failed", Generation: 3},
+	}
+	okSet := &mcfgv1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pinned-2", UID: "uid-ok", Generation: 2},
+	}
+	// Mark okSet as successfully prefetched for its generation.
+	cached := okSet.DeepCopy()
+	cached.Spec.PinnedImages = nil
+	p.cache.Add(strings.TrimSpace(string(okSet.UID)), *cached)
+
+	failedCfg := p.createApplyConfigForImageSet(failed, false, fmt.Errorf("inspect failed for set A"))
+	require.NotNil(t, failedCfg.LastFailedGeneration)
+	require.Equal(t, int32(3), *failedCfg.LastFailedGeneration)
+	require.Equal(t, "inspect failed for set A", *failedCfg.LastFailedGenerationError)
+	require.Nil(t, failedCfg.CurrentGeneration)
+
+	okCfg := p.createApplyConfigForImageSet(okSet, false, nil)
+	require.NotNil(t, okCfg.CurrentGeneration)
+	require.Equal(t, int32(2), *okCfg.CurrentGeneration)
+	require.NotNil(t, okCfg.LastFailedGeneration)
+	require.Equal(t, int32(0), *okCfg.LastFailedGeneration)
+	require.NotNil(t, okCfg.LastFailedGenerationError)
+	require.Equal(t, "", *okCfg.LastFailedGenerationError)
+}
+
+func TestMergeSetErrorsPreferExisting(t *testing.T) {
+	storageErr := fmt.Errorf("insufficient storage")
+	timeoutErr := fmt.Errorf("%w: prefetch timed out", context.DeadlineExceeded)
+
+	existing := map[string]error{
+		"test-pinned": storageErr,
+	}
+	fallback := map[string]error{
+		"test-pinned":   timeoutErr,
+		"test-pinned-2": timeoutErr,
+	}
+
+	merged := mergeSetErrorsPreferExisting(existing, fallback)
+	require.Equal(t, storageErr, merged["test-pinned"])
+	require.Equal(t, timeoutErr, merged["test-pinned-2"])
+	require.False(t, errors.Is(merged["test-pinned"], context.DeadlineExceeded))
+	require.True(t, errors.Is(merged["test-pinned-2"], context.DeadlineExceeded))
+}
+
+func TestAttributeFinalizationError(t *testing.T) {
+	t.Parallel()
+
+	prefetchErr := fmt.Errorf("prefetch failed")
+	finalErr := fmt.Errorf("failed to finalize pinned images: %w", context.DeadlineExceeded)
+	setErrors := map[string]error{
+		"failed-set": prefetchErr,
+	}
+
+	attributeFinalizationError(setErrors, []string{"failed-set", "ok-set", ""}, finalErr)
+	require.Equal(t, prefetchErr, setErrors["failed-set"])
+	require.Equal(t, finalErr, setErrors["ok-set"])
+	require.True(t, errors.Is(setErrors["ok-set"], context.DeadlineExceeded))
+}
+
+func TestShouldPreserveCrioDropInOnEmptyImages(t *testing.T) {
+	t.Parallel()
+
+	// CodeRabbit: last PIS removed → clear drop-in.
+	require.False(t, shouldPreserveCrioDropInOnEmptyImages(0))
+	// All sets failed this sync → keep existing pins.
+	require.True(t, shouldPreserveCrioDropInOnEmptyImages(1))
+	require.True(t, shouldPreserveCrioDropInOnEmptyImages(3))
+}
+
+func TestCreateApplyConfigFinalizationErrorOverridesCacheSuccess(t *testing.T) {
+	t.Parallel()
+
+	p := &PinnedImageSetManager{cache: newImageCache(16)}
+	okSet := &mcfgv1.PinnedImageSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "ok-set", UID: "uid-ok", Generation: 2},
+	}
+	cached := okSet.DeepCopy()
+	cached.Spec.PinnedImages = nil
+	p.cache.Add(strings.TrimSpace(string(okSet.UID)), *cached)
+
+	finalErr := fmt.Errorf("failed to finalize pinned images: crio reload failed")
+	cfg := p.createApplyConfigForImageSet(okSet, false, finalErr)
+	require.NotNil(t, cfg.LastFailedGeneration)
+	require.Equal(t, int32(2), *cfg.LastFailedGeneration)
+	require.Equal(t, finalErr.Error(), *cfg.LastFailedGenerationError)
+	require.Nil(t, cfg.CurrentGeneration, "finalization failure must not report CurrentGeneration from cache alone")
+}
+
+func TestImageCacheDigestSnapshotRestore(t *testing.T) {
+	t.Parallel()
+
+	c := newImageCache(16)
+	c.AddDigest("sha256:aaa")
+	c.AddDigest("sha256:bbb")
+	snap := c.DigestSnapshot()
+
+	c.AddDigest("sha256:ccc")
+	require.True(t, c.HasDigest("sha256:ccc"))
+
+	c.RestoreDigests(snap)
+	require.True(t, c.HasDigest("sha256:aaa"))
+	require.True(t, c.HasDigest("sha256:bbb"))
+	require.False(t, c.HasDigest("sha256:ccc"))
+
+	c.RestoreDigests(nil)
+	require.False(t, c.HasDigest("sha256:aaa"))
 }
