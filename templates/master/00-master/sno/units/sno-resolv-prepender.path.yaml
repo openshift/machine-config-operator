@@ -1,0 +1,15 @@
+{{- if isSNOCoreDNSEnabled }}
+name: sno-resolv-prepender.path
+enabled: true
+contents: |
+  [Unit]
+  Description=Reconcile host DNS after SNO CoreDNS or NetworkManager changes
+
+  [Path]
+  PathChanged=/etc/kubernetes/manifests/sno-coredns.yaml
+  PathChanged=/run/NetworkManager
+  PathChanged=/run/nodeip-configuration
+
+  [Install]
+  WantedBy=multi-user.target
+{{- end }}
