@@ -39,7 +39,7 @@ func TestCreateNewVMTemplate_NoMatchingFailureDomain(t *testing.T) {
 		},
 	}
 
-	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
+	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0", nil)
 
 	require.NoError(t, err)
 	assert.Empty(t, resolvedName)
@@ -83,7 +83,7 @@ func TestCreateNewVMTemplate_MatchingServerNoMatchingFD(t *testing.T) {
 	}
 
 	// credsSc is nil — if getClientsFromServerURL were called it would panic.
-	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0")
+	resolvedName, patchRequired, reconcileSkipped, err := createNewVMTemplate(nil, providerSpec, infra, nil, nil, "x86_64", "9.6.20260210-0", nil)
 
 	require.NoError(t, err)
 	assert.Empty(t, resolvedName)
