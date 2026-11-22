@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -388,7 +389,7 @@ func resolveExistingTemplateVM(
 		// Validate/upgrade the ignition stub before creating the template in vSphere. If this fails,
 		// we must not have already mutated vSphere state, or a subsequent reconcile would find the
 		// template already in place and silently drop the error (see reconcileVSphereProviderSpec).
-		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 			return nil, "", false, err
 		}
 		ova, ovaErr := streamData.QueryDisk(arch, "vmware", "ova")
@@ -414,7 +415,7 @@ func resolveExistingTemplateVM(
 	// Rollback: restore the old template renamed away during a crashed atomic swap.
 	// Validate/upgrade the ignition stub before this rename, so an invalid user-data secret blocks
 	// even this recovery mutation rather than only the OVA-driven create/swap paths.
-	if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+	if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 		return nil, "", false, err
 	}
 	klog.Infof("Recovering from mid-swap crash: renaming %s back to %s", oldTempName, computedName)
@@ -522,11 +523,18 @@ func getCISP(ovfEnvelope *ovf.Envelope, networkRef object.NetworkReference, name
 	return cisp, nil
 }
 
-func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) error {
+func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSpec *machinev1beta1.VSphereMachineProviderSpec, failureDomain osconfigv1.VSpherePlatformFailureDomainSpec, finder *find.Finder, client *govmomi.Client, tagManager *tags.Manager, name, ovaPath, infraID, diskType string) (retErr error) {
 	// tempName is where the new OVA is imported; oldTempName holds the existing template during
 	// the swap. Both are fixed-length (17 chars) so they always fit within vSphere's 80-char limit.
 	tempName := atomicTempName("mco-tmp", name)
 	oldTempName := atomicTempName("mco-old", name)
+
+	// cleanupCtx is deliberately decoupled from the reconcile context (which is cancelled on
+	// controller shutdown) so that cleanup of the NFC lease and the half-imported mco-tmp-* VM
+	// still runs even when we bail out due to cancellation. It is bounded by a timeout so it can
+	// never hang indefinitely.
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer cleanupCancel()
 
 	vr, err := findAllRequiredResources(ctx, finder, providerSpec, failureDomain, name)
 	if err != nil {
@@ -602,6 +610,24 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		return fmt.Errorf("failed to import vapp: %w", err)
 	}
 
+	// If we fail or get cancelled before the template is finalized, abort the NFC lease (unless it
+	// already completed) and destroy the half-imported mco-tmp-* VM so no orphaned resources are
+	// left behind. Uses cleanupCtx so cleanup still runs during controller shutdown.
+	leaseCompleted := false
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		if !leaseCompleted {
+			if abortErr := lease.Abort(cleanupCtx, nil); abortErr != nil {
+				klog.Errorf("failed to abort NFC lease during cleanup of %s: %v", tempName, abortErr)
+			}
+		}
+		if destroyErr := destroyVMIfPresent(cleanupCtx, finder, tempName); destroyErr != nil {
+			klog.Errorf("failed to destroy half-imported VM %s during cleanup: %v", tempName, destroyErr)
+		}
+	}()
+
 	info, err := lease.Wait(ctx, spec.FileItem)
 	if err != nil {
 		return fmt.Errorf("failed to lease wait: %w", err)
@@ -623,6 +649,7 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 	if err != nil {
 		return fmt.Errorf("failed to lease complete: %w", err)
 	}
+	leaseCompleted = true
 
 	vm := object.NewVirtualMachine(client.Client, info.Entity)
 	if vm == nil {
@@ -658,16 +685,23 @@ func createNewVMTemplateWithNameForFailureDomain(ctx context.Context, providerSp
 		}
 	}
 
+	// The import/upload above are long-running and safe to cancel on shutdown. The rename/swap
+	// below is the critical window where the production template name is briefly absent, so it runs
+	// under swapCtx (decoupled from shutdown cancellation, bounded by a timeout) to guarantee it
+	// either completes the swap or leaves the old template recoverable under oldTempName.
+	swapCtx, swapCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer swapCancel()
+
 	// Atomic swap: the new template is fully ready; now replace the old one.
 	if vr.existingVM != nil {
-		return swapTemplate(ctx, vr.existingVM, vm, name, oldTempName)
+		return swapTemplate(swapCtx, vr.existingVM, vm, name, oldTempName)
 	}
 	// Swap not needed; just do a single rename
-	renameTask, err := vm.Rename(ctx, name)
+	renameTask, err := vm.Rename(swapCtx, name)
 	if err != nil {
 		return fmt.Errorf("failed to rename new VM to %s: %w", name, err)
 	}
-	if err = renameTask.Wait(ctx); err != nil {
+	if err = renameTask.Wait(swapCtx); err != nil {
 		return fmt.Errorf("failed to complete renaming new VM to %s: %w", name, err)
 	}
 	klog.Infof("VM Template %s created", name)
@@ -691,9 +725,13 @@ func getClientsFromServerURL(ctx context.Context, server, username, password str
 	restClient := rest.NewClient(client.Client)
 	err = restClient.Login(ctx, vcenterURL.User)
 	if err != nil {
-		logoutErr := client.Logout(context.TODO())
-		if logoutErr != nil {
-			err = logoutErr
+		// Use an independent, short-lived context for cleanup so Logout can still
+		// succeed even when the reconcile context is already cancelled. Preserve the
+		// login error as the primary failure.
+		logoutCtx, logoutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer logoutCancel()
+		if logoutErr := client.Logout(logoutCtx); logoutErr != nil {
+			return nil, nil, fmt.Errorf("failed in restClient.Login: %w (also failed to logout: %v)", err, logoutErr)
 		}
 		return nil, nil, fmt.Errorf("failed in restClient.Login %w", err)
 	}
@@ -779,8 +817,10 @@ func buildSyntheticFailureDomain(providerSpec *machinev1beta1.VSphereMachineProv
 //   - reconcileSkipped: true when neither a real nor synthetic failure domain can be determined — the
 //     MachineSet is functional but cannot be managed for boot image updates; the caller should skip without degrading
 //   - err: non-nil for real vSphere or infrastructure errors that should degrade the CO
-func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
-	ctx, cancel := context.WithCancel(context.Background())
+func createNewVMTemplate(ctx context.Context, streamData *stream.Stream, providerSpec *machinev1beta1.VSphereMachineProviderSpec, infra *osconfigv1.Infrastructure, credsSc *corev1.Secret, kubeClient clientset.Interface, arch, release string) (resolvedName string, patchRequired, reconcileSkipped bool, err error) {
+	// Derive a cancellable child from the caller's context so in-flight vSphere work
+	// is cancelled when the controller shuts down.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	failureDomain, found := findMatchingFailureDomain(providerSpec, infra)
@@ -859,7 +899,7 @@ func createNewVMTemplate(streamData *stream.Stream, providerSpec *machinev1beta1
 		// fails, we must not have already mutated vSphere state, or a subsequent reconcile would
 		// find the template already up to date and silently drop the error (see
 		// reconcileVSphereProviderSpec).
-		if err := upgradeStubIgnitionIfRequired(providerSpec.UserDataSecret.Name, kubeClient); err != nil {
+		if err := upgradeStubIgnitionIfRequired(ctx, providerSpec.UserDataSecret.Name, kubeClient); err != nil {
 			return "", false, false, err
 		}
 
