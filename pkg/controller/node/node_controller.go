@@ -35,6 +35,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/osimagestream"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -1018,18 +1019,21 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 		}
 	}
 
-	pools, err := ctrl.getPoolsForNode(node)
+	// Clear any associated MCCDrainErr, if any.
+	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
+		klog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
+	}
+	ctrlcommon.MCCPoolAlert.DeleteLabelValues(node.Name)
+	ctrlcommon.MCCState.DeletePartialMatch(prometheus.Labels{"node": node.Name})
+
+	// Use the helper directly; ctrl.getPoolsForNode would set mcc_pool_alert for this node again.
+	pools, _, err := helpers.GetPoolsForNode(ctrl.mcpLister, node)
 	if err != nil {
 		klog.Errorf("error finding pools for node: %v", err)
 		return
 	}
 	if pools == nil {
 		return
-	}
-
-	// Clear any associated MCCDrainErr, if any.
-	if ctrlcommon.MCCDrainErr.DeleteLabelValues(node.Name) {
-		klog.Infof("Cleaning up MCCDrain error for node(%s) as it is being deleted", node.Name)
 	}
 
 	klog.V(4).Infof("Node %s delete", node.Name)
