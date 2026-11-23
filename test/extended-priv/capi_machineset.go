@@ -3,6 +3,7 @@ package extended
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,11 +42,95 @@ func (ms CAPIMachineSet) String() string {
 	return ms.GetName()
 }
 
-// DeleteCAPIManagedTemplates deletes all CAPI infrastructure templates labeled with CAPIManagedTemplateLabel.
+// DeleteCAPIManagedTemplates deletes the CAPI infrastructure templates labeled with
+// CAPIManagedTemplateLabel, except those still referenced by a MachineSet or a
+// MachineDeployment: deleting a referenced template would leave a dangling
+// infrastructureRef that MCO does not repair.
 func DeleteCAPIManagedTemplates(oc *exutil.CLI) {
-	for _, kind := range []string{"awsmachinetemplates", "gcpmachinetemplates", "azuremachinetemplates", "vspheremachinetemplates"} {
-		oc.AsAdmin().WithoutNamespace().Run("delete").Args(kind, "-n", ClusterAPINamespace, "-l", CAPIManagedTemplateLabel, "--ignore-not-found").Output()
+	kind := capiTemplateKindForPlatform(exutil.CheckPlatform(oc))
+	if kind == "" {
+		return
 	}
+
+	// A reference-collection failure must abort the sweep: an incomplete reference map
+	// could lead to deleting templates that are still in use
+	referenced, err := referencedCAPITemplateNames(oc)
+	if err != nil {
+		logger.Errorf("Not deleting leftover CAPI templates, could not collect the referenced ones: %v", err)
+		return
+	}
+
+	var cleanupErrs []error
+	templateList := NewNamespacedResourceList(oc.AsAdmin(), kind, ClusterAPINamespace)
+	templateList.ByLabel(CAPIManagedTemplateLabel)
+	templates, err := templateList.GetAll()
+	if err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("error listing %s labeled with %s: %w", kind, CAPIManagedTemplateLabel, err))
+	}
+	for _, tmpl := range templates {
+		if referenced[tmpl.GetName()] {
+			continue
+		}
+		logger.Infof("Deleting leftover %s/%s", kind, tmpl.GetName())
+		if err := tmpl.Delete("--ignore-not-found"); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("error deleting %s/%s: %w", kind, tmpl.GetName(), err))
+		}
+	}
+	if len(cleanupErrs) > 0 {
+		logger.Errorf("Errors deleting leftover CAPI templates: %v", errors.Join(cleanupErrs...))
+	}
+}
+
+func capiTemplateKindForPlatform(platform string) string {
+	switch platform {
+	case AWSPlatform:
+		return "awsmachinetemplates"
+	case GCPPlatform:
+		return "gcpmachinetemplates"
+	case AzurePlatform:
+		return "azuremachinetemplates"
+	case VspherePlatform:
+		return "vspheremachinetemplates"
+	default:
+		return ""
+	}
+}
+
+// referencedCAPITemplateNames returns the names of the infrastructure templates referenced
+// by the CAPI MachineSets and MachineDeployments in the cluster. It fails if any inventory
+// or reference read fails, so that callers never get an incomplete reference map.
+func referencedCAPITemplateNames(oc *exutil.CLI) (map[string]bool, error) {
+	referenced := map[string]bool{}
+
+	machineSets, err := NewCAPIMachineSetList(oc.AsAdmin(), ClusterAPINamespace).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("error listing CAPI MachineSets: %w", err)
+	}
+	for _, ms := range machineSets {
+		name, err := ms.getInfrastructureTemplateName()
+		if err != nil {
+			return nil, fmt.Errorf("error getting the infrastructure template referenced by MachineSet %s: %w", ms.GetName(), err)
+		}
+		if name != "" {
+			referenced[name] = true
+		}
+	}
+
+	machineDeployments, err := NewNamespacedResourceList(oc.AsAdmin(), "machinedeployments.cluster.x-k8s.io", ClusterAPINamespace).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("error listing CAPI MachineDeployments: %w", err)
+	}
+	for _, md := range machineDeployments {
+		name, err := md.Get(`{.spec.template.spec.infrastructureRef.name}`)
+		if err != nil {
+			return nil, fmt.Errorf("error getting the infrastructure template referenced by MachineDeployment %s: %w", md.GetName(), err)
+		}
+		if name != "" {
+			referenced[name] = true
+		}
+	}
+
+	return referenced, nil
 }
 
 // DeleteManagedTemplates deletes all infrastructure templates labeled as managed by this machineset.

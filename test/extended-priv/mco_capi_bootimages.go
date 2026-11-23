@@ -74,15 +74,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		oc = exutil.NewCLI("mco-capi-bootimages", exutil.KubeConfigPath())
 	)
 
-	g.AfterEach(func() {
-		DeleteCAPIManagedTemplates(oc)
-	})
-
 	g.JustBeforeEach(func() {
 		// CAPI boot image updates are only supported on AWS
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform)
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesAWSCAPI")
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), CAPI)
+		// Registered before any other cleanup so that, cleanups being LIFO, it runs last
+		g.DeferCleanup(func() { DeleteCAPIManagedTemplates(oc) })
 		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
 		// for the duration of the test
 		relabelRhel10MachineSetsAsRhel9(oc)
@@ -92,13 +90,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// Disable skew to avoid collisions
 		exutil.By("Disabling skew functionality")
 		initialMachineConfiguration := machineConfiguration.GetSpecOrFail()
-		DisableSkew(machineConfiguration)
 
+		// Registered before DisableSkew so the spec is restored even if disabling skew fails
 		g.DeferCleanup(func() {
 			exutil.By("Restoring initial MachineConfiguration spec")
 			o.Expect(machineConfiguration.SetSpec(initialMachineConfiguration)).To(o.Succeed(), "Error restoring initial MachineConfiguration spec")
 			logger.Infof("OK!\n")
 		})
+		DisableSkew(machineConfiguration)
 		logger.Infof("OK!\n")
 	})
 

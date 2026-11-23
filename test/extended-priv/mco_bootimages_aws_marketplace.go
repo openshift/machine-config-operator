@@ -45,8 +45,10 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	)
 
 	g.JustBeforeEach(func() {
-		// Skip if no MAPI MachineSets are available (e.g. compute machine management migrated to CAPI)
-		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
+		// Skips on clusters with no scalable worker machinesets (e.g. single-node clusters,
+		// where the installer leaves the worker MachineSets at 0 replicas, and clusters where
+		// compute machine management has been migrated to CAPI)
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
 		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
 		// for the duration of the test
 		relabelRhel10MachineSetsAsRhel9(oc)
@@ -83,6 +85,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform)
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesAWSCAPI")
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), CAPI)
+		// Registered before any other cleanup so that, cleanups being LIFO, it runs last
+		g.DeferCleanup(func() { DeleteCAPIManagedTemplates(oc) })
 		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
 		// for the duration of the test
 		relabelRhel10MachineSetsAsRhel9(oc)
@@ -91,12 +95,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		exutil.By("Disabling skew to avoid collisions")
 		machineConfiguration := GetMachineConfiguration(oc.AsAdmin())
 		initialSpec := machineConfiguration.GetSpecOrFail()
-		DisableSkew(machineConfiguration)
+
+		// Registered before DisableSkew so the spec is restored even if disabling skew fails
 		g.DeferCleanup(func() {
 			exutil.By("Restoring initial MachineConfiguration spec")
 			o.Expect(machineConfiguration.SetSpec(initialSpec)).To(o.Succeed())
 			logger.Infof("OK!\n")
 		})
+		DisableSkew(machineConfiguration)
 		logger.Infof("OK!\n")
 	})
 

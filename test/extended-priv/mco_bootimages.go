@@ -48,14 +48,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		machineConfiguration *MachineConfiguration
 	)
 
-	g.AfterEach(func() {
-		DeleteCAPIManagedTemplates(oc)
-	})
-
 	g.JustBeforeEach(func() {
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
 		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
+		// Registered before any other cleanup so that, cleanups being LIFO, it runs last:
+		// the CAPI template cleanup must happen after the machineset and MachineConfiguration
+		// restorations
+		g.DeferCleanup(func() { DeleteCAPIManagedTemplates(oc) })
 		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
 		// for the duration of the test
 		relabelRhel10MachineSetsAsRhel9(oc)
@@ -450,14 +450,15 @@ func testManagedBootImagesRestoreAll(oc *exutil.CLI, apiType MachineAPIType) {
 	for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiType)) {
 		logger.Infof("Checking boot image in machineset %s", ms.GetName())
 
-		if ms.GetName() == clonedOwnedMSName {
+		switch name := ms.GetName(); {
+		case name == clonedOwnedMSName:
 			CheckCurrentOSImageIsNotUpdated(ms, fakeImageNameNoUpdate)
-		} else if clonedNames[ms.GetName()] {
+		case clonedNames[name]:
 			// Cloned machinesets were patched with backdatedImageName
 			CheckCurrentOSImageIsUpdated(ms, backdatedImageName)
 			o.Eventually(ms.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
 				"%s should NOT be using the worker-user-data-managed secret after updating the image", ms)
-		} else {
+		default:
 			// Original machinesets were never patched
 			CheckCurrentOSImageIsUpdated(ms, "")
 		}
