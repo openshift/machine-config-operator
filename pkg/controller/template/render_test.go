@@ -496,6 +496,43 @@ func findIgnUnit(units []ign3types.Unit, name string) bool {
 	return false
 }
 
+// The unit protects pods that use hugepages, which can run on any node, so
+// every role must get it on every platform.
+func TestCgroup2NoHugetlbAccountingUnitInEveryRole(t *testing.T) {
+	const unitName = "cgroup2-no-hugetlb-accounting.service"
+
+	for test, config := range configs {
+		t.Run(test, func(t *testing.T) {
+			controllerConfig, err := controllerConfigFromFile(config)
+			require.NoError(t, err)
+
+			cfgs, err := generateTemplateMachineConfigs(&RenderConfig{ControllerConfigSpec: &controllerConfig.Spec, PullSecret: `{"dummy":"dummy"}`, TLSMinVersion: "dummy"}, templateDir)
+			require.NoError(t, err)
+
+			enabledInRole := map[string]bool{}
+			for _, cfg := range cfgs {
+				role := cfg.Labels[mcfgv1.MachineConfigRoleLabelKey]
+				if _, seen := enabledInRole[role]; !seen {
+					enabledInRole[role] = false
+				}
+
+				ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
+				require.NoError(t, err)
+				for _, u := range ign.Systemd.Units {
+					if u.Name == unitName && u.Enabled != nil && *u.Enabled {
+						enabledInRole[role] = true
+					}
+				}
+			}
+
+			require.NotEmpty(t, enabledInRole)
+			for role, enabled := range enabledInRole {
+				require.Truef(t, enabled, "role %q does not get %s enabled", role, unitName)
+			}
+		})
+	}
+}
+
 func TestIsBGPVIPManagement(t *testing.T) {
 	dummyTemplate := []byte(`{{isBGPVIPManagement .}}`)
 
