@@ -254,13 +254,6 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
 		}
 
-		defer SafeCleanup(func() {
-			if mc.Exists() {
-				err := mc.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
-			}
-		})
-
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
 		err = mc.Create(
 			"-p", "NAME="+mcName,
@@ -270,7 +263,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			"-p", "FILE_PATH=/etc/temp_config.conf",
 			"-p", "FILE_CONTENT=THIS_IS_A_TEST_FILE_CONF",
 		)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(err).NotTo(o.HaveOccurred(), "MachineConfig %s creation failed; check its status if the API result is uncertain", mcName)
+		defer SafeCleanup(func() {
+			if mc.Exists() {
+				err := mc.Delete()
+				o.Expect(err).NotTo(o.HaveOccurred())
+			}
+		})
 		logger.Infof("MC %s created successfully", mcName)
 
 		err = mcp.WaitForUpdatedStatus()
