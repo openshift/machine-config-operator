@@ -138,7 +138,11 @@ func bareMetalTestDisks(hostJSON string) ([]string, error) {
 		return nil, fmt.Errorf("root device is unknown")
 	}
 
-	storage := host.Get("status.hardware.storage").Array()
+	return bareMetalInventoryTestDisks(host.Get("status.hardware.storage").Array(), rootHint)
+}
+
+// bareMetalInventoryTestDisks identifies the test disks and checks their inventory names.
+func bareMetalInventoryTestDisks(storage []gjson.Result, rootHint string) ([]string, error) {
 	rootIndex := -1
 	diskIndexes := []int{-1, -1}
 	paths := make([]string, 2)
@@ -252,116 +256,149 @@ func inspectBareMetalTestDisks(node *Node, disks []string) (bareMetalCleanupStat
 			return state, fmt.Errorf("cannot identify distinct disk %s", diskPath)
 		}
 		testDevices[disk.MajorMinor] = true
-		if len(disk.Children) > 1 {
-			return state, fmt.Errorf("unexpected partitions on %s", disk.Name)
-		}
-		if len(disk.Children) == 0 {
-			continue
-		}
-		partition := disk.Children[0]
-		if partition.Type != "part" || partition.MajorMinor == "" || partition.PartLabel != fmt.Sprintf("raid.1.%d", i+1) {
-			return state, fmt.Errorf("unexpected partition on %s", disk.Name)
-		}
-		resolvedPart, err := node.ResolveHostPath(diskPath + "-part1")
+		member, err := inspectBareMetalPartition(node, diskPath, i, &state, testDevices, partitions)
 		if err != nil {
-			return state, fmt.Errorf("cannot verify partition on %s: %w", disk.Name, err)
+			return state, err
 		}
-		if resolvedPart != partition.Name {
-			return state, fmt.Errorf("partition on %s resolves to %s, not %s", disk.Name, resolvedPart, partition.Name)
-		}
-		if testDevices[partition.MajorMinor] {
-			return state, fmt.Errorf("duplicate partition on %s", disk.Name)
-		}
-		state.disks[i].partition = &partition
-		testDevices[partition.MajorMinor] = true
-		partitions[partition.MajorMinor] = true
-		if len(partition.Children) > 1 {
-			return state, fmt.Errorf("unexpected devices on %s", partition.Name)
-		}
-		if len(partition.Children) == 1 {
-			raid := partition.Children[0]
-			if raid.Type != "raid0" || raid.MajorMinor == "" || len(raid.Children) != 0 {
-				return state, fmt.Errorf("unexpected RAID device on %s", partition.Name)
-			}
-			if state.raid != nil && (state.raid.Name != raid.Name || state.raid.MajorMinor != raid.MajorMinor) {
-				return state, fmt.Errorf("test partitions belong to different RAID devices")
-			}
-			state.raid = &raid
+		if member {
 			raidMembers++
 		}
 	}
-	if state.raid != nil {
-		if raidMembers != 2 || testDevices[state.raid.MajorMinor] {
-			return state, fmt.Errorf("unexpected RAID members")
-		}
-		resolvedRAID, err := node.ResolveHostPath("/dev/md/data")
-		if err != nil {
-			return state, fmt.Errorf("cannot verify test RAID device: %w", err)
-		}
-		if resolvedRAID != state.raid.Name {
-			return state, fmt.Errorf("test RAID resolves to %s, not %s", resolvedRAID, state.raid.Name)
-		}
-		testDevices[state.raid.MajorMinor] = true
-		var checkParents func([]NodeBlockDevice) error
-		checkParents = func(devices []NodeBlockDevice) error {
-			for _, device := range devices {
-				for _, child := range device.Children {
-					if child.MajorMinor == state.raid.MajorMinor && !partitions[device.MajorMinor] {
-						return fmt.Errorf("unexpected RAID member %s", device.Name)
-					}
-				}
-				if err := checkParents(device.Children); err != nil {
-					return err
+	if err := checkBareMetalRAIDTopology(node, state, devices, partitions, testDevices, raidMembers); err != nil {
+		return state, err
+	}
+	if err := checkBareMetalCleanupMounts(mounts, knownDevices, testDevices, &state); err != nil {
+		return state, err
+	}
+	if err := checkBareMetalCleanupSignatures(node, state); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+// inspectBareMetalPartition validates a test disk's partition and RAID membership.
+func inspectBareMetalPartition(node *Node, diskPath string, index int, state *bareMetalCleanupState, testDevices, partitions map[string]bool) (bool, error) {
+	disk := state.disks[index].device
+	if len(disk.Children) > 1 {
+		return false, fmt.Errorf("unexpected partitions on %s", disk.Name)
+	}
+	if len(disk.Children) == 0 {
+		return false, nil
+	}
+	partition := disk.Children[0]
+	if partition.Type != "part" || partition.MajorMinor == "" || partition.PartLabel != fmt.Sprintf("raid.1.%d", index+1) {
+		return false, fmt.Errorf("unexpected partition on %s", disk.Name)
+	}
+	resolvedPart, err := node.ResolveHostPath(diskPath + "-part1")
+	if err != nil {
+		return false, fmt.Errorf("cannot verify partition on %s: %w", disk.Name, err)
+	}
+	if resolvedPart != partition.Name {
+		return false, fmt.Errorf("partition on %s resolves to %s, not %s", disk.Name, resolvedPart, partition.Name)
+	}
+	if testDevices[partition.MajorMinor] {
+		return false, fmt.Errorf("duplicate partition on %s", disk.Name)
+	}
+	state.disks[index].partition = &partition
+	testDevices[partition.MajorMinor] = true
+	partitions[partition.MajorMinor] = true
+	if len(partition.Children) > 1 {
+		return false, fmt.Errorf("unexpected devices on %s", partition.Name)
+	}
+	if len(partition.Children) == 0 {
+		return false, nil
+	}
+	raid := partition.Children[0]
+	if raid.Type != "raid0" || raid.MajorMinor == "" || len(raid.Children) != 0 {
+		return false, fmt.Errorf("unexpected RAID device on %s", partition.Name)
+	}
+	if state.raid != nil && (state.raid.Name != raid.Name || state.raid.MajorMinor != raid.MajorMinor) {
+		return false, fmt.Errorf("test partitions belong to different RAID devices")
+	}
+	state.raid = &raid
+	return true, nil
+}
+
+// checkBareMetalRAIDTopology rejects RAID devices with unexpected members.
+func checkBareMetalRAIDTopology(node *Node, state bareMetalCleanupState, devices []NodeBlockDevice, partitions, testDevices map[string]bool, raidMembers int) error {
+	if state.raid == nil {
+		return nil
+	}
+	if raidMembers != 2 || testDevices[state.raid.MajorMinor] {
+		return fmt.Errorf("unexpected RAID members")
+	}
+	resolvedRAID, err := node.ResolveHostPath("/dev/md/data")
+	if err != nil {
+		return fmt.Errorf("cannot verify test RAID device: %w", err)
+	}
+	if resolvedRAID != state.raid.Name {
+		return fmt.Errorf("test RAID resolves to %s, not %s", resolvedRAID, state.raid.Name)
+	}
+	testDevices[state.raid.MajorMinor] = true
+	var checkParents func([]NodeBlockDevice) error
+	checkParents = func(devices []NodeBlockDevice) error {
+		for _, device := range devices {
+			for _, child := range device.Children {
+				if child.MajorMinor == state.raid.MajorMinor && !partitions[device.MajorMinor] {
+					return fmt.Errorf("unexpected RAID member %s", device.Name)
 				}
 			}
-			return nil
+			if err := checkParents(device.Children); err != nil {
+				return err
+			}
 		}
-		if err := checkParents(devices); err != nil {
-			return state, err
-		}
+		return nil
 	}
+	return checkParents(devices)
+}
 
+// checkBareMetalCleanupMounts ensures that the test devices do not back host mounts.
+func checkBareMetalCleanupMounts(mounts []NodeMount, knownDevices, testDevices map[string]bool, state *bareMetalCleanupState) error {
 	for _, target := range []string{"/sysroot", "/boot", "/boot/efi"} {
 		mount, err := MountForPath(mounts, target)
 		if err != nil {
-			return state, fmt.Errorf("cannot verify %s: %w", target, err)
+			return fmt.Errorf("cannot verify %s: %w", target, err)
 		}
 		if !knownDevices[mount.MajorMinor] || testDevices[mount.MajorMinor] {
-			return state, fmt.Errorf("cannot prove test disks are separate from %s (device %s)", target, mount.MajorMinor)
+			return fmt.Errorf("cannot prove test disks are separate from %s (device %s)", target, mount.MajorMinor)
 		}
 	}
 	for _, mount := range mounts {
 		if mount.MajorMinor == "" {
-			return state, fmt.Errorf("cannot identify the device mounted at %s", mount.Target)
+			return fmt.Errorf("cannot identify the device mounted at %s", mount.Target)
 		}
 		if mount.Target == "/var/lib/data" {
 			if state.raid == nil || mount.MajorMinor != state.raid.MajorMinor || state.mounted {
-				return state, fmt.Errorf("unexpected mount at %s", mount.Target)
+				return fmt.Errorf("unexpected mount at %s", mount.Target)
 			}
 			state.mounted = true
 		} else if testDevices[mount.MajorMinor] {
-			return state, fmt.Errorf("test device is unexpectedly mounted at %s", mount.Target)
+			return fmt.Errorf("test device is unexpectedly mounted at %s", mount.Target)
 		}
 	}
+	return nil
+}
 
+// checkBareMetalCleanupSignatures permits only the signatures created by the test.
+func checkBareMetalCleanupSignatures(node *Node, state bareMetalCleanupState) error {
 	for _, disk := range state.disks {
 		allowed := []string{}
 		if disk.partition != nil {
 			allowed = []string{"gpt", "PMBR"}
 			if err := checkBareMetalSignatures(node, disk.partition.Name, "linux_raid_member"); err != nil {
-				return state, err
+				return err
 			}
 		}
 		if err := checkBareMetalSignatures(node, disk.device.Name, allowed...); err != nil {
-			return state, err
+			return err
 		}
 	}
 	if state.raid != nil {
 		if err := checkBareMetalSignatures(node, state.raid.Name, "ext4"); err != nil {
-			return state, err
+			return err
 		}
 	}
-	return state, nil
+	return nil
 }
 
 // checkBareMetalSignatures rejects signatures not created by this test.
@@ -442,6 +479,46 @@ func checkBareMetalDiskIdentity(node *Node, diskPath string, expected bareMetalC
 	return fmt.Errorf("cannot find disk %s during cleanup", diskPath)
 }
 
+// cleanBareMetalRAID stops the test RAID and rechecks its member identities.
+func cleanBareMetalRAID(node *Node, disks []string, state bareMetalCleanupState) (bareMetalCleanupState, error) {
+	if state.mounted {
+		if _, err := node.RunHostCommand("umount", "/var/lib/data"); err != nil {
+			return state, err
+		}
+	}
+	if err := checkBareMetalDevicesUnmounted(node, state); err != nil {
+		return state, err
+	}
+	if err := checkBareMetalSignatures(node, state.raid.Name, "ext4"); err != nil {
+		return state, err
+	}
+	if _, err := node.RunHostCommand("wipefs", "--all", state.raid.Name); err != nil {
+		return state, err
+	}
+	if err := checkBareMetalSignatures(node, state.raid.Name); err != nil {
+		return state, err
+	}
+	if _, err := node.RunHostCommand("mdadm", "--stop", state.raid.Name); err != nil {
+		return state, err
+	}
+	updated, err := inspectBareMetalTestDisks(node, disks)
+	if err != nil {
+		return state, err
+	}
+	if updated.raid != nil {
+		return state, fmt.Errorf("RAID device is still active after cleanup")
+	}
+	for i := range state.disks {
+		previous, current := state.disks[i], updated.disks[i]
+		if previous.device.Name != current.device.Name || previous.device.MajorMinor != current.device.MajorMinor ||
+			previous.partition == nil || current.partition == nil ||
+			previous.partition.Name != current.partition.Name || previous.partition.MajorMinor != current.partition.MajorMinor {
+			return state, fmt.Errorf("disk topology changed during RAID cleanup")
+		}
+	}
+	return updated, nil
+}
+
 // cleanBareMetalTestDisks removes and verifies only this test's disk signatures.
 func cleanBareMetalTestDisks(node *Node, disks []string) error {
 	state, err := inspectBareMetalTestDisks(node, disks)
@@ -449,60 +526,29 @@ func cleanBareMetalTestDisks(node *Node, disks []string) error {
 		return err
 	}
 	if state.raid != nil {
-		if state.mounted {
-			if _, err := node.RunHostCommand("umount", "/var/lib/data"); err != nil {
-				return err
-			}
+		state, err = cleanBareMetalRAID(node, disks, state)
+		if err != nil {
+			return err
+		}
+	}
+	for i, disk := range state.disks {
+		if disk.partition == nil {
+			continue
 		}
 		if err := checkBareMetalDevicesUnmounted(node, state); err != nil {
 			return err
 		}
-		if err := checkBareMetalSignatures(node, state.raid.Name, "ext4"); err != nil {
+		if err := checkBareMetalSignatures(node, disk.partition.Name, "linux_raid_member"); err != nil {
 			return err
 		}
-		if _, err := node.RunHostCommand("wipefs", "--all", state.raid.Name); err != nil {
+		if err := checkBareMetalDiskIdentity(node, disks[i], disk); err != nil {
 			return err
 		}
-		if err := checkBareMetalSignatures(node, state.raid.Name); err != nil {
+		if _, err := node.RunHostCommand("wipefs", "--all", disk.partition.Name); err != nil {
 			return err
 		}
-		if _, err := node.RunHostCommand("mdadm", "--stop", state.raid.Name); err != nil {
+		if err := checkBareMetalSignatures(node, disk.partition.Name); err != nil {
 			return err
-		}
-		updated, err := inspectBareMetalTestDisks(node, disks)
-		if err != nil {
-			return err
-		}
-		if updated.raid != nil {
-			return fmt.Errorf("RAID device is still active after cleanup")
-		}
-		for i := range state.disks {
-			previous, current := state.disks[i], updated.disks[i]
-			if previous.device.Name != current.device.Name || previous.device.MajorMinor != current.device.MajorMinor ||
-				previous.partition == nil || current.partition == nil ||
-				previous.partition.Name != current.partition.Name || previous.partition.MajorMinor != current.partition.MajorMinor {
-				return fmt.Errorf("disk topology changed during RAID cleanup")
-			}
-		}
-		state = updated
-	}
-	for i, disk := range state.disks {
-		if disk.partition != nil {
-			if err := checkBareMetalDevicesUnmounted(node, state); err != nil {
-				return err
-			}
-			if err := checkBareMetalSignatures(node, disk.partition.Name, "linux_raid_member"); err != nil {
-				return err
-			}
-			if err := checkBareMetalDiskIdentity(node, disks[i], disk); err != nil {
-				return err
-			}
-			if _, err := node.RunHostCommand("wipefs", "--all", disk.partition.Name); err != nil {
-				return err
-			}
-			if err := checkBareMetalSignatures(node, disk.partition.Name); err != nil {
-				return err
-			}
 		}
 	}
 	for i, disk := range state.disks {
