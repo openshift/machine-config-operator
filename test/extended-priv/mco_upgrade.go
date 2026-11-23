@@ -260,7 +260,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
 	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Early][MCOUpgrade:Pre] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
 		// Bootimages Update functionality is only available in GCP(GA) and AWS(GA)
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImages")
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesAWS")
 
@@ -297,7 +297,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 
 		exutil.By("Opt-in boot images update")
 		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, labelName, labelValue),
+			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
 		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
 		logger.Infof("OK!\n")
 
@@ -315,7 +315,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 
 	// port=yes - 98.4% pass rate (305 runs last 60 days)
 	g.It("[PolarionID:70813][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] ManagedBootImages update boot image of machineset", g.Label("Platform:gce", "Platform:aws"), func() {
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		// Bootimages Update functionality is only available in GCP(GA) and AWS(GA)
 
 		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImages")
@@ -391,7 +391,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 
 	// port=maybe - 89.8% pass rate (305 runs last 60 days)
 	g.It("[PolarionID:76216][OTP][Feature:ClusterUpgrade][Late][MCOUpgrade:Post] Scale up nodes after upgrade", func() {
-		skipTestIfWorkersCannotBeScaled(oc.AsAdmin())
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin())
 		var (
 			machineSet   = NewMachineSetList(oc.AsAdmin(), MachineAPINamespace).GetAllOrFail()[0]
 			clonedMSName = "cloned-tc-76216-scaleup"
