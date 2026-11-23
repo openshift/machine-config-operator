@@ -199,7 +199,7 @@ func TestSkipMissing(t *testing.T) {
 
 func TestWaitForNodeIPScriptIPFamilies(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(templateDir, "common/_base/files/wait-for-node-ip.yaml")
+	const path = templateDir + "/common/_base/files/wait-for-node-ip.yaml"
 	templateData, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -247,7 +247,7 @@ func TestWaitForNodeIPScriptIPFamilies(t *testing.T) {
 					IPFamilies: tc.families,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, "dummy", nil, nil}, path, templateData)
+			got, err := renderTemplate(RenderConfig{ControllerConfigSpec: &config.Spec}, path, templateData)
 			if err != nil {
 				t.Fatalf("renderTemplate: %v", err)
 			}
