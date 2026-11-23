@@ -2,7 +2,6 @@ package common
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 
@@ -136,7 +135,7 @@ func RegisterMetrics(metrics []prometheus.Collector) error {
 }
 
 // StartMetricsListener is metrics listener via http on localhost
-func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error, tlsMinVersion string, tlsCipherSuites []string, curvePreferences []int32) {
+func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error) {
 	if addr == "" {
 		addr = DefaultBindAddress
 	}
@@ -148,17 +147,12 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func
 		return
 	}
 
-	// Get TLS config from provided settings, or use defaults
-	tlsConfig := GetGoTLSConfig(tlsMinVersion, tlsCipherSuites, curvePreferences)
-
-	klog.Infof("Starting metrics listener on %s with TLS min version: %s", addr, tlsMinVersion)
+	klog.Infof("Starting metrics listener on %s", addr)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	s := http.Server{
-		TLSConfig:    tlsConfig,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-		Addr:         addr,
-		Handler:      mux}
+		Addr:    addr,
+		Handler: mux}
 
 	go func() {
 		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {

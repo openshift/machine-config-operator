@@ -27,11 +27,6 @@ spec:
           - "start"
           - "--payload-version={{.ReleaseVersion}}"
           - "--v={{.LogLevel}}"
-          - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
-          - "--tls-min-version={{.TLSMinVersion}}"
-          {{- if .TLSGroups }}
-          - "--tls-curve-preferences={{join .TLSGroups ","}}"
-          {{- end }}
         resources:
           requests:
             cpu: 20m

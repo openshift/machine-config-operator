@@ -42,9 +42,6 @@ var (
 		kubeletHealthzEnabled      bool
 		kubeletHealthzEndpoint     string
 		promMetricsURL             string
-		tlsCipherSuites            []string
-		tlsMinVersion              string
-		tlsCurvePreferences        []int32
 	}
 )
 
@@ -59,9 +56,6 @@ func init() {
 	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeletHealthzEndpoint, "kubelet-healthz-endpoint", "http://localhost:10248/healthz", "healthz endpoint to check health")
 	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
-	startCmd.PersistentFlags().StringSliceVar(&startOpts.tlsCipherSuites, "tls-cipher-suites", nil, "Comma-separated list of cipher suites for the metrics server")
-	startCmd.PersistentFlags().StringVar(&startOpts.tlsMinVersion, "tls-min-version", "VersionTLS12", "Minimum TLS version supported for the metrics server")
-	startCmd.PersistentFlags().Int32SliceVar(&startOpts.tlsCurvePreferences, "tls-curve-preferences", nil, "TLS curve preferences as numeric curve IDs for the metrics server")
 }
 
 //nolint:gocritic
@@ -182,7 +176,7 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 	}
 
 	// Start local metrics listener
-	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics, startOpts.tlsMinVersion, startOpts.tlsCipherSuites, startOpts.tlsCurvePreferences)
+	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
 	ctrlctx := ctrlcommon.CreateControllerContext(ctx, cb)
 
