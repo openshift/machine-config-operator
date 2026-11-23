@@ -56,8 +56,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
 		// Bootimages Update functionality is only available in GCP, AWS, vSphere and Azure
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
-		// Skip if any MachineSet carries an unsupported OS stream label
-		exutil.SkipIfUnsupportedOSStreamLabel(oc.AsAdmin())
+		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
+		// for the duration of the test
+		relabelRhel10MachineSetsAsRhel9(oc)
 		wMcp = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
@@ -153,306 +154,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 	})
 
 	g.It("[PolarionID:74240][OTP] ManagedBootImages. Restore All MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
-		var (
-			machineSet                 = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-			backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), "74240")
-			clonedMSName               = "cloned-tc-74240"
-			clonedWrongBootImageMSName = "cloned-tc-74240-wrong-boot-image"
-			clonedOwnedMSName          = "cloned-tc-74240-owned"
-			initialNodeCount           = len(wMcp.GetNodesOrFail())
-		)
-
-		exutil.By("Prepare to restore the original Machinesets")
-		for _, item := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
-			ms := item
-			logger.Infof("Preparing to restore machineset %s", ms.GetName())
-			defer ms.SetSpec(ms.GetSpecOrFail())
-		}
-		logger.Infof("OK!\n")
-
-		exutil.By("Opt-in boot images update")
-		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup()),
-		).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone first machineset")
-		clonedMS, err := machineSet.Duplicate(clonedMSName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMS.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone first machineset but using a wrong ")
-		clonedWrongImageMS, err := machineSet.DuplicateWithBootImage(clonedWrongBootImageMSName, backdatedImageName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s using a custom boot image", machineSet)
-		defer clonedWrongImageMS.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone first machineset, an owner reference will be added later to this new machineset")
-		logger.Infof("Cloning machineset")
-		clonedOwnedMS, err := machineSet.Duplicate(clonedOwnedMSName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedOwnedMS.Delete()
-		logger.Infof("Setting a fake owner")
-
-		logger.Infof("OK!\n")
-
-		exutil.By("All machinesets should use the right boot image")
-		for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
-			logger.Infof("Checking boot image in machineset %s", ms.GetName())
-			// Check that the current boot image is the right one.
-			// Original machinesets were never set to backdatedImageName, so pass empty string.
-			CheckCurrentOSImageIsUpdated(ms, "")
-		}
-		logger.Infof("OK!\n")
-
-		// We add the owner once it has been updated to avoid race conditions
-		exutil.By("Patch last cloned machineset to add an owner reference")
-		o.Expect(
-			clonedOwnedMS.Patch("merge", `{"metadata":{"ownerReferences": [{"apiVersion": "fake","blockOwnerDeletion": true,"controller": true,"kind": "fakekind","name": "master","uid": "fake-uuid"}]}}`),
-		).To(o.Succeed(), "Error patching %s with a fake owner", clonedOwnedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Patch cloned machinesets to use a wrong boot image")
-		o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedMS)
-
-		o.Expect(clonedWrongImageMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedWrongImageMS)
-
-		o.Expect(clonedOwnedMS.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedOwnedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("All machinesets should use the right boot image except the one with an owner")
-		clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
-		for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
-			logger.Infof("Checking boot image in machineset %s", ms.GetName())
-
-			if ms.GetName() == clonedOwnedMSName {
-				CheckCurrentOSImageIsNotUpdated(ms, fakeImageNameNoUpdate)
-			} else if clonedNames[ms.GetName()] {
-				// Cloned machinesets were patched with backdatedImageName
-				CheckCurrentOSImageIsUpdated(ms, backdatedImageName)
-				o.Eventually(ms.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
-					"%s should NOT be using the worker-user-data-managed secret after updating the image", ms)
-			} else {
-				// Original machinesets were never patched
-				CheckCurrentOSImageIsUpdated(ms, "")
-			}
-		}
-		logger.Infof("OK!\n")
-
-		exutil.By("Scale up one of the fixed machinesets to make sure that they are working fine")
-		logger.Infof("Scaling up machineset %s", clonedMS.GetName())
-		defer SafeCleanup(func() {
-			o.Expect(clonedMS.ScaleTo(0)).To(o.Succeed(),
-				"Error scaling down MachineSet %s", clonedMS.GetName())
-			o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
-				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
-		})
-		o.Expect(clonedMS.ScaleTo(1)).To(o.Succeed(),
-			"Error scaling up MachineSet %s", clonedMS.GetName())
-		logger.Infof("Waiting %s machineset for being ready", clonedMS)
-		o.Eventually(clonedMS.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMS.GetName())
-		// When the node is created it is still executing rpm-ostree commands before joining
-		// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
-		// Hence, we wait for nodes to be updated before reverting to the initial state
-		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
-			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
-		o.Eventually(clonedMS.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
-		logger.Infof("OK!\n")
+		testManagedBootImagesRestoreAll(oc, MAPI)
 	})
 
 	g.It("[PolarionID:74239][OTP] ManagedBootImages. Restore Partial MachineSet images", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
-		var (
-			machineSet             = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-			backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), "74239")
-			clonedMSLabelName      = "cloned-tc-74239-label"
-			clonedMSNoLabelName    = "cloned-tc-74239-no-label"
-			clonedMSLabelOwnedName = "cloned-tc-74239-label-owned"
-			labelName              = "test"
-			labelValue             = "update"
-			initialNodeCount       = len(wMcp.GetNodesOrFail())
-		)
-
-		exutil.By("Opt-in boot images update")
-
-		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
-		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone the first machineset twice")
-		clonedMSLabel, err := machineSet.Duplicate(clonedMSLabelName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMSLabel.Delete()
-
-		clonedMSNoLabel, err := machineSet.Duplicate(clonedMSNoLabelName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMSNoLabel.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone first machineset again and set an owner for the cloned machineset")
-		logger.Infof("Cloning machineset")
-		clonedMSLabelOwned, err := machineSet.Duplicate(clonedMSLabelOwnedName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMSLabelOwned.Delete()
-		logger.Infof("Setting a fake owner")
-
-		o.Expect(
-			clonedMSLabelOwned.Patch("merge", `{"metadata":{"ownerReferences": [{"apiVersion": "fake","blockOwnerDeletion": true,"controller": true,"kind": "fakekind","name": "master","uid": "fake-uuid"}]}}`),
-		).To(o.Succeed(), "Error patching %s with a fake owner", clonedMSLabelOwned)
-		logger.Infof("OK!\n")
-
-		exutil.By("Label one of the cloned images and the clonned image with the owner configuration")
-		o.Expect(clonedMSLabel.AddLabel(labelName, labelValue)).To(o.Succeed(),
-			"Error labeling %s", clonedMSLabel)
-		o.Expect(clonedMSLabelOwned.AddLabel(labelName, labelValue)).To(o.Succeed(),
-			"Error labeling %s", clonedMSLabel)
-		logger.Infof("OK!\n")
-
-		exutil.By("Patch the clonned machineset to configure a new boot image")
-		o.Expect(clonedMSLabel.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedMSLabel)
-
-		o.Expect(clonedMSNoLabel.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedMSNoLabel)
-
-		o.Expect(clonedMSLabelOwned.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
-			"Error setting a new boot image in %s", clonedMSLabelOwned)
-		logger.Infof("OK!\n")
-
-		exutil.By("The labeled machineset without owner should be updated")
-		CheckCurrentOSImageIsUpdated(clonedMSLabel, backdatedImageName)
-		// Check that the user-data secret is the right one
-		o.Eventually(clonedMSLabel.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
-			"%s should NOT be using the worker-user-data-managed secret after updating the image", clonedMSLabel)
-
-		logger.Infof("OK!\n")
-
-		exutil.By("The labeled machineset with owner should NOT be updated")
-		CheckCurrentOSImageIsNotUpdated(clonedMSLabelOwned, fakeImageNameNoUpdate)
-		logger.Infof("OK!\n")
-
-		exutil.By("The machineset without label should NOT be updated")
-		CheckCurrentOSImageIsNotUpdated(clonedMSNoLabel, fakeImageNameNoUpdate)
-		logger.Infof("OK!\n")
-
-		exutil.By("Scale up the fixed machinessetset to make sure that it is working fine")
-		logger.Infof("Scaling up machineset %s", clonedMSLabel.GetName())
-		defer SafeCleanup(func() {
-			o.Expect(clonedMSLabel.ScaleTo(0)).To(o.Succeed(),
-				"Error scaling down MachineSet %s", clonedMSLabel.GetName())
-			o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
-				"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
-		})
-		o.Expect(clonedMSLabel.ScaleTo(1)).To(o.Succeed(),
-			"Error scaling up MachineSet %s", clonedMSLabel.GetName())
-		logger.Infof("Waiting %s machineset for being ready", clonedMSLabel)
-		o.Eventually(clonedMSLabel.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMSLabel.GetName())
-		// When the node is created it is still executing rpm-ostree commands before joining
-		// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
-		// Hence, we wait for nodes to be updated before reverting to the initial state
-		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
-			"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
-		o.Eventually(clonedMSLabel.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
-		logger.Infof("OK!\n")
+		testManagedBootImagesRestorePartial(oc, MAPI)
 	})
 
 	g.It("[PolarionID:74751][OTP] ManagedBootImages. Fix errors", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
-		var (
-			machineConfiguration        = GetMachineConfiguration(oc.AsAdmin())
-			machineSet                  = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-			backdatedImageName          = getBackdatedBootImage(oc.AsAdmin(), machineSet)
-			clonedMSName                = "cloned-tc-74751-copy"
-			labelName                   = "test"
-			labelValue                  = "update"
-			fakearch = "fake-arch"
-			arch     = machineSet.GetArchitectureOrFail()
-			msType   = "MAPI"
-		)
-		if machineSet.GetAPIGroup() == CAPIApiGroup {
-			msType = "CAPI"
-		}
-		syncContext := "machineset"
-		if msType == "CAPI" {
-			syncContext = "CAPI MachineSet"
-		}
-		expectedFailedMessageRegexp := regexp.QuoteMeta("Error(s): error syncing " + msType + " MachineSet " +
-			clonedMSName +
-			": failed to fetch arch during " + syncContext + " sync: invalid architecture value found in annotation: " + fakearch)
-
-		exutil.By("Opt-in boot images update")
-
-		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
-		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone the first machineset")
-		clonedMS, err := machineSet.Duplicate(clonedMSName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMS.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Set a wrong architecture in the cloned image")
-		o.Expect(clonedMS.SetArchitecture(fakearch)).To(o.Succeed(), "Error setting a fake architecture in %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Set a wrong boot image in the cloned image")
-		o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that no failures are being reported")
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
-			"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
-
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
-			"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
-		logger.Infof("OK!\n")
-
-		exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
-		o.Expect(clonedMS.AddLabel(labelName, labelValue)).To(o.Succeed(),
-			"Error labeling %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that an error is reported in the machineconfiguration resource and that there is no progress")
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "True"),
-			"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
-
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "message", o.MatchRegexp(expectedFailedMessageRegexp)),
-			"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
-
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
-			"Progress status is not the expected one.\n%s", machineConfiguration.PrettyString())
-
-		// since it will be in "progressing" status for a very short time, we cant poll the value. We need to use the lasttransition date
-		lastProgressTransition := machineConfiguration.GetOrFail(`{.status.conditions[?(@.type=="BootImageUpdateProgressing")].lastTransitionTime}`)
-		logger.Infof("OK!\n")
-
-		exutil.By("Set the right architecture in the cloneed machineset")
-		o.Expect(clonedMS.SetArchitecture(arch.String())).To(o.Succeed(), "Error fixing the problem in the architecture in %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that no error is reported anymore in the machineconfiguration resource and the progress was OK")
-		// We need to poll requently since it will be on "progressing" status a very short time
-		o.Eventually(machineConfiguration, "20s", "1s").ShouldNot(HaveConditionField("BootImageUpdateProgressing", "lastTransitionTime", lastProgressTransition),
-			"Progress status did not change, but it should have been moved to 'true' and back to 'false' .\n%s", machineConfiguration.PrettyString())
-
-		o.Eventually(machineConfiguration, "10m", "10s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
-			"Progress status is not the expected one.\n%s", machineConfiguration.PrettyString())
-
-		o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
-			"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that the boot image was updated")
-		CheckCurrentOSImageIsUpdated(clonedMS, backdatedImageName)
-		logger.Infof("OK!\n")
-
+		testManagedBootImagesFixErrors(oc, MAPI)
 	})
 
 	g.It("[PolarionID:80436][OTP] Bootimage secret doesn't exist error upgrading stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
@@ -522,39 +232,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// Not supported in Vsphere
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform, VspherePlatform, AzurePlatform)
 
-		machineSet := OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-
-		apiGroup := machineSet.GetAPIGroup()
-
-		exutil.By("To check the default opt-in in machieconfiguration")
-		if !strings.Contains(machineConfiguration.GetSpecOrFail(), "managedBootImages") {
-			checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
-		} else {
-			o.Expect(machineConfiguration.GetSpecOrFail()).Should(o.ContainSubstring(machineConfiguration.GetOrFail(`{.status.managedBootImagesStatus.machineManagers[0].selection.mode}`)))
-		}
-		logger.Infof("OK!\n")
-
-		exutil.By("To patch the Partial Mode in machineConfiguration")
-		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, apiGroup, "", ""),
-		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "Partial")
-		logger.Infof("OK\n")
-
-		exutil.By("To patch the All Mode in machieConfiguration")
-		o.Expect(
-			machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, apiGroup),
-		).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
-		logger.Infof("OK\n")
-
-		exutil.By("Opt-out boot images update")
-		o.Expect(machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource)).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "None")
-		logger.Infof("OK\n")
+		testVerifyDefaultBootImageUpdateOptIn(oc, MAPI)
 	})
 
 	g.It("[PolarionID:80437][OTP] Bootimage upgrade stub ignition to spec 3", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
@@ -650,96 +328,497 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longdurati
 		// In Azure we shouldn't be allowed to manipulate the values to set invalid values, and we will always update legacy images. Hence, we skip this test case.
 		skipTestIfSupportedPlatformNotMatched(oc, GCPPlatform, AWSPlatform)
 
-		var (
-			clonedMSName     = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
-			clonedSecretName = fmt.Sprintf("cloned-user-data-%s-copy", GetCurrentTestPolarionIDNumber())
-
-			fakeImageName = "fake-image" // not updateable
-
-			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-			labelName            = "test"
-			labelValue           = "update"
-
-			userDataJSONVersionPath = `ignition.version`
-		)
-
-		exutil.By("Opt-in boot images update")
-		o.Expect(
-			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
-		).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
-		logger.Infof("OK!\n")
-
-		exutil.By("Clone the first machineset")
-		clonedMS, err := machineSet.Duplicate(clonedMSName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMS.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Set a 2.2.0 user-data secet in the new machine config")
-		logger.Infof("Duplicating the user-data secret")
-		managedSecret, err := clonedMS.GetManagedUserDataSecret()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
-
-		userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
-		clonedSecret, err := managedSecret.Duplicate(clonedSecretName, userDataModifyFunc)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", managedSecret.GetName())
-		defer clonedSecret.Delete()
-		logger.Infof("OK!\n")
-
-		logger.Infof("Configuring the cloned machineset to use the new user-data secret")
-		o.Expect(clonedMS.SetUserDataSecret(clonedSecretName)).To(o.Succeed(),
-			"Error patching MachineSet %s to use the new secret %s", clonedMS.GetName(), clonedSecretName)
-		logger.Infof("OK!\n")
-
-		exutil.By("Set a wrong boot image in the cloned image. Non-updateable image")
-		o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
-		o.Expect(clonedMS.AddLabel(labelName, labelValue)).To(o.Succeed(),
-			"Error labeling %s", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that the bootimage was not updated")
-		o.Consistently(clonedMS.GetCoreOsBootImage, "5m", "20s").Should(o.ContainSubstring(fakeImageName),
-			"%s was updated, but it shouldn't be updated", clonedMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Check that the cloned user-data secret was not updated")
-		o.Consistently(clonedSecret.GetUserData, "2m", "15s").Should(
-			HavePathWithValue(userDataJSONVersionPath, o.Equal("2.2.0")),
-			"The user-data secret was not updated, but it shouldn't be updated")
-		logger.Infof("OK!\n")
+		testCorrectlyHandleMarketplaceBootimages(oc, MAPI)
 	})
 
 	g.It("[PolarionID:83998][OTP] Check in the boot image controller to work with multiple labels for annotation", g.Label("Platform:aws", "Platform:gce", "Platform:vsphere", "Platform:azure"), func() {
-		var (
-			clonedMSName         = fmt.Sprintf("cloned-tc-%s-copy", GetCurrentTestPolarionIDNumber())
-			machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-			machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
-			arch                 = machineSet.GetArchitectureOrFail()
-		)
-
-		exutil.By("Clone the first machineset")
-		clonedMS, err := machineSet.Duplicate(clonedMSName)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
-		defer clonedMS.Delete()
-		logger.Infof("OK!\n")
-
-		exutil.By("Patch different architecture in the cloneed machineset to check error is not reported")
-		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a")
-
-		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=amd64, topology.ebs.csi.aws.com/zone=eu-central-1a")
-
-		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=amd64")
-
-		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=s390x,topology.ebs.csi.aws.com/zone=eu-central-1a,node.kubernetes.io/instance-type=m5.large")
-
-		exutil.By("Set the original architecture in the cloneed machineset")
-		setArchitectureAndCheckStatus(clonedMS, machineConfiguration, arch.String())
+		testBootImageControllerMultipleLabels(oc, MAPI)
 	})
 })
+
+// bootimagesCloneName returns the name for resources cloned by the bootimages test cases,
+// derived from the Polarion ID of the running test. Names are kept minimal because they are
+// embedded in the machine and node names, whose length is limited in some platforms (e.g. GCP).
+// A suffix is only needed when a test clones several resources of the same kind.
+func bootimagesCloneName(suffix string) string {
+	return "tc-" + GetCurrentTestPolarionIDNumber() + suffix
+}
+
+// relabelRhel10MachineSetsAsRhel9 relabels all machinesets carrying the rhel-10 osstream
+// label as rhel-9, so that the boot image tests can manage them. The initial label values
+// are restored when the test finishes.
+func relabelRhel10MachineSetsAsRhel9(oc *exutil.CLI) {
+	exutil.By("Relabeling the rhel-10 machinesets as rhel-9")
+	for _, item := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc)) {
+		ms := item
+		stream, err := ms.GetOSStreamLabel()
+		if err != nil || stream != OSImageStreamRHEL10 {
+			continue
+		}
+		logger.Infof("Relabeling %s from %s to %s", ms.GetName(), stream, OSImageStreamRHEL9)
+		o.Expect(ms.AddOSStreamLabel(OSImageStreamRHEL9)).To(o.Succeed(),
+			"Error relabeling %s as %s", ms.GetName(), OSImageStreamRHEL9)
+		g.DeferCleanup(func() {
+			exutil.By(fmt.Sprintf("Restoring the %s osstream label in %s", stream, ms.GetName()))
+			o.Expect(ms.AddOSStreamLabel(stream)).To(o.Succeed(),
+				"Error restoring the osstream label in %s", ms.GetName())
+		})
+	}
+	logger.Infof("OK!\n")
+}
+
+// testManagedBootImagesRestoreAll hosts the common logic of the
+// "ManagedBootImages. Restore All MachineSet images" test case. It runs against the
+// machine management API selected by apiType.
+func testManagedBootImagesRestoreAll(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		machineConfiguration       = GetMachineConfiguration(oc.AsAdmin())
+		wMcp                       = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		machineSet                 = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+		backdatedImageName         = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+		fakeImageNameNoUpdate      = getFakeNoUpdateBootImage(oc.AsAdmin(), GetCurrentTestPolarionIDNumber())
+		clonedMSName               = bootimagesCloneName("")
+		clonedWrongBootImageMSName = bootimagesCloneName("-wrong")
+		clonedOwnedMSName          = bootimagesCloneName("-owned")
+		initialNodeCount           = len(wMcp.GetNodesOrFail())
+	)
+
+	exutil.By("Prepare to restore the original Machinesets")
+	for _, item := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiType)) {
+		ms := item
+		logger.Infof("Preparing to restore machineset %s", ms.GetName())
+		defer ms.SetSpec(ms.GetSpecOrFail())
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("Opt-in boot images update")
+	o.Expect(
+		machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup()),
+	).To(o.Succeed(), "Error configuring ALL managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone first machineset")
+	clonedMS, err := machineSet.Duplicate(clonedMSName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMS.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone first machineset but using a wrong ")
+	clonedWrongImageMS, err := machineSet.DuplicateWithBootImage(clonedWrongBootImageMSName, backdatedImageName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s using a custom boot image", machineSet)
+	defer clonedWrongImageMS.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone first machineset, an owner reference will be added later to this new machineset")
+	logger.Infof("Cloning machineset")
+	clonedOwnedMS, err := machineSet.Duplicate(clonedOwnedMSName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedOwnedMS.Delete()
+	logger.Infof("Setting a fake owner")
+
+	logger.Infof("OK!\n")
+
+	exutil.By("All machinesets should use the right boot image")
+	for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiType)) {
+		logger.Infof("Checking boot image in machineset %s", ms.GetName())
+		// Check that the current boot image is the right one.
+		// Original machinesets were never set to backdatedImageName, so pass empty string.
+		CheckCurrentOSImageIsUpdated(ms, "")
+	}
+	logger.Infof("OK!\n")
+
+	// We add the owner once it has been updated to avoid race conditions
+	exutil.By("Patch last cloned machineset to add an owner reference")
+	o.Expect(
+		clonedOwnedMS.Patch("merge", `{"metadata":{"ownerReferences": [{"apiVersion": "fake","blockOwnerDeletion": true,"controller": true,"kind": "fakekind","name": "master","uid": "fake-uuid"}]}}`),
+	).To(o.Succeed(), "Error patching %s with a fake owner", clonedOwnedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Patch cloned machinesets to use a wrong boot image")
+	o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedMS)
+
+	o.Expect(clonedWrongImageMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedWrongImageMS)
+
+	o.Expect(clonedOwnedMS.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedOwnedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("All machinesets should use the right boot image except the one with an owner")
+	clonedNames := map[string]bool{clonedMSName: true, clonedWrongBootImageMSName: true, clonedOwnedMSName: true}
+	for _, ms := range OrFail[[]ManagedMachineResource](GetAllManagedMachineResources(oc, apiType)) {
+		logger.Infof("Checking boot image in machineset %s", ms.GetName())
+
+		if ms.GetName() == clonedOwnedMSName {
+			CheckCurrentOSImageIsNotUpdated(ms, fakeImageNameNoUpdate)
+		} else if clonedNames[ms.GetName()] {
+			// Cloned machinesets were patched with backdatedImageName
+			CheckCurrentOSImageIsUpdated(ms, backdatedImageName)
+			o.Eventually(ms.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
+				"%s should NOT be using the worker-user-data-managed secret after updating the image", ms)
+		} else {
+			// Original machinesets were never patched
+			CheckCurrentOSImageIsUpdated(ms, "")
+		}
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("Scale up one of the fixed machinesets to make sure that they are working fine")
+	logger.Infof("Scaling up machineset %s", clonedMS.GetName())
+	defer SafeCleanup(func() {
+		o.Expect(clonedMS.ScaleTo(0)).To(o.Succeed(),
+			"Error scaling down MachineSet %s", clonedMS.GetName())
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+			"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+	})
+	o.Expect(clonedMS.ScaleTo(1)).To(o.Succeed(),
+		"Error scaling up MachineSet %s", clonedMS.GetName())
+	logger.Infof("Waiting %s machineset for being ready", clonedMS)
+	o.Eventually(clonedMS.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMS.GetName())
+	// When the node is created it is still executing rpm-ostree commands before joining
+	// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
+	// Hence, we wait for nodes to be updated before reverting to the initial state
+	o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+		"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
+	o.Eventually(clonedMS.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
+	logger.Infof("OK!\n")
+}
+
+// testManagedBootImagesRestorePartial hosts the common logic of the
+// "ManagedBootImages. Restore Partial MachineSet images" test case. It runs against the
+// machine management API selected by apiType.
+func testManagedBootImagesRestorePartial(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		machineConfiguration   = GetMachineConfiguration(oc.AsAdmin())
+		wMcp                   = NewMachineConfigPool(oc.AsAdmin(), MachineConfigPoolWorker)
+		machineSet             = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+		backdatedImageName     = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+		fakeImageNameNoUpdate  = getFakeNoUpdateBootImage(oc.AsAdmin(), GetCurrentTestPolarionIDNumber())
+		clonedMSLabelName      = bootimagesCloneName("-label")
+		clonedMSNoLabelName    = bootimagesCloneName("-no-label")
+		clonedMSLabelOwnedName = bootimagesCloneName("-label-owned")
+		labelName              = "test"
+		labelValue             = "update"
+		initialNodeCount       = len(wMcp.GetNodesOrFail())
+	)
+
+	exutil.By("Opt-in boot images update")
+
+	o.Expect(
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
+	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone the first machineset twice")
+	clonedMSLabel, err := machineSet.Duplicate(clonedMSLabelName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMSLabel.Delete()
+
+	clonedMSNoLabel, err := machineSet.Duplicate(clonedMSNoLabelName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMSNoLabel.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone first machineset again and set an owner for the cloned machineset")
+	logger.Infof("Cloning machineset")
+	clonedMSLabelOwned, err := machineSet.Duplicate(clonedMSLabelOwnedName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMSLabelOwned.Delete()
+	logger.Infof("Setting a fake owner")
+
+	o.Expect(
+		clonedMSLabelOwned.Patch("merge", `{"metadata":{"ownerReferences": [{"apiVersion": "fake","blockOwnerDeletion": true,"controller": true,"kind": "fakekind","name": "master","uid": "fake-uuid"}]}}`),
+	).To(o.Succeed(), "Error patching %s with a fake owner", clonedMSLabelOwned)
+	logger.Infof("OK!\n")
+
+	exutil.By("Label one of the cloned images and the clonned image with the owner configuration")
+	o.Expect(clonedMSLabel.AddLabel(labelName, labelValue)).To(o.Succeed(),
+		"Error labeling %s", clonedMSLabel)
+	o.Expect(clonedMSLabelOwned.AddLabel(labelName, labelValue)).To(o.Succeed(),
+		"Error labeling %s", clonedMSLabel)
+	logger.Infof("OK!\n")
+
+	exutil.By("Patch the clonned machineset to configure a new boot image")
+	o.Expect(clonedMSLabel.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedMSLabel)
+
+	o.Expect(clonedMSNoLabel.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedMSNoLabel)
+
+	o.Expect(clonedMSLabelOwned.SetCoreOsBootImage(fakeImageNameNoUpdate)).To(o.Succeed(),
+		"Error setting a new boot image in %s", clonedMSLabelOwned)
+	logger.Infof("OK!\n")
+
+	exutil.By("The labeled machineset without owner should be updated")
+	CheckCurrentOSImageIsUpdated(clonedMSLabel, backdatedImageName)
+	// Check that the user-data secret is the right one
+	o.Eventually(clonedMSLabel.GetUserDataSecret, "3m", "20s").ShouldNot(o.ContainSubstring("worker-user-data-managed"),
+		"%s should NOT be using the worker-user-data-managed secret after updating the image", clonedMSLabel)
+
+	logger.Infof("OK!\n")
+
+	exutil.By("The labeled machineset with owner should NOT be updated")
+	CheckCurrentOSImageIsNotUpdated(clonedMSLabelOwned, fakeImageNameNoUpdate)
+	logger.Infof("OK!\n")
+
+	exutil.By("The machineset without label should NOT be updated")
+	CheckCurrentOSImageIsNotUpdated(clonedMSNoLabel, fakeImageNameNoUpdate)
+	logger.Infof("OK!\n")
+
+	exutil.By("Scale up the fixed machinessetset to make sure that it is working fine")
+	logger.Infof("Scaling up machineset %s", clonedMSLabel.GetName())
+	defer SafeCleanup(func() {
+		o.Expect(clonedMSLabel.ScaleTo(0)).To(o.Succeed(),
+			"Error scaling down MachineSet %s", clonedMSLabel.GetName())
+		o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+			"MCP counts did not settle after scale-down.\n%s", wMcp.PrettyString())
+	})
+	o.Expect(clonedMSLabel.ScaleTo(1)).To(o.Succeed(),
+		"Error scaling up MachineSet %s", clonedMSLabel.GetName())
+	logger.Infof("Waiting %s machineset for being ready", clonedMSLabel)
+	o.Eventually(clonedMSLabel.GetIsReady, "20m", "2m").Should(o.BeTrue(), "MachineSet %s is not ready", clonedMSLabel.GetName())
+	// When the node is created it is still executing rpm-ostree commands before joining
+	// If we delete the node (scale to 0) before MCO has fully finished its job, it can degrade the MCP
+	// Hence, we wait for nodes to be updated before reverting to the initial state
+	o.Expect(wMcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
+		"MCP counts did not settle after scale-up.\n%s", wMcp.PrettyString())
+	o.Eventually(clonedMSLabel.AllNodesUpdated, "10m", "30s").Should(o.BeTrue(), "Machineset's nodes were never updated")
+	logger.Infof("OK!\n")
+}
+
+// testManagedBootImagesFixErrors hosts the common logic of the "ManagedBootImages. Fix errors"
+// test case. It runs against the machine management API selected by apiType.
+func testManagedBootImagesFixErrors(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
+		machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+		backdatedImageName   = getBackdatedBootImage(oc.AsAdmin(), machineSet)
+		clonedMSName         = bootimagesCloneName("")
+		labelName            = "test"
+		labelValue           = "update"
+		fakearch             = "fake-arch"
+		arch                 = machineSet.GetArchitectureOrFail()
+		msType               = "MAPI"
+	)
+	if machineSet.GetAPIGroup() == CAPIApiGroup {
+		msType = "CAPI"
+	}
+	syncContext := "machineset"
+	if msType == "CAPI" {
+		syncContext = "CAPI MachineSet"
+	}
+	expectedFailedMessageRegexp := regexp.QuoteMeta("Error(s): error syncing " + msType + " MachineSet " +
+		clonedMSName +
+		": failed to fetch arch during " + syncContext + " sync: invalid architecture value found in annotation: " + fakearch)
+
+	exutil.By("Opt-in boot images update")
+
+	o.Expect(
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
+	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone the first machineset")
+	clonedMS, err := machineSet.Duplicate(clonedMSName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMS.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Set a wrong architecture in the cloned image")
+	o.Expect(clonedMS.SetArchitecture(fakearch)).To(o.Succeed(), "Error setting a fake architecture in %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Set a wrong boot image in the cloned image")
+	o.Expect(clonedMS.SetCoreOsBootImage(backdatedImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that no failures are being reported")
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
+		"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
+		"Expected %s not to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+	logger.Infof("OK!\n")
+
+	exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
+	o.Expect(clonedMS.AddLabel(labelName, labelValue)).To(o.Succeed(),
+		"Error labeling %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that an error is reported in the machineconfiguration resource and that there is no progress")
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "True"),
+		"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "message", o.MatchRegexp(expectedFailedMessageRegexp)),
+		"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
+		"Progress status is not the expected one.\n%s", machineConfiguration.PrettyString())
+
+	// since it will be in "progressing" status for a very short time, we cant poll the value. We need to use the lasttransition date
+	lastProgressTransition := machineConfiguration.GetOrFail(`{.status.conditions[?(@.type=="BootImageUpdateProgressing")].lastTransitionTime}`)
+	logger.Infof("OK!\n")
+
+	exutil.By("Set the right architecture in the cloneed machineset")
+	o.Expect(clonedMS.SetArchitecture(arch.String())).To(o.Succeed(), "Error fixing the problem in the architecture in %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that no error is reported anymore in the machineconfiguration resource and the progress was OK")
+	// We need to poll requently since it will be on "progressing" status a very short time
+	o.Eventually(machineConfiguration, "20s", "1s").ShouldNot(HaveConditionField("BootImageUpdateProgressing", "lastTransitionTime", lastProgressTransition),
+		"Progress status did not change, but it should have been moved to 'true' and back to 'false' .\n%s", machineConfiguration.PrettyString())
+
+	o.Eventually(machineConfiguration, "10m", "10s").Should(HaveConditionField("BootImageUpdateProgressing", "status", "False"),
+		"Progress status is not the expected one.\n%s", machineConfiguration.PrettyString())
+
+	o.Eventually(machineConfiguration, "5m", "20s").Should(HaveConditionField("BootImageUpdateDegraded", "status", "False"),
+		"Expected %s to be BootImageUpdateDegraded.\n%s", machineConfiguration.PrettyString())
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that the boot image was updated")
+	CheckCurrentOSImageIsUpdated(clonedMS, backdatedImageName)
+	logger.Infof("OK!\n")
+}
+
+// testCorrectlyHandleMarketplaceBootimages hosts the common logic of the
+// "Correctly handle marketplace bootimages" test case. It runs against the machine
+// management API selected by apiType.
+func testCorrectlyHandleMarketplaceBootimages(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		clonedMSName     = bootimagesCloneName("")
+		clonedSecretName = bootimagesCloneName("")
+
+		fakeImageName = "fake-image" // not updateable
+
+		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
+		machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+		labelName            = "test"
+		labelValue           = "update"
+
+		userDataJSONVersionPath = `ignition.version`
+	)
+
+	exutil.By("Opt-in boot images update")
+	o.Expect(
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
+	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+
+	exutil.By("Clone the first machineset")
+	clonedMS, err := machineSet.Duplicate(clonedMSName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMS.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Set a 2.2.0 user-data secet in the new machine config")
+	logger.Infof("Duplicating the user-data secret")
+	managedSecret, err := clonedMS.GetManagedUserDataSecret()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error getting user-data secret from %s", clonedMS)
+
+	userDataModifyFunc := func(userData string) (string, error) { return convertUserDataToNewVersion(userData, "2.2.0") }
+	clonedSecret, err := managedSecret.Duplicate(clonedSecretName, userDataModifyFunc)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s with a wrong ignition V2 version", managedSecret.GetName())
+	defer clonedSecret.Delete()
+	logger.Infof("OK!\n")
+
+	logger.Infof("Configuring the cloned machineset to use the new user-data secret")
+	o.Expect(clonedMS.SetUserDataSecret(clonedSecretName)).To(o.Succeed(),
+		"Error patching MachineSet %s to use the new secret %s", clonedMS.GetName(), clonedSecretName)
+	logger.Infof("OK!\n")
+
+	exutil.By("Set a wrong boot image in the cloned image. Non-updateable image")
+	o.Expect(clonedMS.SetCoreOsBootImage(fakeImageName)).To(o.Succeed(), "Error setting a fake boot image in %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Label the cloned machineset so that its boot image is updated by MCO")
+	o.Expect(clonedMS.AddLabel(labelName, labelValue)).To(o.Succeed(),
+		"Error labeling %s", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that the bootimage was not updated")
+	o.Consistently(clonedMS.GetCoreOsBootImage, "5m", "20s").Should(o.ContainSubstring(fakeImageName),
+		"%s was updated, but it shouldn't be updated", clonedMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Check that the cloned user-data secret was not updated")
+	o.Consistently(clonedSecret.GetUserData, "2m", "15s").Should(
+		HavePathWithValue(userDataJSONVersionPath, o.Equal("2.2.0")),
+		"The user-data secret was not updated, but it shouldn't be updated")
+	logger.Infof("OK!\n")
+}
+
+// testBootImageControllerMultipleLabels hosts the common logic of the "Check in the boot image
+// controller to work with multiple labels for annotation" test case. It runs against the
+// machine management API selected by apiType.
+func testBootImageControllerMultipleLabels(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		clonedMSName         = bootimagesCloneName("")
+		machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
+		arch                 = machineSet.GetArchitectureOrFail()
+	)
+
+	exutil.By("Clone the first machineset")
+	clonedMS, err := machineSet.Duplicate(clonedMSName)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Error duplicating %s", machineSet)
+	defer clonedMS.Delete()
+	logger.Infof("OK!\n")
+
+	exutil.By("Patch different architecture in the cloneed machineset to check error is not reported")
+	setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=amd64,topology.ebs.csi.aws.com/zone=eu-central-1a")
+
+	setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=amd64, topology.ebs.csi.aws.com/zone=eu-central-1a")
+
+	setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "topology.ebs.csi.aws.com/zone=eu-central-1a,kubernetes.io/arch=amd64")
+
+	setArchitectureAndCheckStatus(clonedMS, machineConfiguration, "kubernetes.io/arch=s390x,topology.ebs.csi.aws.com/zone=eu-central-1a,node.kubernetes.io/instance-type=m5.large")
+
+	exutil.By("Set the original architecture in the cloneed machineset")
+	setArchitectureAndCheckStatus(clonedMS, machineConfiguration, arch.String())
+}
+
+// testVerifyDefaultBootImageUpdateOptIn hosts the common logic of the
+// "Verify in boot-image by default update is opt-in" test case. It runs against the
+// machine management API selected by apiType.
+func testVerifyDefaultBootImageUpdateOptIn(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
+		machineSet           = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+
+		apiGroup = machineSet.GetAPIGroup()
+	)
+
+	exutil.By("To check the default opt-in in machieconfiguration")
+	if !strings.Contains(machineConfiguration.GetSpecOrFail(), "managedBootImages") {
+		checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
+	} else {
+		o.Expect(machineConfiguration.GetSpecOrFail()).Should(o.ContainSubstring(machineConfiguration.GetOrFail(`{.status.managedBootImagesStatus.machineManagers[0].selection.mode}`)))
+	}
+	logger.Infof("OK!\n")
+
+	exutil.By("To patch the Partial Mode in machineConfiguration")
+	o.Expect(
+		machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, apiGroup, "", ""),
+	).To(o.Succeed(), "Error configuring Partial managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+	checkManagedBootImagesStatus(machineConfiguration, apiGroup, "Partial")
+	logger.Infof("OK\n")
+
+	exutil.By("To patch the All Mode in machieConfiguration")
+	o.Expect(
+		machineConfiguration.SetAllManagedBootImagesConfig(MachineSetResource, apiGroup),
+	).To(o.Succeed(), "Error configuring All managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+	checkManagedBootImagesStatus(machineConfiguration, apiGroup, "All")
+	logger.Infof("OK\n")
+
+	exutil.By("Opt-out boot images update")
+	o.Expect(machineConfiguration.SetNoneManagedBootImagesConfig(MachineSetResource)).To(o.Succeed(), "Error configuring None managedBootImages in the 'cluster' MachineConfiguration resource")
+	logger.Infof("OK!\n")
+	checkManagedBootImagesStatus(machineConfiguration, apiGroup, "None")
+	logger.Infof("OK\n")
+}
 
 // getCoreOsBootImageFromConfigMap retrieves the boot image from the coreos-bootimages ConfigMap for the given platform and architecture
 func getCoreOsBootImageFromConfigMap(platform, region string, arch architecture.Architecture, coreosBootimagesCM *ConfigMap) (string, error) {
