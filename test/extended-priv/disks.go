@@ -405,6 +405,43 @@ func checkBareMetalDevicesUnmounted(node *Node, state bareMetalCleanupState) err
 	return nil
 }
 
+// checkBareMetalDiskIdentity rechecks the selected disk and partition before a wipe.
+func checkBareMetalDiskIdentity(node *Node, diskPath string, expected bareMetalCleanupDisk) error {
+	resolvedDisk, err := node.ResolveHostPath(diskPath)
+	if err != nil {
+		return err
+	}
+	if expected.partition == nil {
+		return fmt.Errorf("cannot verify partition on %s", diskPath)
+	}
+	resolvedPart, err := node.ResolveHostPath(diskPath + "-part1")
+	if err != nil {
+		return err
+	}
+	if resolvedDisk != expected.device.Name || resolvedPart != expected.partition.Name {
+		return fmt.Errorf("disk paths changed during cleanup: %s, %s", resolvedDisk, resolvedPart)
+	}
+	devices, err := node.GetBlockDevices()
+	if err != nil {
+		return err
+	}
+	for _, disk := range devices {
+		if disk.Name != resolvedDisk {
+			continue
+		}
+		if disk.Type != "disk" || disk.MajorMinor != expected.device.MajorMinor || len(disk.Children) != 1 {
+			return fmt.Errorf("disk identity or topology changed for %s", diskPath)
+		}
+		part := disk.Children[0]
+		if part.Name != resolvedPart || part.Type != "part" || part.MajorMinor != expected.partition.MajorMinor ||
+			part.PartLabel != expected.partition.PartLabel || len(part.Children) != 0 {
+			return fmt.Errorf("partition identity or topology changed for %s", diskPath)
+		}
+		return nil
+	}
+	return fmt.Errorf("cannot find disk %s during cleanup", diskPath)
+}
+
 // cleanBareMetalTestDisks removes and verifies only this test's disk signatures.
 func cleanBareMetalTestDisks(node *Node, disks []string) error {
 	state, err := inspectBareMetalTestDisks(node, disks)
@@ -449,12 +486,15 @@ func cleanBareMetalTestDisks(node *Node, disks []string) error {
 		}
 		state = updated
 	}
-	for _, disk := range state.disks {
+	for i, disk := range state.disks {
 		if disk.partition != nil {
 			if err := checkBareMetalDevicesUnmounted(node, state); err != nil {
 				return err
 			}
 			if err := checkBareMetalSignatures(node, disk.partition.Name, "linux_raid_member"); err != nil {
+				return err
+			}
+			if err := checkBareMetalDiskIdentity(node, disks[i], disk); err != nil {
 				return err
 			}
 			if _, err := node.RunHostCommand("wipefs", "--all", disk.partition.Name); err != nil {
@@ -465,12 +505,15 @@ func cleanBareMetalTestDisks(node *Node, disks []string) error {
 			}
 		}
 	}
-	for _, disk := range state.disks {
+	for i, disk := range state.disks {
 		if disk.partition != nil {
 			if err := checkBareMetalDevicesUnmounted(node, state); err != nil {
 				return err
 			}
 			if err := checkBareMetalSignatures(node, disk.device.Name, "gpt", "PMBR"); err != nil {
+				return err
+			}
+			if err := checkBareMetalDiskIdentity(node, disks[i], disk); err != nil {
 				return err
 			}
 			if _, err := node.RunHostCommand("wipefs", "--all", disk.device.Name); err != nil {

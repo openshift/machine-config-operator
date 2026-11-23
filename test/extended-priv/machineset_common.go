@@ -25,6 +25,7 @@ type ManagedMachineResource interface {
 	BootImageResource
 	GetName() string
 	GetNamespace() string
+	Get(jsonPath string, extraParams ...string) (string, error)
 	GetSpecOrFail() string
 	SetSpec(spec string) error
 	Delete(extraParams ...string) error

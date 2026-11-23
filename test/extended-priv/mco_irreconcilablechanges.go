@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	"github.com/tidwall/gjson"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
@@ -95,17 +97,31 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			if !IsCapabilityEnabled(oc, "MachineAPI") {
 				g.Skip("MachineAPI capability is disabled; bare-metal workers cannot be scaled")
 			}
-			var err error
-			machineset, err = GetValidManagedMachineResource(oc, MAPI)
-			if err != nil {
-				g.Skip(fmt.Sprintf("No suitable bare-metal MAPI MachineSet: %s", err))
+			candidates, err := GetAllManagedMachineResources(oc, MAPI)
+			o.Expect(err).To(o.Succeed(), "Error listing bare-metal MachineSets")
+			for _, candidate := range candidates {
+				ms := candidate.(*MachineSet)
+				data, err := ms.GetCleanJSON()
+				o.Expect(err).To(o.Succeed(), "Error reading MachineSet %s", ms)
+				o.Expect(gjson.Valid(data)).To(o.BeTrue(), "Invalid MachineSet JSON for %s", ms)
+				replicas := gjson.Get(data, "spec.replicas")
+				if gjson.Get(data, `spec.template.metadata.labels.machine\.openshift\.io/cluster-api-machine-role`).String() != "worker" ||
+					replicas.Type != gjson.Number || replicas.Int() <= 0 ||
+					gjson.Get(data, "status.replicas").Int() != replicas.Int() ||
+					gjson.Get(data, "status.readyReplicas").Int() != replicas.Int() {
+					continue
+				}
+				bareMetalHost, err = FindAvailableBareMetalHost(oc, candidate, func(data string) error {
+					var diskErr error
+					bareMetalDisks, diskErr = bareMetalTestDisks(data)
+					return diskErr
+				})
+				o.Expect(err).To(o.Succeed(), "Error checking bare-metal test hosts")
+				if bareMetalHost != nil {
+					machineset = candidate
+					break
+				}
 			}
-			bareMetalHost, err = FindAvailableBareMetalHost(oc, machineset, func(data string) error {
-				var diskErr error
-				bareMetalDisks, diskErr = bareMetalTestDisks(data)
-				return diskErr
-			})
-			o.Expect(err).NotTo(o.HaveOccurred(), "Error checking bare-metal test hosts")
 			if bareMetalHost == nil {
 				g.Skip("No free CI spare worker has verified non-root test disks and a matching host selector")
 			}
@@ -140,7 +156,22 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		defer SafeCleanup(func() {
-			machineSetExists := newMS != nil && newMS.Exists()
+			machineSetExists := false
+			var lookupErr error
+			if newMS != nil {
+				lookupErr = Retry(3, 5*time.Second, func() error {
+					name, err := newMS.Get(`{.metadata.name}`, "--ignore-not-found=true", "--request-timeout=20s")
+					if err != nil {
+						return err
+					}
+					machineSetExists = name == newMS.GetName()
+					if name != "" && !machineSetExists {
+						return fmt.Errorf("unexpected MachineSet name %q", name)
+					}
+					return nil
+				})
+				o.Expect(lookupErr).To(o.Succeed(), "Cannot determine whether test MachineSet %s exists", newMS)
+			}
 			if machineSetExists {
 				if bareMetalHost != nil && scaleAttempted {
 					if testNode == nil {
@@ -180,7 +211,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 						return bareMetalHostAvailable(data), nil
 					}, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
 				}
-			} else if bareMetalHost != nil && scaleAttempted {
+			} else if lookupErr == nil && bareMetalHost != nil && scaleAttempted {
 				o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
 			}
 		})

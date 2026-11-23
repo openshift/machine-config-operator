@@ -214,6 +214,7 @@ func (n *Node) GetMounts() ([]NodeMount, error) {
 // MountForPath finds the most specific mount containing a path.
 func MountForPath(mounts []NodeMount, target string) (NodeMount, error) {
 	var selected NodeMount
+	ambiguous := false
 	for _, mount := range mounts {
 		mountPath := path.Clean(mount.Target)
 		if mountPath != "/" && target != mountPath && !strings.HasPrefix(target, mountPath+"/") {
@@ -222,9 +223,13 @@ func MountForPath(mounts []NodeMount, target string) (NodeMount, error) {
 		if len(mountPath) > len(selected.Target) {
 			selected = mount
 			selected.Target = mountPath
+			ambiguous = false
 		} else if mountPath == selected.Target && mount.MajorMinor != selected.MajorMinor {
-			return NodeMount{}, fmt.Errorf("multiple mounts cover %s", target)
+			ambiguous = true
 		}
+	}
+	if ambiguous {
+		return NodeMount{}, fmt.Errorf("multiple mounts cover %s", target)
 	}
 	if selected.Target == "" || selected.MajorMinor == "" {
 		return NodeMount{}, fmt.Errorf("cannot determine the block device backing %s", target)
