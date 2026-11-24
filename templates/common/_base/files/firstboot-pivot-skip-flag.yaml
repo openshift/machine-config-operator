@@ -1,0 +1,4 @@
+mode: 0644
+path: "/etc/machine-config-daemon/skip-firstboot-pivot"
+contents:
+  inline: "enabled"
