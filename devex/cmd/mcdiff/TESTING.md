@@ -24,7 +24,7 @@ Optional gates used before opening a PR:
 ```console
 go build ./devex/cmd/mcdiff/...
 go vet ./devex/cmd/mcdiff/...
-gofmt -s -l devex/cmd/mcdiff/
+find devex/cmd/mcdiff -name '*.go' -print0 | xargs -0 gofmt -s -l
 ```
 
 `gofmt -s -l` should print nothing.

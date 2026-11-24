@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"testing"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
@@ -87,10 +88,43 @@ func TestLastWritersOnePass(t *testing.T) {
 	unrelated := mcWithFile(t, "01-worker-kubelet", ctrlcommon.MachineConfigPoolWorker, "/etc/kubernetes/kubelet.conf", "kubelet\n")
 	infra := mcWithFile(t, "00-infra", "infra", sshdPath, "from-infra\n")
 
-	got := LastWriters([]*mcfgv1.MachineConfig{overlay, unrelated, base, infra})
+	got, err := LastWriters([]*mcfgv1.MachineConfig{overlay, unrelated, base, infra})
+	require.NoError(t, err)
 	assert.Equal(t, "00-infra", got[sshdPath])
 	assert.Equal(t, "01-worker-kubelet", got["/etc/kubernetes/kubelet.conf"])
-	assert.Empty(t, LastWriters(nil))
+
+	empty, err := LastWriters(nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
+func TestLastWritersAppendClearsEarlierWriter(t *testing.T) {
+	t.Parallel()
+
+	base := mcWithFile(t, "00-worker", ctrlcommon.MachineConfigPoolWorker, sshdPath, "PermitRootLogin no\n")
+	appended := mcWithAppend(t, "50-worker-ssh-append", ctrlcommon.MachineConfigPoolWorker, sshdPath, "# appended\n")
+
+	got, err := LastWriters([]*mcfgv1.MachineConfig{base, appended})
+	require.NoError(t, err)
+	_, ok := got[sshdPath]
+	assert.False(t, ok)
+
+	later := mcWithFile(t, "99-worker-ssh", ctrlcommon.MachineConfigPoolWorker, sshdPath, "from-later\n")
+	got, err = LastWriters([]*mcfgv1.MachineConfig{base, appended, later})
+	require.NoError(t, err)
+	assert.Equal(t, "99-worker-ssh", got[sshdPath])
+}
+
+func TestLastWritersReturnsParseError(t *testing.T) {
+	t.Parallel()
+
+	mc := mcWithFile(t, "00-worker", ctrlcommon.MachineConfigPoolWorker, sshdPath, "x\n")
+	mc.Spec.Config.Raw = []byte("{")
+
+	got, err := LastWriters([]*mcfgv1.MachineConfig{mc})
+	require.Error(t, err)
+	assert.Nil(t, got)
+	assert.Contains(t, err.Error(), "00-worker")
 }
 
 func TestAttributeRejectsMissingRoleLabel(t *testing.T) {
@@ -134,6 +168,38 @@ func TestSortForMergeDoesNotMutateInput(t *testing.T) {
 	assert.Equal(t, "99-worker-ssh", ordered[1].Name)
 	assert.Equal(t, "99-worker-ssh", in[0].Name)
 	assert.Equal(t, "00-worker", in[1].Name)
+}
+
+func mcWithAppend(t *testing.T, name, role, path, fragment string) *mcfgv1.MachineConfig {
+	t.Helper()
+
+	// Percent-encode so Ignition accepts the data URL. The fragment is not decoded here.
+	source := "data:," + url.PathEscape(fragment)
+	ign := ign3types.Config{
+		Ignition: ign3types.Ignition{Version: ign3types.MaxVersion.String()},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{{
+				Node: ign3types.Node{Path: path},
+				FileEmbedded1: ign3types.FileEmbedded1{
+					Append: []ign3types.Resource{{Source: &source}},
+				},
+			}},
+		},
+	}
+	raw, err := json.Marshal(ign)
+	require.NoError(t, err)
+
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				ctrlcommon.MachineConfigRoleLabel: role,
+			},
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{Raw: raw},
+		},
+	}
 }
 
 func mcWithFile(t *testing.T, name, role, path, contents string) *mcfgv1.MachineConfig {

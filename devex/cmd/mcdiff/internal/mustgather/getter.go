@@ -2,6 +2,7 @@ package mustgather
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,9 @@ func (g *ClusterGetter) GetMachineConfigPool(ctx context.Context, name string) (
 	}
 	p, err := g.mg.findClusterObject("machineconfiguration.openshift.io", "machineconfigpools", name)
 	if err != nil {
+		if errors.Is(err, errInvalidObjectName) {
+			return nil, fmt.Errorf("failed to get MachineConfigPool %q: %w", name, err)
+		}
 		return nil, fmt.Errorf("failed to get MachineConfigPool %q: %w: %w", name, cluster.ErrPoolNotFound, err)
 	}
 	var pool mcfgv1.MachineConfigPool
@@ -37,7 +41,7 @@ func (g *ClusterGetter) GetMachineConfigPool(ctx context.Context, name string) (
 	if pool.Name == "" {
 		pool.Name = name
 	}
-	klog.V(4).Infof("loaded MachineConfigPool %s from %s", name, p)
+	klog.V(4).Info("loaded MachineConfigPool from must-gather")
 	return &pool, nil
 }
 
@@ -48,7 +52,11 @@ func (g *ClusterGetter) GetMachineConfig(ctx context.Context, name string) (*mcf
 	}
 	p, err := g.mg.findClusterObject("machineconfiguration.openshift.io", "machineconfigs", name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get MachineConfig %q from must-gather: %w: %w", name, cluster.ErrRenderedNotFound, apierrors.NewNotFound(mcfgv1.Resource("machineconfigs"), name))
+		if errors.Is(err, errInvalidObjectName) {
+			return nil, fmt.Errorf("failed to get MachineConfig %q from must-gather: %w", name, err)
+		}
+		return nil, fmt.Errorf("failed to get MachineConfig %q from must-gather: %w: %w: %w",
+			name, cluster.ErrRenderedNotFound, apierrors.NewNotFound(mcfgv1.Resource("machineconfigs"), name), err)
 	}
 	var mc mcfgv1.MachineConfig
 	if err := decodeFile(p, &mc); err != nil {
@@ -57,7 +65,7 @@ func (g *ClusterGetter) GetMachineConfig(ctx context.Context, name string) (*mcf
 	if mc.Name == "" {
 		mc.Name = name
 	}
-	klog.V(4).Infof("loaded MachineConfig %s from %s", name, p)
+	klog.V(4).Info("loaded MachineConfig from must-gather")
 	return &mc, nil
 }
 
@@ -85,14 +93,24 @@ func (g *ClusterGetter) ListMachineConfigPools(ctx context.Context) ([]*mcfgv1.M
 }
 
 func (m *MustGather) findClusterObject(group, resource, name string) (string, error) {
+	if err := validateObjectName(name); err != nil {
+		return "", err
+	}
 	var tried []string
 	for _, scoped := range m.scopedDirs() {
 		base := filepath.Join(scoped, group, resource)
 		for _, ext := range []string{".yaml", ".yml", ".json"} {
 			candidate := filepath.Join(base, name+ext)
+			if err := withinRoot(m.Root, candidate); err != nil {
+				return "", err
+			}
 			tried = append(tried, candidate)
-			if existingFile(candidate) != "" {
-				return candidate, nil
+			found, ok, err := m.readableFile(candidate)
+			if err != nil {
+				return "", err
+			}
+			if ok {
+				return found, nil
 			}
 		}
 	}

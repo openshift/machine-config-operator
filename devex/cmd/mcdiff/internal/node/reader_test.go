@@ -148,6 +148,33 @@ func TestReadFileReusesMCDPod(t *testing.T) {
 	require.Len(t, execer.cmds, 4)
 }
 
+func TestReadFileRetriesWhenMCDPodIsReplaced(t *testing.T) {
+	t.Parallel()
+
+	oldPod := testMCDPod("worker-0", corev1.PodRunning)
+	newPod := testMCDPod("worker-0", corev1.PodRunning)
+	newPod.Name = "machine-config-daemon-worker-0-replaced"
+	kube := fake.NewSimpleClientset(testNode("worker-0"), oldPod)
+	execer := &scriptedExec{catOut: []byte("ok\n")}
+	execer.onStat = func(call int) ([]byte, []byte, error) {
+		if call == 1 {
+			require.NoError(t, kube.CoreV1().Pods(ctrlcommon.MCONamespace).Delete(context.Background(), oldPod.Name, metav1.DeleteOptions{}))
+			_, err := kube.CoreV1().Pods(ctrlcommon.MCONamespace).Create(context.Background(), newPod, metav1.CreateOptions{})
+			require.NoError(t, err)
+			return nil, nil, fmt.Errorf("pods %q not found", oldPod.Name)
+		}
+		return []byte("644\n"), nil, nil
+	}
+	r := &kubeReader{kube: kube, execer: execer, timeout: time.Second}
+
+	content, mode, err := r.ReadFile(context.Background(), "worker-0", "/etc/ssh/sshd_config")
+	require.NoError(t, err)
+	assert.Equal(t, []byte("ok\n"), content)
+	require.NotNil(t, mode)
+	assert.Equal(t, 0o644, *mode)
+	assert.Contains(t, execer.pods, newPod.Name)
+}
+
 type scriptedExec struct {
 	statOut    []byte
 	statErrOut []byte
@@ -156,11 +183,19 @@ type scriptedExec struct {
 	catErrOut  []byte
 	catErr     error
 	cmds       [][]string
+	pods       []string
+	onStat     func(call int) ([]byte, []byte, error)
+	statCalls  int
 }
 
-func (s *scriptedExec) Exec(_ context.Context, _, _, _ string, command []string) ([]byte, []byte, error) {
+func (s *scriptedExec) Exec(_ context.Context, _, pod, _ string, command []string) ([]byte, []byte, error) {
 	s.cmds = append(s.cmds, append([]string(nil), command...))
+	s.pods = append(s.pods, pod)
 	if len(command) > 0 && command[0] == "stat" {
+		s.statCalls++
+		if s.onStat != nil {
+			return s.onStat(s.statCalls)
+		}
 		return s.statOut, s.statErrOut, s.statErr
 	}
 	return s.catOut, s.catErrOut, s.catErr

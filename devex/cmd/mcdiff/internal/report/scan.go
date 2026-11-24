@@ -46,6 +46,9 @@ func formatScanText(result *scanner.Result, opts ScanOptions) string {
 	fmt.Fprintf(&b, "Node:             %s\n", result.Node)
 	fmt.Fprintf(&b, "Pool:             %s\n", result.Pool)
 	fmt.Fprintf(&b, "Rendered MC:      %s\n", result.Rendered)
+	if result.AttributionErr != nil {
+		fmt.Fprintf(&b, "Attribution:      unavailable (%s)\n", result.AttributionErr.Error())
+	}
 	if opts.MustGather != "" {
 		fmt.Fprintf(&b, "Archive:          Must-Gather Archive (%s)\n", opts.MustGather)
 	}
@@ -156,6 +159,7 @@ type scanJSON struct {
 	Missing               int           `json:"missing"`
 	Unreadable            int           `json:"unreadable"`
 	Status                string        `json:"status"`
+	AttributionError      string        `json:"attributionError,omitempty"`
 	MismatchedFiles       []findingJSON `json:"mismatchedFiles"`
 	MissingFiles          []findingJSON `json:"missingFiles"`
 	UnreadableFiles       []findingJSON `json:"unreadableFiles,omitempty"`
@@ -190,6 +194,9 @@ func toScanJSON(result *scanner.Result, opts ScanOptions) scanJSON {
 		MismatchedFiles:       findingJSONList(result.MismatchedFiles, true, opts.ShowDiffs),
 		MissingFiles:          findingJSONList(result.MissingFiles, false, false),
 		MustGatherDir:         opts.MustGather,
+	}
+	if result.AttributionErr != nil {
+		out.AttributionError = result.AttributionErr.Error()
 	}
 	if out.Configuration == "" {
 		out.Configuration = "current"

@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -77,21 +78,34 @@ func (r *kubeReader) ReadFile(ctx context.Context, nodeName, filePath string) ([
 		defer cancel()
 	}
 
+	return r.readHostFile(ctx, nodeName, filePath, hostPath, true)
+}
+
+func (r *kubeReader) readHostFile(ctx context.Context, nodeName, filePath, hostPath string, allowRetry bool) ([]byte, *int, error) {
 	pod, err := r.podForNode(ctx, nodeName)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	klog.V(2).Infof("reading %s on node %s via machine-config-daemon pod %s", filePath, nodeName, pod.Name)
+	klog.V(2).Info("reading host file via machine-config-daemon")
 
 	mode, err := r.statHostFile(ctx, pod.Name, nodeName, filePath, hostPath)
 	if err != nil {
+		if allowRetry && podExecUnavailable(err) {
+			r.dropPod(nodeName)
+			return r.readHostFile(ctx, nodeName, filePath, hostPath, false)
+		}
 		return nil, nil, err
 	}
 
 	stdout, stderr, err := r.execer.Exec(ctx, ctrlcommon.MCONamespace, pod.Name, mcdContainer, []string{"cat", hostPath})
 	if err != nil {
-		return nil, mode, classifyExecError(nodeName, filePath, stderr, err)
+		classified := classifyExecError(nodeName, filePath, stderr, err)
+		if allowRetry && podExecUnavailable(classified) {
+			r.dropPod(nodeName)
+			return r.readHostFile(ctx, nodeName, filePath, hostPath, false)
+		}
+		return nil, mode, classified
 	}
 	if looksMissing(stderr) {
 		return nil, nil, wrapFileNotFound(nodeName, filePath)
@@ -103,6 +117,29 @@ func (r *kubeReader) ReadFile(ctx context.Context, nodeName, filePath string) ([
 		stdout = []byte{}
 	}
 	return stdout, mode, nil
+}
+
+func (r *kubeReader) dropPod(nodeName string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.podByNode, nodeName)
+}
+
+// podExecUnavailable reports whether an exec failure means the cached
+// machine-config-daemon pod can no longer be used. Missing files and
+// permission errors are not pod failures.
+func podExecUnavailable(err error) bool {
+	if err == nil || errors.Is(err, ErrFileNotFound) || errors.Is(err, ErrPermissionDenied) {
+		return false
+	}
+	if apierrors.IsNotFound(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "no such file") {
+		return false
+	}
+	return strings.Contains(msg, "not found") && (strings.Contains(msg, "pod") || strings.Contains(msg, "container"))
 }
 
 func (r *kubeReader) statHostFile(ctx context.Context, podName, nodeName, filePath, hostPath string) (*int, error) {
@@ -118,7 +155,7 @@ func (r *kubeReader) statHostFile(ctx context.Context, podName, nodeName, filePa
 	}
 	mode, parseErr := parseOctalMode(strings.TrimSpace(string(stdout)))
 	if parseErr != nil {
-		klog.V(4).Infof("could not parse mode from stat on node %s path %s: %v", nodeName, filePath, parseErr)
+		klog.V(4).Info("could not parse file mode from stat output")
 		return nil, nil
 	}
 	return &mode, nil

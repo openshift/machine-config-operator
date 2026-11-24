@@ -120,7 +120,7 @@ func TestClusterGetterJSON(t *testing.T) {
 	assert.Equal(t, "00-worker", got.Name)
 }
 
-func TestClusterGetterMissingMachineConfigIsNotFound(t *testing.T) {
+func TestClusterGetterMissingMachineConfigIsRenderedNotFound(t *testing.T) {
 	t.Parallel()
 
 	root := writePoolFixture(t, t.TempDir(), "x\n", nil)
@@ -128,8 +128,48 @@ func TestClusterGetterMissingMachineConfigIsNotFound(t *testing.T) {
 	require.NoError(t, err)
 	_, err = mg.Getter().GetMachineConfig(context.Background(), "does-not-exist")
 	require.Error(t, err)
-	assert.True(t, apierrors.IsNotFound(err) || err != nil)
 	assert.ErrorIs(t, err, cluster.ErrRenderedNotFound)
+	assert.True(t, apierrors.IsNotFound(err))
+	assert.Contains(t, err.Error(), "does-not-exist")
+	assert.Contains(t, err.Error(), "looked in")
+}
+
+func TestMustGatherRejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "gather")
+	secret := filepath.Join(parent, "secret.yaml")
+	require.NoError(t, os.WriteFile(secret, []byte("kind: Secret\napiVersion: v1\n"), 0o600))
+	writePoolFixture(t, root, "expected\n", map[string]string{"worker-0": "on-node\n"})
+
+	mcDir := filepath.Join(root, "cluster-scoped-resources", "machineconfiguration.openshift.io", "machineconfigs")
+	require.NoError(t, os.Symlink(secret, filepath.Join(mcDir, "escape.yaml")))
+
+	hostFile := filepath.Join(root, "nodes", "worker-0", "host", "etc", "ssh", "sshd_config")
+	require.NoError(t, os.Remove(hostFile))
+	require.NoError(t, os.Symlink(secret, hostFile))
+
+	mg, err := Open(root)
+	require.NoError(t, err)
+
+	_, err = mg.Getter().GetMachineConfig(context.Background(), "../secret")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errInvalidObjectName)
+	assert.False(t, apierrors.IsNotFound(err))
+
+	_, err = mg.Getter().GetMachineConfig(context.Background(), "escape")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "kind: Secret")
+
+	_, _, err = mg.NodeReader().ReadFile(context.Background(), "..", sshdPath)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errInvalidObjectName)
+
+	content, _, err := mg.NodeReader().ReadFile(context.Background(), "worker-0", sshdPath)
+	require.Error(t, err)
+	assert.NotContains(t, string(content), "kind: Secret")
+	assert.Contains(t, err.Error(), "escapes must-gather root")
 }
 
 func TestNodeReaderHostSnapshot(t *testing.T) {

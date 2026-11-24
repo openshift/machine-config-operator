@@ -1,12 +1,19 @@
 package mustgather
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"k8s.io/klog/v2"
 )
+
+// errInvalidObjectName is returned when an archive lookup name is not a single
+// path component. Names are joined onto the must-gather root, so separators
+// and ".." would escape that root.
+var errInvalidObjectName = errors.New("invalid object name")
 
 var scopedDirNames = []string{"cluster-scoped-resources", "cluster-scopes"}
 
@@ -35,7 +42,7 @@ func Open(dir string) (*MustGather, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.V(2).Infof("using must-gather root %s", root)
+	klog.V(2).Info("using must-gather archive")
 	return &MustGather{Path: dir, Root: root}, nil
 }
 
@@ -115,12 +122,65 @@ func (m *MustGather) scopedDirs() []string {
 	return dirs
 }
 
-func existingFile(candidates ...string) string {
-	for _, p := range candidates {
-		st, err := os.Stat(p)
-		if err == nil && st.Mode().IsRegular() {
-			return p
-		}
+func validateObjectName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("%w %q", errInvalidObjectName, name)
 	}
-	return ""
+	return nil
+}
+
+func withinRoot(root, candidate string) error {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	candAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(filepath.Clean(rootAbs), filepath.Clean(candAbs))
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("path %q escapes must-gather root", candidate)
+	}
+	return nil
+}
+
+// readableFile returns candidate when it is a regular file inside root.
+// Symlinks are followed only when the target is also a regular file inside root.
+func (m *MustGather) readableFile(candidate string) (string, bool, error) {
+	if m == nil {
+		return "", false, fmt.Errorf("must-gather archive is not configured")
+	}
+	if err := withinRoot(m.Root, candidate); err != nil {
+		return "", false, err
+	}
+	st, err := os.Lstat(candidate)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	pathToRead := candidate
+	if st.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			return "", false, err
+		}
+		if err := withinRoot(m.Root, resolved); err != nil {
+			return "", false, err
+		}
+		st, err = os.Stat(resolved)
+		if err != nil {
+			return "", false, err
+		}
+		pathToRead = resolved
+	}
+	if !st.Mode().IsRegular() {
+		return "", false, nil
+	}
+	return pathToRead, true, nil
 }

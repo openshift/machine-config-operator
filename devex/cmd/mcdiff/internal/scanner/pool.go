@@ -14,8 +14,10 @@ import (
 const osLabel = "kubernetes.io/os"
 
 // ResolvePrimaryPool returns the MachineConfigPool a node targets, using the
-// same rules as pkg/helpers.GetPrimaryPoolForNode: custom pool beats worker,
-// master beats custom and worker, multiple custom pools are an error.
+// same rules as pkg/helpers.GetPoolsForNode. One custom pool beats worker.
+// Master beats worker and a single custom pool. More than one custom pool is
+// an error even when the node also matches master; GetPoolsForNode refuses
+// that node instead of silently selecting master.
 func ResolvePrimaryPool(n *corev1.Node, pools []*mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfigPool, error) {
 	if n == nil {
 		return nil, fmt.Errorf("node is nil")
@@ -37,7 +39,7 @@ func ResolvePrimaryPool(n *corev1.Node, pools []*mcfgv1.MachineConfigPool) (*mcf
 		return nil, fmt.Errorf("node %q belongs to %d custom MachineConfigPools; pass --pool to select one: %w", n.Name, len(custom), ErrMultipleCustomPools)
 	case len(custom) == 1:
 		if master != nil {
-			klog.V(2).Infof("node %s matches master and custom pool %s; defaulting to master", n.Name, custom[0].Name)
+			klog.V(2).Info("node matches master and a custom pool; defaulting to master")
 			return master, nil
 		}
 		return custom[0], nil

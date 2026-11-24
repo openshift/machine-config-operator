@@ -93,6 +93,26 @@ func TestScanTwoOfFiveMismatch(t *testing.T) {
 	assert.NotEqual(t, got.MismatchedFiles[0].ExpectedSize, got.MismatchedFiles[0].ActualSize)
 }
 
+func TestScanClearsWritersWhenAttributionFails(t *testing.T) {
+	t.Parallel()
+
+	files := []pathContent{{sshdPath, "expected\n"}}
+	rendered := mcWithFiles(t, renderedMC, ctrlcommon.MachineConfigPoolWorker, files...)
+	bad := mcWithFiles(t, "99-worker-ssh", ctrlcommon.MachineConfigPoolWorker, files...)
+	bad.Spec.Config.Raw = []byte("{")
+	pool := mcpWithSources(t, "worker", renderedMC, "99-worker-ssh")
+	g := cluster.NewKubeGetter(fake.NewSimpleClientset(pool, rendered, bad))
+	reader := &mapReader{files: map[string][]byte{sshdPath: []byte("actual\n")}}
+
+	got, err := Scan(context.Background(), g, nil, reader, "worker-0", Options{Pool: "worker"})
+	require.NoError(t, err)
+	require.Error(t, got.AttributionErr)
+	assert.Contains(t, got.AttributionErr.Error(), "99-worker-ssh")
+	require.Len(t, got.MismatchedFiles, 1)
+	assert.Empty(t, got.MismatchedFiles[0].LastWriter)
+	assert.Equal(t, "drift", got.Status())
+}
+
 func TestScanMissingFile(t *testing.T) {
 	t.Parallel()
 

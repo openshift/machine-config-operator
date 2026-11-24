@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/openshift/machine-config-operator/devex/cmd/mcdiff/internal/cluster"
@@ -31,6 +32,22 @@ func TestWriteScanClean(t *testing.T) {
 	assert.Contains(t, out, "Scanned Files:    42")
 	assert.Contains(t, out, "Status:           CLEAN")
 	assert.NotContains(t, out, "Mismatched Files:")
+}
+
+func TestWriteScanAttributionUnavailable(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := WriteScan(&buf, &scanner.Result{
+		Node:           "worker-0",
+		Pool:           "worker",
+		Rendered:       "rendered-worker-a1b2c3",
+		Scanned:        1,
+		Matching:       1,
+		AttributionErr: errors.New("bad ignition"),
+	}, ScanOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Attribution:      unavailable (bad ignition)")
 }
 
 func TestWriteScanDrift(t *testing.T) {

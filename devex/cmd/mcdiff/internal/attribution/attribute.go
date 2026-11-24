@@ -64,12 +64,17 @@ func Attribute(path string, sources []*mcfgv1.MachineConfig) (*Result, error) {
 
 // LastWriters maps each Ignition path to the source MachineConfig that wins
 // MergeMachineConfigs order for that path. One parse of each fragment.
-// Paths in fragments that fail to parse or use append are omitted.
-func LastWriters(sources []*mcfgv1.MachineConfig) map[string]string {
+//
+// A later fragment that appends to a path clears any earlier writer. Append
+// is not attributed, so the report shows an unknown writer instead of the
+// fragment that only wrote the base file. A later full write can set the
+// writer again. Parse and ordering errors are returned so callers do not
+// keep a partial map.
+func LastWriters(sources []*mcfgv1.MachineConfig) (map[string]string, error) {
 	out := map[string]string{}
 	ordered, err := sortForMerge(sources)
 	if err != nil {
-		return out
+		return nil, err
 	}
 	for _, mc := range ordered {
 		if len(mc.Spec.Config.Raw) == 0 {
@@ -77,16 +82,20 @@ func LastWriters(sources []*mcfgv1.MachineConfig) map[string]string {
 		}
 		ign, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to parse Ignition in MachineConfig %s: %w", mc.Name, err)
 		}
 		for _, f := range ign.Storage.Files {
-			if len(f.Append) > 0 || f.Path == "" {
+			if f.Path == "" {
+				continue
+			}
+			if len(f.Append) > 0 {
+				delete(out, f.Path)
 				continue
 			}
 			out[f.Path] = mc.Name
 		}
 	}
-	return out
+	return out, nil
 }
 
 // sortForMerge copies configs and orders them the way MergeMachineConfigs does:

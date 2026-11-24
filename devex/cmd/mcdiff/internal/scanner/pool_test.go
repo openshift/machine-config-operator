@@ -66,6 +66,23 @@ func TestResolvePrimaryPoolMultipleCustom(t *testing.T) {
 	assert.ErrorIs(t, err, ErrMultipleCustomPools)
 }
 
+func TestResolvePrimaryPoolMultipleCustomWithMaster(t *testing.T) {
+	t.Parallel()
+
+	master := poolWithSelector("master", map[string]string{"node-role.kubernetes.io/master": ""})
+	infra := poolWithSelector("infra", map[string]string{"node-role.kubernetes.io/infra": ""})
+	edge := poolWithSelector("edge", map[string]string{"node-role.kubernetes.io/edge": ""})
+	n := labeledNode("master-0", map[string]string{
+		"node-role.kubernetes.io/master": "",
+		"node-role.kubernetes.io/infra":  "",
+		"node-role.kubernetes.io/edge":   "",
+	})
+
+	_, err := ResolvePrimaryPool(n, []*mcfgv1.MachineConfigPool{master, infra, edge})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrMultipleCustomPools)
+}
+
 func TestResolvePrimaryPoolUnassigned(t *testing.T) {
 	t.Parallel()
 

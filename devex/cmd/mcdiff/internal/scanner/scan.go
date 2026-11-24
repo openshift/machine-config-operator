@@ -36,6 +36,10 @@ type Result struct {
 	MismatchedFiles []Finding
 	MissingFiles    []Finding
 	ErrorFiles      []Finding
+
+	// AttributionErr is set when last-writer names could not be resolved.
+	// File comparisons still use the rendered MachineConfig.
+	AttributionErr error
 }
 
 // Status is "clean" when every managed file matches, "drift" when any file
@@ -96,16 +100,23 @@ func Scan(ctx context.Context, g cluster.Getter, nodes node.Getter, reader node.
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 
 	writers := map[string]string{}
-	if rp.AttributionErr == nil {
-		writers = attribution.LastWriters(rp.Sources)
+	attrErr := rp.AttributionErr
+	if attrErr == nil {
+		var err error
+		writers, err = attribution.LastWriters(rp.Sources)
+		if err != nil {
+			attrErr = fmt.Errorf("failed to attribute files for pool %q: %w", poolName, err)
+			writers = map[string]string{}
+		}
 	}
 
 	out := &Result{
-		Node:     nodeName,
-		Pool:     poolName,
-		Rendered: rp.Rendered.Name,
-		Origin:   rp.Origin,
-		Scanned:  len(files),
+		Node:           nodeName,
+		Pool:           poolName,
+		Rendered:       rp.Rendered.Name,
+		Origin:         rp.Origin,
+		Scanned:        len(files),
+		AttributionErr: attrErr,
 	}
 
 	for _, f := range files {
