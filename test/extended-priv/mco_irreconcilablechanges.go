@@ -4,13 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-	"github.com/tidwall/gjson"
 )
 
 var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Disruptive][OCPFeatureGate:IrreconcilableMachineConfig][Serial]", g.Ordered, func() {
@@ -86,7 +84,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			mcName               = "irreconcilable-scaleup-test"
 			initialMcSpecs       = machineconfiguration.GetSpecOrFail()
 			machineset           ManagedMachineResource
-			bareMetalHost        *Resource
+			bareMetalHost        *BareMetalHost
 			bareMetalDisks       []string
 			hostLabel            string
 			removeHostLabel      func() error
@@ -97,31 +95,18 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			if !IsCapabilityEnabled(oc, "MachineAPI") {
 				g.Skip("MachineAPI capability is disabled; bare-metal workers cannot be scaled")
 			}
-			candidates, err := GetAllManagedMachineResources(oc, MAPI)
-			o.Expect(err).To(o.Succeed(), "Error listing bare-metal MachineSets")
-			for _, candidate := range candidates {
-				ms := candidate.(*MachineSet)
-				data, err := ms.GetCleanJSON()
-				o.Expect(err).To(o.Succeed(), "Error reading MachineSet %s", ms)
-				o.Expect(gjson.Valid(data)).To(o.BeTrue(), "Invalid MachineSet JSON for %s", ms)
-				replicas := gjson.Get(data, "spec.replicas")
-				if gjson.Get(data, `spec.template.metadata.labels.machine\.openshift\.io/cluster-api-machine-role`).String() != "worker" ||
-					replicas.Type != gjson.Number || replicas.Int() <= 0 ||
-					gjson.Get(data, "status.replicas").Int() != replicas.Int() ||
-					gjson.Get(data, "status.readyReplicas").Int() != replicas.Int() {
-					continue
-				}
-				bareMetalHost, err = FindAvailableBareMetalHost(oc, candidate, func(data string) error {
-					var diskErr error
-					bareMetalDisks, diskErr = bareMetalTestDisks(data)
-					return diskErr
-				})
-				o.Expect(err).To(o.Succeed(), "Error checking bare-metal test hosts")
-				if bareMetalHost != nil {
-					machineset = candidate
-					break
-				}
+			var err error
+			machineset, err = GetValidManagedMachineResource(oc)
+			if errors.Is(err, ErrNoValidManagedMachineResource) {
+				g.Skip("No ready MachineSet with replicas > 0 was found; cannot select a bare-metal test host")
 			}
+			o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a MachineSet for the bare-metal test host")
+			bareMetalHost, err = FindAvailableBareMetalHost(oc, machineset, func(host *BareMetalHost) error {
+				var diskErr error
+				bareMetalDisks, diskErr = host.VerifiedTestDisks()
+				return diskErr
+			})
+			o.Expect(err).To(o.Succeed(), "Error checking bare-metal test hosts")
 			if bareMetalHost == nil {
 				g.Skip("No healthy, free CI spare worker has verified non-root test disks and a matching host selector")
 			}
@@ -159,17 +144,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			machineSetExists := false
 			var lookupErr error
 			if newMS != nil {
-				lookupErr = Retry(3, 5*time.Second, func() error {
-					name, err := newMS.Get(`{.metadata.name}`, "--ignore-not-found=true", "--request-timeout=20s")
-					if err != nil {
-						return err
-					}
-					machineSetExists = name == newMS.GetName()
-					if name != "" && !machineSetExists {
-						return fmt.Errorf("unexpected MachineSet name %q", name)
-					}
-					return nil
-				})
+				machineSetExists, lookupErr = newMS.ExistsReliably()
 				o.Expect(lookupErr).To(o.Succeed(), "Cannot determine whether test MachineSet %s exists", newMS)
 			}
 			if machineSetExists {
@@ -183,7 +158,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 					if testNode == nil {
 						o.Expect(testNode).NotTo(o.BeNil(), "Cannot verify test disk cleanup: the bare-metal test node is inaccessible")
 					} else {
-						identityErr := VerifyBareMetalHostNode(oc, bareMetalHost, newMS, testNode)
+						identityErr := bareMetalHost.VerifyNode(newMS, testNode)
 						o.Expect(identityErr).To(o.Succeed(), "Cannot verify host identity for disk cleanup")
 						if identityErr == nil {
 							o.Expect(cleanBareMetalTestDisks(testNode, bareMetalDisks)).To(o.Succeed(), "Error cleaning test disks")
@@ -203,20 +178,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
 					"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
 				if bareMetalHost != nil && scaleAttempted {
-					o.Eventually(func() (bool, error) {
-						data, err := bareMetalHost.GetCleanJSON()
-						if err != nil {
-							return false, err
-						}
-						return bareMetalHostAvailable(data), nil
-					}, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
+					o.Eventually(bareMetalHost.IsAvailable, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
 				}
 			} else if lookupErr == nil && bareMetalHost != nil && scaleAttempted {
 				o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
 			}
 		})
 		if bareMetalHost != nil {
-			hostLabel, removeHostLabel, err = PinBareMetalHost(newMS, bareMetalHost)
+			hostLabel, removeHostLabel, err = bareMetalHost.Pin(newMS)
 			if errors.Is(err, ErrBareMetalHostUnavailable) {
 				g.Skip(fmt.Sprintf("Cannot select host: %s", err))
 			}
@@ -251,7 +220,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
 		if bareMetalHost != nil {
-			o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
+			mcExists, mcLookupErr := mc.ExistsReliably()
+			o.Expect(mcLookupErr).NotTo(o.HaveOccurred(), "Cannot determine whether MachineConfig %s already exists", mcName)
+			o.Expect(mcExists).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
 		}
 
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
@@ -265,7 +236,9 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 		o.Expect(err).NotTo(o.HaveOccurred(), "MachineConfig %s creation failed; check its status if the API result is uncertain", mcName)
 		defer SafeCleanup(func() {
-			if mc.Exists() {
+			mcExists, mcLookupErr := mc.ExistsReliably()
+			o.Expect(mcLookupErr).NotTo(o.HaveOccurred(), "Cannot determine whether test MachineConfig %s exists", mcName)
+			if mcExists {
 				err := mc.Delete()
 				o.Expect(err).NotTo(o.HaveOccurred())
 			}
@@ -287,22 +260,21 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
 		if bareMetalHost != nil {
-			data, err := bareMetalHost.GetCleanJSON()
-			o.Expect(err).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
-			if !bareMetalHostAvailable(data) {
+			available, availErr := bareMetalHost.IsAvailable()
+			o.Expect(availErr).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
+			if !available {
 				g.Skip(fmt.Sprintf("Host %s is no longer available", bareMetalHost))
 			}
-			if !bareMetalHostHealthy(data) {
-				g.Skip(fmt.Sprintf("Host %s is unhealthy: operational status %q, error message %q",
-					bareMetalHost, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String()))
+			if healthErr := bareMetalHost.HealthCheck(); healthErr != nil {
+				g.Skip(fmt.Sprintf("Host %s is no longer healthy: %s", bareMetalHost, healthErr))
 			}
-			verifiedDisks, err := bareMetalTestDisks(data)
-			if err != nil || !slices.Equal(verifiedDisks, bareMetalDisks) {
-				g.Skip(fmt.Sprintf("Host %s no longer has verified test disks: %v", bareMetalHost, err))
+			verifiedDisks, disksErr := bareMetalHost.VerifiedTestDisks()
+			if disksErr != nil || !slices.Equal(verifiedDisks, bareMetalDisks) {
+				g.Skip(fmt.Sprintf("Host %s no longer has verified test disks: %v", bareMetalHost, disksErr))
 			}
-			matches, err := BareMetalHostPinned(data, newMS.GetSpecOrFail(), hostLabel)
-			if err != nil || !matches {
-				g.Skip(fmt.Sprintf("Host %s no longer matches the test MachineSet selector: %v", bareMetalHost, err))
+			matches, pinnedErr := bareMetalHost.Pinned(newMS, hostLabel)
+			if pinnedErr != nil || !matches {
+				g.Skip(fmt.Sprintf("Host %s no longer matches the test MachineSet selector: %v", bareMetalHost, pinnedErr))
 			}
 		}
 		if platform == AWSPlatform {
@@ -334,7 +306,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		}
 		logger.Infof("Test node is: %s", testNode.GetName())
 		if bareMetalHost != nil {
-			o.Expect(VerifyBareMetalHostNode(oc, bareMetalHost, newMS, testNode)).To(o.Succeed(), "Test node is not on the selected host")
+			o.Expect(bareMetalHost.VerifyNode(newMS, testNode)).To(o.Succeed(), "Test node is not on the selected host")
 			o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount+1)).To(o.Succeed(),
 				"MCP counts did not settle after scale-up.\n%s", mcp.PrettyString())
 		}

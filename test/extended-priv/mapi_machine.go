@@ -8,9 +8,9 @@ import (
 )
 
 // ManagedMachine is an interface for machine resources (MAPI Machine or CAPI Machine).
-// When CAPI support is added, a CAPIMachine struct will implement this interface.
 type ManagedMachine interface {
 	GetName() string
+	GetLabel(label string) (string, error)
 	GetNode() (*Node, error)
 	GetPhase() (string, error)
 	IsRunning() (bool, error)

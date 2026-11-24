@@ -2,13 +2,11 @@ package extended
 
 import (
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 
 	o "github.com/onsi/gomega"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
-	"github.com/tidwall/gjson"
 )
 
 func platformBasedDisksPatch(platform string, ms ManagedMachineResource) error {
@@ -105,97 +103,6 @@ func discoverNVMeByPathDisks(node *Node) []string {
 	}
 	logger.Infof("Discovered %d non-boot NVMe by-path disks on node %s: %v", len(paths), node.GetName(), paths)
 	return paths
-}
-
-// bareMetalTestDisks verifies the CI spare host's inventory before Ignition can write to it.
-// Use the inspected by-path names rather than the potentially unstable /dev/vdX names.
-func bareMetalTestDisks(hostJSON string) ([]string, error) {
-	if !gjson.Valid(hostJSON) || !bareMetalHostAvailable(hostJSON) {
-		return nil, fmt.Errorf("host is not available or has invalid inventory")
-	}
-	host := gjson.Parse(hostJSON)
-	if !strings.Contains(host.Get("metadata.name").String(), "-extraworker-") ||
-		!strings.Contains(host.Get("status.hardware.systemVendor.productName").String(), "KVM") {
-		return nil, fmt.Errorf("host is not a dev-scripts spare worker")
-	}
-	if raid := host.Get("spec.raid"); raid.Exists() && raid.Type != gjson.Null {
-		return nil, fmt.Errorf("host has a RAID configuration that may change the provisioning disk")
-	}
-	if host.Get("spec.automatedCleaningMode").String() != "metadata" {
-		return nil, fmt.Errorf("host does not explicitly use metadata cleaning")
-	}
-
-	// An explicit spec hint takes precedence; without one, Metal3's resolved hint
-	// from inspection identifies the provisioning disk on dev-scripts hosts.
-	rootHint := host.Get("spec.rootDeviceHints.deviceName").String()
-	if rootHint == "" {
-		if hint := host.Get("spec.rootDeviceHints"); hint.Exists() && hint.Type != gjson.Null && len(hint.Map()) != 0 {
-			return nil, fmt.Errorf("root device hints do not identify a specific device")
-		}
-		rootHint = host.Get("status.provisioning.rootDeviceHints.deviceName").String()
-	}
-	if rootHint == "" {
-		return nil, fmt.Errorf("root device is unknown")
-	}
-
-	return bareMetalInventoryTestDisks(host.Get("status.hardware.storage").Array(), rootHint)
-}
-
-// bareMetalInventoryTestDisks identifies the test disks and checks their inventory names.
-func bareMetalInventoryTestDisks(storage []gjson.Result, rootHint string) ([]string, error) {
-	rootIndex := -1
-	diskIndexes := []int{-1, -1}
-	paths := make([]string, 2)
-	namesByDisk := make([][]string, len(storage))
-	for i, disk := range storage {
-		names := []string{disk.Get("name").String()}
-		for _, name := range disk.Get("alternateNames").Array() {
-			names = append(names, name.String())
-		}
-		namesByDisk[i] = names
-		for _, name := range names {
-			if name == rootHint {
-				if rootIndex != -1 && rootIndex != i {
-					return nil, fmt.Errorf("root device matches multiple inventory disks")
-				}
-				rootIndex = i
-			}
-			for j, expected := range []string{"/dev/vda", "/dev/vdb"} {
-				if name == expected {
-					if diskIndexes[j] != -1 && diskIndexes[j] != i {
-						return nil, fmt.Errorf("%s matches multiple inventory disks", expected)
-					}
-					diskIndexes[j] = i
-					paths[j] = disk.Get("name").String()
-					if disk.Get("sizeBytes").Int() != 16*1024*1024*1024 {
-						return nil, fmt.Errorf("%s does not have the configured CI disk size", expected)
-					}
-				}
-			}
-		}
-	}
-	if rootIndex < 0 || diskIndexes[0] < 0 || diskIndexes[1] < 0 ||
-		diskIndexes[0] == diskIndexes[1] || paths[0] == paths[1] ||
-		rootIndex == diskIndexes[0] || rootIndex == diskIndexes[1] {
-		return nil, fmt.Errorf("cannot prove the two test disks are distinct from the root disk")
-	}
-	selected := []int{rootIndex, diskIndexes[0], diskIndexes[1]}
-	for i, disk := range selected {
-		for _, other := range selected[i+1:] {
-			for _, name := range namesByDisk[disk] {
-				if name != "" && slices.Contains(namesByDisk[other], name) {
-					return nil, fmt.Errorf("inventory disks share the device name %s", name)
-				}
-			}
-		}
-	}
-	for _, diskPath := range paths {
-		if !strings.HasPrefix(diskPath, "/dev/disk/by-path/") || path.Clean(diskPath) != diskPath ||
-			strings.Contains(strings.TrimPrefix(diskPath, "/dev/disk/by-path/"), "/") {
-			return nil, fmt.Errorf("disk %q has no stable by-path name", diskPath)
-		}
-	}
-	return paths, nil
 }
 
 type bareMetalCleanupDisk struct {

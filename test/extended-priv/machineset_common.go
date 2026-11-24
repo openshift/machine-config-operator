@@ -1,6 +1,7 @@
 package extended
 
 import (
+	"errors"
 	"fmt"
 
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
@@ -25,12 +26,16 @@ type ManagedMachineResource interface {
 	BootImageResource
 	GetName() string
 	GetNamespace() string
-	Get(jsonPath string, extraParams ...string) (string, error)
 	GetSpecOrFail() string
 	SetSpec(spec string) error
 	Delete(extraParams ...string) error
 	Patch(patchType string, patch string, extraParams ...string) error
 	Exists() bool
+	// ExistsReliably reports whether the resource exists, retrying transient
+	// read failures. Unlike Exists, it returns an error when existence cannot
+	// be determined, so callers can distinguish a missing resource from a
+	// failed lookup.
+	ExistsReliably() (bool, error)
 	AddLabel(label, value string) error
 	PrettyString() string
 	Duplicate(newName string) (ManagedMachineResource, error)
@@ -117,7 +122,11 @@ func GetAllManagedMachineResources(oc *exutil.CLI, apiTypes ...MachineAPIType) (
 	return result, nil
 }
 
+// ErrNoValidManagedMachineResource indicates that the cluster has no ready managed machine resource with replicas > 0.
+var ErrNoValidManagedMachineResource = errors.New("no ready managed machine resource with replicas > 0 found")
+
 // GetValidManagedMachineResource returns a ManagedMachineResource with replicas > 0 that is ready and can be used for testing.
+// It returns ErrNoValidManagedMachineResource when no such resource exists, and a wrapped error when the list cannot be retrieved.
 // An optional list of MachineAPIType values can be provided to restrict which API types are considered.
 func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) (ManagedMachineResource, error) {
 	all, err := GetAllManagedMachineResources(oc, apiTypes...)
@@ -131,7 +140,7 @@ func GetValidManagedMachineResource(oc *exutil.CLI, apiTypes ...MachineAPIType) 
 		}
 		return ms, nil
 	}
-	return nil, fmt.Errorf("no ready ManagedMachineResource with replicas > 0 found")
+	return nil, ErrNoValidManagedMachineResource
 }
 
 // GetValidManagedMachineResourceByArchitecture returns a ready ManagedMachineResource with

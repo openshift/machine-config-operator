@@ -119,6 +119,8 @@ const (
 	CAPIMachineSetFullName = "machineset.cluster.x-k8s.io"
 	// CAPIManagedTemplateLabel labels infrastructure templates created by test code for a given machineset
 	CAPIManagedTemplateLabel = "mco-test/managed-by-machineset"
+	// BareMetalHostFullName is the metal3 BareMetalHost fully qualified name
+	BareMetalHostFullName = "baremetalhost.metal3.io"
 	// CAPIMachineFullName is the CAPI machine fully qualified name
 	CAPIMachineFullName = "machine.cluster.x-k8s.io"
 

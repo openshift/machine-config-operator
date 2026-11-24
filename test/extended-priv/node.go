@@ -3,7 +3,6 @@ package extended
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -19,8 +18,6 @@ import (
 	"github.com/openshift/machine-config-operator/test/extended-priv/util/architecture"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
 	"github.com/tidwall/gjson"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -153,10 +150,10 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	return stdout, stderr, err
 }
 
-// RunHostCommand executes a command once in the node's mount namespace and returns its stdout.
+// RunHostCommand executes a command in the node's mount namespace and returns its stdout.
 func (n *Node) RunHostCommand(cmd ...string) (string, error) {
 	hostCommand := append([]string{"nsenter", "--target", "1", "--mount", "--root", "--"}, cmd...)
-	stdout, stderr, err := exutil.DebugNodeWithChrootStd(n.oc, n.name, hostCommand...)
+	stdout, stderr, err := n.DebugNodeWithChrootStd(hostCommand...)
 	if err != nil {
 		return "", fmt.Errorf("running %q on node %s: %w; stderr: %s", cmd, n, err, stderr)
 	}
@@ -1784,200 +1781,4 @@ func RestoreRpm(node *Node) error {
 		"nsenter --mount=/proc/1/ns/mnt umount -l /usr/bin/rpm 2>/dev/null; "+
 			"rm -f /var/tmp/rpm-real "+fakeRpmRemotePath)
 	return err
-}
-
-// ErrBareMetalHostUnavailable indicates that a host can no longer be claimed.
-var ErrBareMetalHostUnavailable = errors.New("bare-metal host is not available")
-
-// bareMetalHostAvailable reports whether an inspected host can be claimed for provisioning.
-func bareMetalHostAvailable(hostJSON string) bool {
-	if !gjson.Valid(hostJSON) {
-		return false
-	}
-	host := gjson.Parse(hostJSON)
-	return host.Get("status.provisioning.state").String() == "available" &&
-		!host.Get("spec.externallyProvisioned").Bool() &&
-		host.Get("spec.consumerRef").Type == gjson.Null &&
-		host.Get("metadata.deletionTimestamp").String() == ""
-}
-
-// bareMetalHostHealthy checks operational health independently of provisioning state.
-func bareMetalHostHealthy(hostJSON string) bool {
-	if !gjson.Valid(hostJSON) {
-		return false
-	}
-	host := gjson.Parse(hostJSON)
-	return host.Get("status.operationalStatus").String() == "OK" &&
-		host.Get("status.errorMessage").String() == ""
-}
-
-// bareMetalHostMatchesSelector checks the MAPI MachineSet's existing host selector.
-func bareMetalHostMatchesSelector(hostJSON, machineSetSpec string) (bool, error) {
-	if !gjson.Valid(hostJSON) || !gjson.Valid(machineSetSpec) {
-		return false, fmt.Errorf("invalid host or MachineSet JSON")
-	}
-	selectorJSON := gjson.Get(machineSetSpec, "template.spec.providerSpec.value.hostSelector")
-	selector := labels.NewSelector()
-	for key, value := range selectorJSON.Get("matchLabels").Map() {
-		requirement, err := labels.NewRequirement(key, selection.Equals, []string{value.String()})
-		if err != nil {
-			return false, err
-		}
-		selector = selector.Add(*requirement)
-	}
-	for _, expression := range selectorJSON.Get("matchExpressions").Array() {
-		var values []string
-		for _, value := range expression.Get("values").Array() {
-			values = append(values, value.String())
-		}
-		requirement, err := labels.NewRequirement(expression.Get("key").String(), selection.Operator(expression.Get("operator").String()), values)
-		if err != nil {
-			return false, err
-		}
-		selector = selector.Add(*requirement)
-	}
-	hostLabels := labels.Set{}
-	for key, value := range gjson.Get(hostJSON, "metadata.labels").Map() {
-		hostLabels[key] = value.String()
-	}
-	return selector.Matches(hostLabels), nil
-}
-
-// BareMetalHostPinned checks both sides of the temporary host-to-MachineSet selector.
-func BareMetalHostPinned(hostJSON, machineSetSpec, label string) (bool, error) {
-	matches, err := bareMetalHostMatchesSelector(hostJSON, machineSetSpec)
-	if err != nil || !matches {
-		return false, err
-	}
-	hostLabels := gjson.Get(hostJSON, "metadata.labels").Map()
-	selectorLabels := gjson.Get(machineSetSpec, "template.spec.providerSpec.value.hostSelector.matchLabels").Map()
-	return label != "" && hostLabels[label].String() == "true" && selectorLabels[label].String() == "true", nil
-}
-
-// FindAvailableBareMetalHost finds a free host matching a MAPI MachineSet and an optional filter.
-// It never deprovisions workers; a nil host means no suitable host is available.
-func FindAvailableBareMetalHost(oc *exutil.CLI, machineSet ManagedMachineResource, filter func(string) error) (*Resource, error) {
-	ms, ok := machineSet.(*MachineSet)
-	if !ok {
-		return nil, fmt.Errorf("bare-metal host selection requires a MAPI MachineSet")
-	}
-	spec, err := ms.GetSpec()
-	if err != nil {
-		return nil, fmt.Errorf("getting spec for %s: %w", ms, err)
-	}
-	hosts := NewNamespacedResourceList(oc, "baremetalhost.metal3.io", MachineAPINamespace)
-	hosts.SetItemsFilter(`?(@.status.provisioning.state=="available")`)
-	all, err := hosts.GetAll()
-	if err != nil {
-		return nil, fmt.Errorf("listing available BareMetalHosts: %w", err)
-	}
-	for _, host := range all {
-		data, err := host.GetCleanJSON()
-		if err != nil {
-			return nil, fmt.Errorf("getting %s: %w", host, err)
-		}
-		if !bareMetalHostAvailable(data) {
-			continue
-		}
-		if !bareMetalHostHealthy(data) {
-			logger.Infof("Skipping host %s: operational status %q, error message %q",
-				host, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String())
-			continue
-		}
-		matches, err := bareMetalHostMatchesSelector(data, spec)
-		if err != nil {
-			return nil, fmt.Errorf("checking host selector for %s: %w", ms, err)
-		}
-		if !matches {
-			continue
-		}
-		if filter != nil {
-			if err := filter(data); err != nil {
-				logger.Infof("Skipping host %s: %s", host, err)
-				continue
-			}
-		}
-		return host, nil
-	}
-	return nil, nil
-}
-
-// PinBareMetalHost adds a temporary host label and a matching MAPI MachineSet selector.
-// The returned cleanup removes the label; it does not reserve the host against other consumers.
-func PinBareMetalHost(machineSet ManagedMachineResource, host *Resource) (string, func() error, error) {
-	if _, ok := machineSet.(*MachineSet); !ok {
-		return "", nil, fmt.Errorf("bare-metal host pinning requires a MAPI MachineSet")
-	}
-	data, err := host.GetCleanJSON()
-	if err != nil {
-		return "", nil, fmt.Errorf("getting %s: %w", host, err)
-	}
-	if !bareMetalHostAvailable(data) {
-		return "", nil, fmt.Errorf("%s: %w", host, ErrBareMetalHostUnavailable)
-	}
-	if !bareMetalHostHealthy(data) {
-		return "", nil, fmt.Errorf("%s: operational status %q, error message %q: %w",
-			host, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String(), ErrBareMetalHostUnavailable)
-	}
-	label := "machineconfiguration.openshift.io/bmh-" + exutil.GetRandomString()
-	patch, err := json.Marshal(map[string]interface{}{
-		"spec": map[string]interface{}{
-			"template": map[string]interface{}{
-				"spec": map[string]interface{}{
-					"providerSpec": map[string]interface{}{
-						"value": map[string]interface{}{
-							"hostSelector": map[string]interface{}{
-								"matchLabels": map[string]string{label: "true"},
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-	if err != nil {
-		return "", nil, err
-	}
-	if err := host.AddLabel(label, "true"); err != nil {
-		return "", nil, fmt.Errorf("labeling %s: %w", host, err)
-	}
-	cleanup := func() error { return host.RemoveLabel(label) }
-	if err := machineSet.Patch("merge", string(patch)); err != nil {
-		patchErr := fmt.Errorf("selecting %s in %s: %w", host, machineSet, err)
-		if cleanupErr := cleanup(); cleanupErr != nil {
-			return label, cleanup, errors.Join(patchErr, fmt.Errorf("removing label from %s: %w", host, cleanupErr))
-		}
-		return "", nil, patchErr
-	}
-	return label, cleanup, nil
-}
-
-// VerifyBareMetalHostNode checks that a host is consumed by the expected MachineSet and node.
-func VerifyBareMetalHostNode(oc *exutil.CLI, host *Resource, machineSet ManagedMachineResource, node *Node) error {
-	if _, ok := machineSet.(*MachineSet); !ok {
-		return fmt.Errorf("bare-metal host verification requires a MAPI MachineSet")
-	}
-	consumer, err := host.Get(`{.spec.consumerRef.name}`)
-	if err != nil {
-		return err
-	}
-	if consumer == "" {
-		return fmt.Errorf("host %s has no Machine consumer", host)
-	}
-	machine := NewMachine(oc, MachineAPINamespace, consumer)
-	owner, err := machine.GetLabel("machine.openshift.io/cluster-api-machineset")
-	if err != nil {
-		return err
-	}
-	if owner != machineSet.GetName() {
-		return fmt.Errorf("host %s is consumed by MachineSet %s, not %s", host, owner, machineSet)
-	}
-	ownedNode, err := machine.GetNode()
-	if err != nil {
-		return err
-	}
-	if ownedNode.GetName() != node.GetName() {
-		return fmt.Errorf("host %s belongs to node %s, not %s", host, ownedNode, node)
-	}
-	return nil
 }

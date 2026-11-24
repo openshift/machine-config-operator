@@ -276,6 +276,25 @@ func (r *Resource) Exists() bool {
 	return err == nil
 }
 
+// ExistsReliably reports whether the resource exists, retrying transient read
+// failures. Unlike Exists, it returns an error when existence cannot be
+// determined, so callers can distinguish a missing resource from a failed lookup.
+func (r *Resource) ExistsReliably() (bool, error) {
+	var exists bool
+	err := Retry(3, 5*time.Second, func() error {
+		name, getErr := r.Get(`{.metadata.name}`, "--ignore-not-found=true", "--request-timeout=20s")
+		if getErr != nil {
+			return getErr
+		}
+		exists = name != ""
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("cannot determine whether %s %q exists: %w", r.kind, r.GetName(), err)
+	}
+	return exists, nil
+}
+
 // HasOwnerOrFail returns true if the resource is owned by any other resource
 func (r Resource) HasOwner() (bool, error) {
 	firstOwner, err := r.Get(`{.metadata.ownerReferences[0]}`)
