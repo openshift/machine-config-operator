@@ -1801,6 +1801,16 @@ func bareMetalHostAvailable(hostJSON string) bool {
 		host.Get("metadata.deletionTimestamp").String() == ""
 }
 
+// bareMetalHostHealthy checks operational health independently of provisioning state.
+func bareMetalHostHealthy(hostJSON string) bool {
+	if !gjson.Valid(hostJSON) {
+		return false
+	}
+	host := gjson.Parse(hostJSON)
+	return host.Get("status.operationalStatus").String() == "OK" &&
+		host.Get("status.errorMessage").String() == ""
+}
+
 // bareMetalHostMatchesSelector checks the MAPI MachineSet's existing host selector.
 func bareMetalHostMatchesSelector(hostJSON, machineSetSpec string) (bool, error) {
 	if !gjson.Valid(hostJSON) || !gjson.Valid(machineSetSpec) {
@@ -1869,6 +1879,11 @@ func FindAvailableBareMetalHost(oc *exutil.CLI, machineSet ManagedMachineResourc
 		if !bareMetalHostAvailable(data) {
 			continue
 		}
+		if !bareMetalHostHealthy(data) {
+			logger.Infof("Skipping host %s: operational status %q, error message %q",
+				host, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String())
+			continue
+		}
 		matches, err := bareMetalHostMatchesSelector(data, spec)
 		if err != nil {
 			return nil, fmt.Errorf("checking host selector for %s: %w", ms, err)
@@ -1899,6 +1914,10 @@ func PinBareMetalHost(machineSet ManagedMachineResource, host *Resource) (string
 	}
 	if !bareMetalHostAvailable(data) {
 		return "", nil, fmt.Errorf("%s: %w", host, ErrBareMetalHostUnavailable)
+	}
+	if !bareMetalHostHealthy(data) {
+		return "", nil, fmt.Errorf("%s: operational status %q, error message %q: %w",
+			host, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String(), ErrBareMetalHostUnavailable)
 	}
 	label := "machineconfiguration.openshift.io/bmh-" + exutil.GetRandomString()
 	patch, err := json.Marshal(map[string]interface{}{

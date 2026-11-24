@@ -123,7 +123,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				}
 			}
 			if bareMetalHost == nil {
-				g.Skip("No free CI spare worker has verified non-root test disks and a matching host selector")
+				g.Skip("No healthy, free CI spare worker has verified non-root test disks and a matching host selector")
 			}
 			defer SafeCleanup(func() {
 				if removeHostLabel != nil {
@@ -289,6 +289,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		if bareMetalHost != nil {
 			data, err := bareMetalHost.GetCleanJSON()
 			o.Expect(err).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
+			if !bareMetalHostAvailable(data) {
+				g.Skip(fmt.Sprintf("Host %s is no longer available", bareMetalHost))
+			}
+			if !bareMetalHostHealthy(data) {
+				g.Skip(fmt.Sprintf("Host %s is unhealthy: operational status %q, error message %q",
+					bareMetalHost, gjson.Get(data, "status.operationalStatus").String(), gjson.Get(data, "status.errorMessage").String()))
+			}
 			verifiedDisks, err := bareMetalTestDisks(data)
 			if err != nil || !slices.Equal(verifiedDisks, bareMetalDisks) {
 				g.Skip(fmt.Sprintf("Host %s no longer has verified test disks: %v", bareMetalHost, err))
