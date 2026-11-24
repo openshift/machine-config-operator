@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_5/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_6/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	"github.com/openshift/machine-config-operator/devex/cmd/mcdiff/internal/cluster"
