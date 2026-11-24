@@ -94,8 +94,9 @@ func getCacheDir(dataType, applicationName string) (string, error) {
 	return cacheDir, nil
 }
 
-// cacheFile puts data in the cache.
-func cacheFile(ova *stream.Artifact, filePath, cacheDir string) (string, error) {
+// cacheFile puts data in the cache. The download trusts the system roots plus any
+// CA certificates in additionalTrustBundle.
+func cacheFile(ova *stream.Artifact, filePath, cacheDir string, additionalTrustBundle []byte) (string, error) {
 
 	flockPath := fmt.Sprintf("%s.lock", filePath)
 	flock, err := os.Create(flockPath)
@@ -126,13 +127,21 @@ func cacheFile(ova *stream.Artifact, filePath, cacheDir string) (string, error) 
 		return "", nil // another cacheFile beat us to it
 	}
 
+	client, err := newDownloadClient(additionalTrustBundle)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+
 	klog.Infof("Downloading bootimage to %s", filePath)
-	return ova.Download(cacheDir)
+	return downloadArtifact(client.httpClient, ova, cacheDir, klog.Errorf)
 }
 
-// download obtains a file from a given URL, puts it in the cache folder, defined by dataType parameter,
-// and returns the local file path.
-func DownloadOva(ova *stream.Artifact) (string, error) {
+// DownloadOva obtains the OVA from its URL, puts it in the cache folder and returns
+// the local file path. The download trusts the system roots plus any CA
+// certificates in additionalTrustBundle (typically ControllerConfig's
+// spec.additionalTrustBundle).
+func DownloadOva(ova *stream.Artifact, additionalTrustBundle []byte) (string, error) {
 
 	fileName, err := ova.Name()
 	if err != nil {
@@ -157,5 +166,5 @@ func DownloadOva(ova *stream.Artifact) (string, error) {
 	}
 
 	filePath = filepath.Join(cacheDir, fileName)
-	return cacheFile(ova, filePath, cacheDir)
+	return cacheFile(ova, filePath, cacheDir, additionalTrustBundle)
 }

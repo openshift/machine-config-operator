@@ -216,11 +216,13 @@ func runStartCmd(_ *cobra.Command, _ []string) {
 				ctrlctx.ClientBuilder.OperatorClientOrDie(componentName),
 				ctrlctx.OperatorInformerFactory.Operator().V1().MachineConfigurations(),
 				ctrlctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
+				ctrlctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 				ctrlctx.FeatureGatesHandler,
 			)
 			go bootImageController.Run(ctx)
 			// start the informers again to enable feature gated types.
 			// see comments in SharedInformerFactory interface.
+			ctrlctx.InformerFactory.Start(ctx.Done())
 			ctrlctx.KubeNamespacedInformerFactory.Start(ctx.Done())
 			ctrlctx.MachineInformerFactory.Start(ctx.Done())
 			ctrlctx.ConfigInformerFactory.Start(ctx.Done())
