@@ -287,17 +287,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		osImageStream = nil
 	}
 
+	// The IRI registry credentials are already in the global pull secret:
+	// the installer merges them before the bootstrap machine renders its
+	// manifests. The in-cluster operator still merges on every sync, which
+	// is where credential rotation and the localhost entry for the masters
+	// are handled.
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-
-	// Merge IRI registry credentials into the pull secret for first-boot authentication.
-	// The template controller has not yet run at this point, so machine-config-daemon-pull.service
-	// would otherwise fail to authenticate against the IRI registry.
-	// Merge is a no-op if the feature gate is off or the IRI resource is absent.
-	merger := ctrlcommon.NewIRISecretMergerFromObjects(iriCredentialsSecret, cconfig, iri)
-	pullSecretBytes, err = merger.Merge(pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("could not merge IRI credentials into pull secret for bootstrap: %w", err)
-	}
 
 	// FIPS state of the cluster being installed, taken from the MachineConfig
 	// manifests on disk rather than from this process.
