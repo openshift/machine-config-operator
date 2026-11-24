@@ -37,6 +37,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
 func newTestControllerConfig(name string, bundle []byte) *mcfgv1.ControllerConfig {
@@ -199,6 +200,64 @@ func TestMachineSetSyncDownloadsOVAWithCurrentTrustBundle(t *testing.T) {
 	require.NoError(t, ccIndexer.Update(newTestControllerConfig(ctrlcommon.ControllerConfigName, newCA.pem)))
 	require.NoError(t, syncFrom(newServer))
 	requireUnknownAuthority(syncFrom(oldServer))
+}
+
+func TestUpdateControllerConfigEnqueuesOnTrustBundleChange(t *testing.T) {
+	name := ctrlcommon.ControllerConfigName
+
+	tests := []struct {
+		name          string
+		oldObj        interface{}
+		newObj        interface{}
+		expectEnqueue bool
+	}{
+		{
+			name:          "trust bundle rotated",
+			oldObj:        newTestControllerConfig(name, []byte("old-ca")),
+			newObj:        newTestControllerConfig(name, []byte("new-ca")),
+			expectEnqueue: true,
+		},
+		{
+			name:          "trust bundle added",
+			oldObj:        newTestControllerConfig(name, nil),
+			newObj:        newTestControllerConfig(name, []byte("new-ca")),
+			expectEnqueue: true,
+		},
+		{
+			name:          "trust bundle removed",
+			oldObj:        newTestControllerConfig(name, []byte("old-ca")),
+			newObj:        newTestControllerConfig(name, nil),
+			expectEnqueue: true,
+		},
+		{
+			name:          "trust bundle unchanged",
+			oldObj:        newTestControllerConfig(name, []byte("same-ca")),
+			newObj:        newTestControllerConfig(name, []byte("same-ca")),
+			expectEnqueue: false,
+		},
+		{
+			name:          "other ControllerConfig is ignored",
+			oldObj:        newTestControllerConfig("other", []byte("old-ca")),
+			newObj:        newTestControllerConfig("other", []byte("new-ca")),
+			expectEnqueue: false,
+		},
+		{
+			name:          "unexpected object type is ignored",
+			oldObj:        &corev1.ConfigMap{},
+			newObj:        &corev1.ConfigMap{},
+			expectEnqueue: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := &Controller{queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())}
+			t.Cleanup(ctrl.queue.ShutDown)
+
+			ctrl.updateControllerConfig(tc.oldObj, tc.newObj)
+			assert.Equal(t, tc.expectEnqueue, ctrl.queue.Len() == 1)
+		})
+	}
 }
 
 // TestWithAdditionalTrustBundleForwardsArguments verifies that the vSphere reconcile
