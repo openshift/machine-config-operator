@@ -38,7 +38,7 @@ func getBaseErrorMessageTemplate(ms ManagedMachineResource) string {
 // vsphere actuator's own "multiple templates found" clone-time failure.
 var backdatedImageRunID = strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive] MCO Bootimages", func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive] MCO Bootimages", func() {
 	defer g.GinkgoRecover()
 
 	var (

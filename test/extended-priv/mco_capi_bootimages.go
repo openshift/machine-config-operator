@@ -67,7 +67,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 // CAPI counterparts of the MAPI bootimages longduration test cases. The common logic
 // lives in the shared test functions in mco_bootimages.go; these wrappers only select
 // the CAPI machine management API.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesAWSCAPI] MCO CAPI Bootimages", g.Label("Platform:aws"), func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesAWSCAPI] MCO CAPI Bootimages", g.Label("Platform:aws"), func() {
 	defer g.GinkgoRecover()
 
 	var (

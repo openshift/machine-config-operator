@@ -30,7 +30,7 @@ var (
 
 // These tests verify ImageModeStatusReporting feature gate functionality.
 // They are [Serial] and [Disruptive] because they modify cluster state and interact with custom MCPs.
-var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ImageModeStatusReporting]", g.Ordered, func() {
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Serial][Disruptive][OCPFeatureGate:ImageModeStatusReporting]", g.Ordered, func() {
 	defer g.GinkgoRecover()
 
 	var (
