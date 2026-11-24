@@ -272,6 +272,7 @@ func New(
 	})
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addControllerConfig,
 		UpdateFunc: ctrl.updateControllerConfig,
 	})
 
@@ -471,6 +472,21 @@ func (ctrl *Controller) updateVSphereCredentialsSecret(oldObj, newObj interface{
 
 	klog.Infof("vSphere credentials Secret updated, reconciling enrolled machine resources")
 	ctrl.enqueueEvent("VSphereCredentialsSecretUpdated")
+}
+
+// addControllerConfig triggers reconciliation when the cluster's ControllerConfig is
+// created. A sync that ran before it existed downloaded boot images without its
+// additional trust bundle, and download failures are not retried on their own, so
+// they must be retried once the bundle is available. Other ControllerConfigs are
+// ignored.
+func (ctrl *Controller) addControllerConfig(obj interface{}) {
+	cc, ok := obj.(*mcfgv1.ControllerConfig)
+	if !ok || cc.Name != ctrlcommon.ControllerConfigName {
+		return
+	}
+
+	klog.Infof("ControllerConfig %s added, reconciling enrolled machine resources", cc.Name)
+	ctrl.enqueueEvent("ControllerConfigAdded")
 }
 
 // updateControllerConfig triggers reconciliation when the additional trust bundle in
