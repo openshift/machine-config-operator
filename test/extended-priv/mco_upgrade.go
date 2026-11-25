@@ -1,13 +1,22 @@
 package extended
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/machine-config-operator/test/extended-priv/util"
 	logger "github.com/openshift/machine-config-operator/test/extended-priv/util/logext"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 )
 
 // The explicit MCO upgrade CI flow selects [MCOUpgrade:Pre] and [MCOUpgrade:Post]
@@ -36,6 +45,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 			logger.Warnf("failed to cleanup test dir %s: %v", tmpdir, err)
 		} else {
 			logger.Infof("test dir %s is cleaned up", tmpdir)
+		}
+		specName := g.CurrentSpecReport().LeafNodeText
+		if strings.Contains(specName, "PolarionID:70813") &&
+			(strings.Contains(specName, "MCOUpgrade:Post") ||
+				(strings.Contains(specName, "MCOUpgrade:Pre") && g.CurrentSpecReport().Failed())) {
+			o.Expect(cleanupTC70813UpgradeState(oc)).NotTo(o.HaveOccurred(),
+				"failed to clean up the TC 70813 upgrade state")
 		}
 	})
 
@@ -295,6 +311,15 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 
 		logger.Infof("OK!\n")
 
+		originalManagedBootImages, err := machineConfiguration.Get(`{.spec.managedBootImages}`)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error reading the original managedBootImages configuration")
+		if originalManagedBootImages == "" {
+			originalManagedBootImages = tc70813ManagedBootImagesAbsent
+		}
+		o.Expect(
+			tmpConfigMap.SetData(tc70813OriginalManagedBootImagesKey+"="+originalManagedBootImages),
+		).To(o.Succeed(), "Error saving the original managedBootImages configuration")
+
 		exutil.By("Opt-in boot images update")
 		o.Expect(
 			machineConfiguration.SetPartialManagedBootImagesConfig(MachineSetResource, machineSet.GetAPIGroup(), labelName, labelValue),
@@ -419,3 +444,105 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/upgrade][S
 	})
 
 })
+
+const (
+	tc70813NamespaceName                = "tc-70813-tmp-namespace"
+	tc70813ConfigMapName                = "tc-70813-tmp-configmap"
+	tc70813OriginalManagedBootImagesKey = "original-managed-boot-images"
+	tc70813ManagedBootImagesAbsent      = "__mco_upgrade_managed_boot_images_absent__"
+	tc70813ClonedMachineSetName         = "cloned-tc-70813-label"
+)
+
+// cleanupTC70813UpgradeState restores the managedBootImages configuration that
+// the [MCOUpgrade:Pre] half of TC 70813 backed up and removes the temporary
+// namespace and cloned MachineSet it created. It is safe to call when the Pre
+// half never ran: missing resources are treated as nothing to clean up.
+func cleanupTC70813UpgradeState(oc *exutil.CLI) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := deleteTC70813ClonedMachineSet(ctx, oc); err != nil {
+		return err
+	}
+
+	client := oc.AsAdmin().AdminKubeClient()
+	_, err := client.CoreV1().Namespaces().Get(ctx, tc70813NamespaceName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil // The pre-upgrade half was skipped, so it created no temporary namespace.
+	}
+	if err != nil {
+		return fmt.Errorf("get TC 70813 temporary namespace: %w", err)
+	}
+
+	var cleanupErrors []error
+	configMap, err := client.CoreV1().ConfigMaps(tc70813NamespaceName).Get(ctx, tc70813ConfigMapName, metav1.GetOptions{})
+	canDeleteNamespace := false
+	switch {
+	case apierrors.IsNotFound(err):
+		// The policy update only happens after the backup ConfigMap is written.
+		canDeleteNamespace = true
+	case err != nil:
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("read TC 70813 backup ConfigMap: %w", err))
+	default:
+		original, found := configMap.Data[tc70813OriginalManagedBootImagesKey]
+		if !found {
+			// The policy update only happens after the original value is saved.
+			canDeleteNamespace = true
+		} else {
+			machineConfiguration := GetMachineConfiguration(oc.AsAdmin())
+			if original == tc70813ManagedBootImagesAbsent {
+				err = machineConfiguration.RemoveManagedBootImagesConfig()
+			} else {
+				err = machineConfiguration.Patch("merge", fmt.Sprintf(`{"spec":{"managedBootImages":%s}}`, original))
+			}
+			if err != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("restore managedBootImages configuration: %w", err))
+			} else {
+				canDeleteNamespace = true
+			}
+		}
+	}
+	if canDeleteNamespace {
+		if err := client.CoreV1().Namespaces().Delete(ctx, tc70813NamespaceName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete TC 70813 temporary namespace: %w", err))
+		}
+	}
+	return errors.Join(cleanupErrors...)
+}
+
+// deleteTC70813ClonedMachineSet deletes the MachineSet cloned by the Pre half
+// of TC 70813, but only once it has no replicas left, so that no node managed
+// by the clone is orphaned by the cleanup.
+func deleteTC70813ClonedMachineSet(ctx context.Context, oc *exutil.CLI) error {
+	client, err := dynamic.NewForConfig(oc.AsAdmin().AdminConfig())
+	if err != nil {
+		return fmt.Errorf("create client for TC 70813 MachineSet cleanup: %w", err)
+	}
+	machineSets := client.Resource(schema.GroupVersionResource{
+		Group:    MAPIApiGroup,
+		Version:  "v1beta1",
+		Resource: MachineSetResource,
+	}).Namespace(MachineAPINamespace)
+
+	cloned, err := machineSets.Get(ctx, tc70813ClonedMachineSetName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get TC 70813 cloned MachineSet before cleanup: %w", err)
+	}
+	replicas, found, err := unstructured.NestedInt64(cloned.Object, "spec", "replicas")
+	if err != nil {
+		return fmt.Errorf("read replica count for TC 70813 cloned MachineSet: %w", err)
+	}
+	if !found {
+		return fmt.Errorf("TC 70813 cloned MachineSet has no spec.replicas value")
+	}
+	if replicas != 0 {
+		return fmt.Errorf("TC 70813 cloned MachineSet still has %d replicas; leaving it and the saved configuration in place until its nodes are safe to remove", replicas)
+	}
+	if err := machineSets.Delete(ctx, tc70813ClonedMachineSetName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete TC 70813 cloned MachineSet: %w", err)
+	}
+	return nil
+}
