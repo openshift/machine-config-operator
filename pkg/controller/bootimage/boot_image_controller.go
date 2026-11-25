@@ -473,10 +473,8 @@ func (ctrl *Controller) updateMachineConfiguration(oldMC, newMC interface{}) {
 	}
 
 	// Skip reconciliation if neither ManagedBootImagesStatus nor BootImageSkewEnforcementStatus has changed.
-	// BootImageSkewEnforcementStatus is only checked when the BootImageSkewEnforcement feature gate is enabled.
 	if reflect.DeepEqual(oldMachineConfiguration.Status.ManagedBootImagesStatus, newMachineConfiguration.Status.ManagedBootImagesStatus) &&
-		(!ctrl.fgHandler.Enabled(features.FeatureGateBootImageSkewEnforcement) ||
-			reflect.DeepEqual(oldMachineConfiguration.Status.BootImageSkewEnforcementStatus, newMachineConfiguration.Status.BootImageSkewEnforcementStatus)) {
+		reflect.DeepEqual(oldMachineConfiguration.Status.BootImageSkewEnforcementStatus, newMachineConfiguration.Status.BootImageSkewEnforcementStatus) {
 		return
 	}
 

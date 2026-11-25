@@ -801,7 +801,7 @@ func TestSyncMachineConfiguration(t *testing.T) {
 				clusterVersionIndexer.Add(tc.clusterVersion)
 			}
 
-			enabledFeatureGates := []configv1.FeatureGateName{features.FeatureGateBootImageSkewEnforcement}
+			enabledFeatureGates := []configv1.FeatureGateName{}
 			if tc.enableCPMSFeatureGate {
 				enabledFeatureGates = append(enabledFeatureGates, features.FeatureGateManagedBootImagesCPMS)
 			}
