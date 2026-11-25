@@ -31,11 +31,6 @@ type ManagedMachineResource interface {
 	Delete(extraParams ...string) error
 	Patch(patchType string, patch string, extraParams ...string) error
 	Exists() bool
-	// ExistsReliably reports whether the resource exists, retrying transient
-	// read failures. Unlike Exists, it returns an error when existence cannot
-	// be determined, so callers can distinguish a missing resource from a
-	// failed lookup.
-	ExistsReliably() (bool, error)
 	AddLabel(label, value string) error
 	PrettyString() string
 	Duplicate(newName string) (ManagedMachineResource, error)

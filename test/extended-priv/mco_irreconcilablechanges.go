@@ -176,9 +176,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 
 		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
 		if bareMetalHost != nil {
-			mcExists, mcLookupErr := mc.ExistsReliably()
-			o.Expect(mcLookupErr).NotTo(o.HaveOccurred(), "Cannot determine whether MachineConfig %s already exists", mcName)
-			o.Expect(mcExists).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
+			o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
 		}
 
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
@@ -192,9 +190,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		)
 		o.Expect(err).NotTo(o.HaveOccurred(), "MachineConfig %s creation failed; check its status if the API result is uncertain", mcName)
 		defer SafeCleanup(func() {
-			mcExists, mcLookupErr := mc.ExistsReliably()
-			o.Expect(mcLookupErr).NotTo(o.HaveOccurred(), "Cannot determine whether test MachineConfig %s exists", mcName)
-			if mcExists {
+			if mc.Exists() {
 				err := mc.Delete()
 				o.Expect(err).NotTo(o.HaveOccurred())
 			}
@@ -572,10 +568,8 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 // waits for the worker pool to settle back to its initial node count.
 func scaleDownAndDeleteTestMachineSet(newMS ManagedMachineResource, mcp *MachineConfigPool, initialNodeCount int, bareMetalHost *BareMetalHost, bareMetalDisks []string, scaleAttempted bool, testNode *Node) {
 	machineSetExists := false
-	var lookupErr error
 	if newMS != nil {
-		machineSetExists, lookupErr = newMS.ExistsReliably()
-		o.Expect(lookupErr).To(o.Succeed(), "Cannot determine whether test MachineSet %s exists", newMS)
+		machineSetExists = newMS.Exists()
 	}
 	if machineSetExists {
 		if bareMetalHost != nil && scaleAttempted {
@@ -606,7 +600,7 @@ func scaleDownAndDeleteTestMachineSet(newMS ManagedMachineResource, mcp *Machine
 		if bareMetalHost != nil && scaleAttempted {
 			o.Eventually(bareMetalHost.IsAvailable, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
 		}
-	} else if lookupErr == nil && bareMetalHost != nil && scaleAttempted {
+	} else if bareMetalHost != nil && scaleAttempted {
 		o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
 	}
 }
