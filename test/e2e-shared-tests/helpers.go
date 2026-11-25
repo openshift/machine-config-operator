@@ -114,15 +114,31 @@ func assertNodeIsInDoneState(t *testing.T, cs *framework.ClientSet, node corev1.
 
 func assertNodeAndMCPIsRecovered(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool) {
 	t.Helper()
+	assertNodeAndMCPIsRecoveredWithTimeout(t, cs, node, mcp, 5*time.Minute)
+}
+
+// assertNodeAndMCPIsRecoveredAfterReboot is like assertNodeAndMCPIsRecovered
+// but uses a longer timeout to accommodate the node reboot cycle.
+func assertNodeAndMCPIsRecoveredAfterReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool) {
+	t.Helper()
+	assertNodeAndMCPIsRecoveredWithTimeout(t, cs, node, mcp, 15*time.Minute)
+}
+
+func assertNodeAndMCPIsRecoveredWithTimeout(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool, timeout time.Duration) {
+	t.Helper()
 
 	t.Log("Verifying node has recovered from config mismatch")
 	// Assert that the node eventually reaches a Done state and its reason is
-	// cleared
-	assertNodeIsInDoneState(t, cs, node)
+	// cleared.
+	assertNodeReachesStateWithTimeout(t, cs, node, timeout, func(n corev1.Node) bool {
+		isDone := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == string(constants.MachineConfigDaemonStateDone)
+		hasClearedReason := n.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] == ""
+		return isDone && hasClearedReason
+	})
 
 	t.Log("Verifying MachineConfigPool has recovered from config mismatch")
 	// Assert that the MachineConfigPool eventually recovers.
-	assertPoolReachesState(t, cs, mcp, func(m mcfgv1.MachineConfigPool) bool {
+	assertPoolReachesStateWithTimeout(t, cs, mcp, timeout, func(m mcfgv1.MachineConfigPool) bool {
 		falseConditions := []mcfgv1.MachineConfigPoolConditionType{
 			mcfgv1.MachineConfigPoolDegraded,
 			mcfgv1.MachineConfigPoolNodeDegraded,
