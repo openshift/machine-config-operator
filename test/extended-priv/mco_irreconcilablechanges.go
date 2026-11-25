@@ -3,7 +3,6 @@ package extended
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
@@ -117,6 +116,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			})
 		} else {
 			SkipTestIfWorkersCannotBeScaled(oc)
+			machineset = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 		}
 		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
 		initialNodeCount := len(mcp.GetNodesOrFail())
@@ -134,55 +134,11 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 2: Create duplicate machineset with custom disks")
-		if machineset == nil {
-			machineset = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
-		}
 		newMSName := machineset.GetName() + "-ms-ic-t2"
 		newMS, err := machineset.Duplicate(newMSName)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		defer SafeCleanup(func() {
-			machineSetExists := false
-			var lookupErr error
-			if newMS != nil {
-				machineSetExists, lookupErr = newMS.ExistsReliably()
-				o.Expect(lookupErr).To(o.Succeed(), "Cannot determine whether test MachineSet %s exists", newMS)
-			}
-			if machineSetExists {
-				if bareMetalHost != nil && scaleAttempted {
-					if testNode == nil {
-						nodes, nodeErr := newMS.GetNodes()
-						if nodeErr == nil && len(nodes) == 1 {
-							testNode = nodes[0]
-						}
-					}
-					if testNode == nil {
-						o.Expect(testNode).NotTo(o.BeNil(), "Cannot verify test disk cleanup: the bare-metal test node is inaccessible")
-					} else {
-						identityErr := bareMetalHost.VerifyNode(newMS, testNode)
-						o.Expect(identityErr).To(o.Succeed(), "Cannot verify host identity for disk cleanup")
-						if identityErr == nil {
-							o.Expect(cleanBareMetalTestDisks(testNode, bareMetalDisks)).To(o.Succeed(), "Error cleaning test disks")
-						}
-					}
-				}
-				err := newMS.ScaleTo(0)
-				o.Expect(err).NotTo(o.HaveOccurred())
-				readyTimeout := "10m"
-				if bareMetalHost != nil {
-					readyTimeout = "20m"
-				}
-				err = newMS.WaitUntilReady(readyTimeout)
-				o.Expect(err).NotTo(o.HaveOccurred())
-				err = newMS.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
-				o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
-					"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
-				if bareMetalHost != nil && scaleAttempted {
-					o.Eventually(bareMetalHost.IsAvailable, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
-				}
-			} else if lookupErr == nil && bareMetalHost != nil && scaleAttempted {
-				o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
-			}
+			scaleDownAndDeleteTestMachineSet(newMS, mcp, initialNodeCount, bareMetalHost, bareMetalDisks, scaleAttempted, testNode)
 		})
 		if bareMetalHost != nil {
 			hostLabel, removeHostLabel, err = bareMetalHost.Pin(newMS)
@@ -262,20 +218,14 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		if bareMetalHost != nil {
 			available, availErr := bareMetalHost.IsAvailable()
 			o.Expect(availErr).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
-			if !available {
-				g.Skip(fmt.Sprintf("Host %s is no longer available", bareMetalHost))
-			}
-			if healthErr := bareMetalHost.HealthCheck(); healthErr != nil {
-				g.Skip(fmt.Sprintf("Host %s is no longer healthy: %s", bareMetalHost, healthErr))
-			}
+			o.Expect(available).To(o.BeTrue(), "Host %s is no longer available", bareMetalHost)
+			o.Expect(bareMetalHost.HealthCheck()).To(o.Succeed(), "Host %s is no longer healthy", bareMetalHost)
 			verifiedDisks, disksErr := bareMetalHost.VerifiedTestDisks()
-			if disksErr != nil || !slices.Equal(verifiedDisks, bareMetalDisks) {
-				g.Skip(fmt.Sprintf("Host %s no longer has verified test disks: %v", bareMetalHost, disksErr))
-			}
+			o.Expect(disksErr).To(o.Succeed(), "Error re-verifying the test disks of host %s", bareMetalHost)
+			o.Expect(verifiedDisks).To(o.Equal(bareMetalDisks), "Host %s no longer has the verified test disks", bareMetalHost)
 			matches, pinnedErr := bareMetalHost.Pinned(newMS, hostLabel)
-			if pinnedErr != nil || !matches {
-				g.Skip(fmt.Sprintf("Host %s no longer matches the test MachineSet selector: %v", bareMetalHost, pinnedErr))
-			}
+			o.Expect(pinnedErr).To(o.Succeed(), "Error rechecking the host selector of %s", bareMetalHost)
+			o.Expect(matches).To(o.BeTrue(), "Host %s no longer matches the test MachineSet selector", bareMetalHost)
 		}
 		if platform == AWSPlatform {
 			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
@@ -294,11 +244,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 				scaleAttempted = true
 			}
 			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-			readyTimeout := "10m"
-			if bareMetalHost != nil {
-				readyTimeout = "20m"
-			}
-			o.Expect(newMS.WaitUntilReady(readyTimeout)).To(o.Succeed())
+			o.Expect(newMS.WaitUntilReady("20m")).To(o.Succeed())
 
 			testNodes := newMS.GetNodesOrFail()
 			o.Expect(testNodes).To(o.HaveLen(1))
@@ -619,3 +565,48 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(mcp.WaitForNotDegradedStatus()).To(o.Succeed())
 	})
 })
+
+// scaleDownAndDeleteTestMachineSet tears down the MachineSet created by the
+// scale-up test: it cleans the bare-metal test disks when a scale-up was
+// attempted, scales the test MachineSet down to zero replicas, deletes it and
+// waits for the worker pool to settle back to its initial node count.
+func scaleDownAndDeleteTestMachineSet(newMS ManagedMachineResource, mcp *MachineConfigPool, initialNodeCount int, bareMetalHost *BareMetalHost, bareMetalDisks []string, scaleAttempted bool, testNode *Node) {
+	machineSetExists := false
+	var lookupErr error
+	if newMS != nil {
+		machineSetExists, lookupErr = newMS.ExistsReliably()
+		o.Expect(lookupErr).To(o.Succeed(), "Cannot determine whether test MachineSet %s exists", newMS)
+	}
+	if machineSetExists {
+		if bareMetalHost != nil && scaleAttempted {
+			if testNode == nil {
+				nodes, nodeErr := newMS.GetNodes()
+				if nodeErr == nil && len(nodes) == 1 {
+					testNode = nodes[0]
+				}
+			}
+			if testNode == nil {
+				o.Expect(testNode).NotTo(o.BeNil(), "Cannot verify test disk cleanup: the bare-metal test node is inaccessible")
+			} else {
+				identityErr := bareMetalHost.VerifyNode(newMS, testNode)
+				o.Expect(identityErr).To(o.Succeed(), "Cannot verify host identity for disk cleanup")
+				if identityErr == nil {
+					o.Expect(cleanBareMetalTestDisks(testNode, bareMetalDisks)).To(o.Succeed(), "Error cleaning test disks")
+				}
+			}
+		}
+		err := newMS.ScaleTo(0)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = newMS.WaitUntilReady("20m")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = newMS.Delete()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(mcp.WaitForPoolToBeSettled(initialNodeCount)).To(o.Succeed(),
+			"MCP counts did not settle after scale-down.\n%s", mcp.PrettyString())
+		if bareMetalHost != nil && scaleAttempted {
+			o.Eventually(bareMetalHost.IsAvailable, "20m", "30s").Should(o.BeTrue(), "BareMetalHost %s did not become available after scale-down", bareMetalHost)
+		}
+	} else if lookupErr == nil && bareMetalHost != nil && scaleAttempted {
+		o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
+	}
+}
