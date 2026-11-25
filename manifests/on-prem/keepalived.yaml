@@ -26,7 +26,10 @@ spec:
     hostPath:
       path: "/opt/openshift/manifests"
   - name: run-dir
-    empty-dir: {}
+    emptyDir: {}
+  - name: tmp
+    emptyDir:
+      medium: Memory
   containers:
   - name: keepalived
     securityContext:
@@ -94,16 +97,19 @@ spec:
       mountPropagation: HostToContainer
     - name: run-dir
       mountPath: "/var/run/keepalived"
+    - name: tmp
+      mountPath: "/tmp"
     livenessProbe:
       exec:
         command:
         - /bin/bash
         - -c
         - |
-          [[ -s /etc/keepalived/keepalived.conf ]] || \
+          [[ ! -s /etc/keepalived/keepalived.conf ]] || \
           [[ -s /var/run/keepalived/stopped ]] || \
-          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+          (echo "" > /tmp/keepalived.stats && kill -s SIGUSR2 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "VRRP Instance" /tmp/keepalived.stats && exit 0 || sleep 1; done && exit 1)
       initialDelaySeconds: 20
+      timeoutSeconds: 5
     terminationMessagePolicy: FallbackToLogsOnError
     imagePullPolicy: IfNotPresent
   - name: keepalived-monitor
