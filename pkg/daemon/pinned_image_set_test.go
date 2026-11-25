@@ -27,6 +27,7 @@ import (
 	apitest "k8s.io/cri-api/pkg/apis/testing"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	machineconfigurationv1 "github.com/openshift/client-go/machineconfiguration/applyconfigurations/machineconfiguration/v1"
 	fakemco "github.com/openshift/client-go/machineconfiguration/clientset/versioned/fake"
 	mcfginformers "github.com/openshift/client-go/machineconfiguration/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/daemon/cri"
@@ -785,4 +786,70 @@ func newTestListener() (net.Listener, error) {
 // Stop stops the fake remote runtime.
 func (f *FakeRuntime) Stop() {
 	f.server.Stop()
+}
+
+func TestPoolsHavePinnedImageSets(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, poolsHavePinnedImageSets(nil))
+	require.False(t, poolsHavePinnedImageSets([]*mcfgv1.MachineConfigPool{
+		{Spec: mcfgv1.MachineConfigPoolSpec{}},
+	}))
+	require.True(t, poolsHavePinnedImageSets([]*mcfgv1.MachineConfigPool{
+		{Spec: mcfgv1.MachineConfigPoolSpec{
+			PinnedImageSets: []mcfgv1.PinnedImageSetRef{{Name: "worker-pis"}},
+		}},
+	}))
+}
+
+func TestPreviousPinnedImageSetUpdateMessage(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t,
+		"Action during update to pinned image set worker-pis: All pinned image sets complete",
+		previousPinnedImageSetUpdateMessage([]string{"worker-pis"}, "All pinned image sets complete"),
+	)
+	require.Equal(t,
+		"Action during update to pinned image sets a-pis, z-pis: All is good",
+		previousPinnedImageSetUpdateMessage([]string{"a-pis", "z-pis"}, "All is good"),
+	)
+	require.Equal(t, "All pinned image sets complete", previousPinnedImageSetUpdateMessage(nil, "All pinned image sets complete"))
+}
+
+func TestCompletedPinnedImageSetConditionMessages(t *testing.T) {
+	t.Parallel()
+
+	// Isabella regression: fresh install / empty status.pinnedImageSets must NOT
+	// imply a previous PIS update completed.
+	progReason, progMsg, degReason, degMsg := completedPinnedImageSetConditionMessages(nil, "All pinned image sets complete")
+	require.Equal(t, "NoPinnedImageSets", progReason)
+	require.Equal(t, "No pinned image sets configured", progMsg)
+	require.Equal(t, "NoPinnedImageSets", degReason)
+	require.Equal(t, "No pinned image sets configured", degMsg)
+	require.False(t, poolsHavePinnedImageSets([]*mcfgv1.MachineConfigPool{fakeWorkerPoolNoPinnedImageSets}))
+	require.NotContains(t, progMsg, "previous")
+	require.NotContains(t, progMsg, "Action during update")
+
+	// With PIS: name the set(s), enhancement-style "Action during update to …".
+	progReason, progMsg, degReason, degMsg = completedPinnedImageSetConditionMessages([]string{"worker-pis"}, "All pinned image sets complete")
+	require.Equal(t, "PinnedImageSetsUpdateComplete", progReason)
+	require.Equal(t, "Action during update to pinned image set worker-pis: All pinned image sets complete", progMsg)
+	require.Equal(t, "PinnedImageSetsUpdateComplete", degReason)
+	require.Equal(t, "Action during update to pinned image set worker-pis: All is good", degMsg)
+	require.True(t, poolsHavePinnedImageSets([]*mcfgv1.MachineConfigPool{fakeWorkerPoolPinnedImageSets}))
+}
+
+func TestPinnedImageSetNamesFromApplyConfigs(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, pinnedImageSetNamesFromApplyConfigs(nil))
+	require.Nil(t, pinnedImageSetNamesFromApplyConfigs([]*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{}))
+
+	cfgs := []*machineconfigurationv1.MachineConfigNodeStatusPinnedImageSetApplyConfiguration{
+		machineconfigurationv1.MachineConfigNodeStatusPinnedImageSet().WithName("z-pis"),
+		machineconfigurationv1.MachineConfigNodeStatusPinnedImageSet().WithName("a-pis"),
+		machineconfigurationv1.MachineConfigNodeStatusPinnedImageSet().WithName("a-pis"),
+		nil,
+	}
+	require.Equal(t, []string{"a-pis", "z-pis"}, pinnedImageSetNamesFromApplyConfigs(cfgs))
 }
