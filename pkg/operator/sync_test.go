@@ -45,7 +45,6 @@ import (
 	"k8s.io/client-go/dynamic/dynamiclister"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
 	clienttesting "k8s.io/client-go/testing"
-	"k8s.io/utils/ptr"
 )
 
 func TestSyncCloudConfig(t *testing.T) {
@@ -534,7 +533,7 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 			infra:                   buildInfra(withPlatformType(configv1.BareMetalPlatformType), withBareMetalVIPManagement("BGP")),
 			cr:                      buildBGPVIPConfigCR(),
 			expectedBGPVIPPeersJSON: goldenJSON,
-			expectedRendered:        ptr.To(metav1.ConditionTrue),
+			expectedRendered:        new(metav1.ConditionTrue),
 		},
 		{
 			name:                    "ControllerConfig apply failure reports Rendered=False",
@@ -542,7 +541,7 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 			cr:                      buildBGPVIPConfigCR(),
 			ccApplyError:            errors.New("controllerconfigs is forbidden"),
 			expectedBGPVIPPeersJSON: goldenJSON,
-			expectedRendered:        ptr.To(metav1.ConditionFalse),
+			expectedRendered:        new(metav1.ConditionFalse),
 		},
 		{
 			name:             "BGP enabled with missing BGPVIPConfig degrades",
@@ -556,7 +555,7 @@ func TestSyncBGPVIPPeersJSON(t *testing.T) {
 			cr:                      buildBGPVIPConfigCR(withPasswordSecret),
 			secrets:                 []runtime.Object{bgpPasswordSecret("bgp-peer-pw", []byte("s3cret"))},
 			expectedBGPVIPPeersJSON: simplePeersTransport,
-			expectedRendered:        ptr.To(metav1.ConditionTrue),
+			expectedRendered:        new(metav1.ConditionTrue),
 		},
 		{
 			// Missing/invalid password Secret => render error (Degraded),

@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 	networkingv1ac "k8s.io/client-go/applyconfigurations/networking/v1"
-	"k8s.io/utils/ptr"
 )
 
 const networkPolicyFieldManager = "machine-config-operator"
@@ -115,8 +114,8 @@ func allowPolicySpec(app string) networkingv1.NetworkPolicySpec {
 		PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": app}},
 		Ingress: []networkingv1.NetworkPolicyIngressRule{{
 			Ports: []networkingv1.NetworkPolicyPort{{
-				Protocol: ptr.To(corev1.ProtocolTCP),
-				Port:     ptr.To(intstr.FromInt32(9001)),
+				Protocol: new(corev1.ProtocolTCP),
+				Port:     new(intstr.FromInt32(9001)),
 			}},
 		}},
 		PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
@@ -164,7 +163,7 @@ func (optr *Operator) syncNetworkPolicies(_ *renderConfig, _ *configv1.ClusterOp
 	// Apply default-deny last via raw patch so empty ingress/egress slices are
 	// preserved in the payload and SSA claims ownership of those fields.
 	if !optr.networkPolicyMatchesDesired("default-deny", ns) {
-		patchOpts := metav1.PatchOptions{FieldManager: networkPolicyFieldManager, Force: ptr.To(true)}
+		patchOpts := metav1.PatchOptions{FieldManager: networkPolicyFieldManager, Force: new(true)}
 		if _, err := optr.kubeClient.NetworkingV1().NetworkPolicies(ns).Patch(
 			ctx, "default-deny", types.ApplyPatchType, defaultDenyPatchBody(), patchOpts,
 		); err != nil {

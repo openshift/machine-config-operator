@@ -7,7 +7,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 )
 
 func TestMergeDaemonSetUpdateStrategy(t *testing.T) {
@@ -133,11 +132,11 @@ func TestMergeDaemonSetUpdateStrategy(t *testing.T) {
 
 	for idx, test := range daemonset_update_strategy_tests {
 		t.Run(fmt.Sprintf("test#%d", idx), func(t *testing.T) {
-			modified := ptr.To(false)
-			EnsureDaemonSet(modified, &test.existing, test.input)
+			modified := false
+			EnsureDaemonSet(&modified, &test.existing, test.input)
 
-			if *modified != test.expectedModified {
-				t.Fatalf("mismatch updatestrategy got: %v want: %v", *modified, test.expectedModified)
+			if modified != test.expectedModified {
+				t.Fatalf("mismatch updatestrategy got: %v want: %v", modified, test.expectedModified)
 			}
 
 			if !equality.Semantic.DeepEqual(test.existing, test.expected) {
