@@ -205,8 +205,18 @@ func (ctrl *Controller) syncMAPIMachineSet(machineSet *machinev1beta1.MachineSet
 		return false, "", fmt.Errorf("failed to fetch infra object during machineset sync: %w", err)
 	}
 
+	// Only vSphere downloads boot images; fetch the CA certificates that the download must trust in
+	// addition to the system roots
+	var additionalTrustBundle []byte
+	if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == osconfigv1.VSpherePlatformType {
+		additionalTrustBundle, err = ctrl.getAdditionalTrustBundle()
+		if err != nil {
+			return false, "", fmt.Errorf("failed to fetch additional trust bundle during machineset sync: %w", err)
+		}
+	}
+
 	// Check if the this MachineSet requires an update
-	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient)
+	patchRequired, reconcileSkipped, newMachineSet, rhcosVersion, err := checkMachineSet(infra, machineSet, configMap, arch, ctrl.kubeClient, additionalTrustBundle)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to reconcile machineset %s, err: %w", machineSet.Name, err)
 	}

@@ -61,7 +61,9 @@ type publisherOffer struct {
 // reconcileSkipped=true means the boot image could not be updated automatically (e.g.
 // custom or unknown image) and requires manual intervention; the condition is surfaced
 // via skew enforcement rather than returned as an error.
-func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface) (bool, bool, *machinev1beta1.MachineSet, string, error) {
+// additionalTrustBundle holds extra PEM CA certificates to trust when downloading boot
+// image artifacts; it is only used on platforms that download them (vSphere).
+func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta1.MachineSet, configMap *corev1.ConfigMap, arch string, secretClient clientset.Interface, additionalTrustBundle []byte) (bool, bool, *machinev1beta1.MachineSet, string, error) {
 	switch infra.Status.PlatformStatus.Type {
 	case osconfigv1.AWSPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileAWSProviderSpec)
@@ -70,10 +72,22 @@ func checkMachineSet(infra *osconfigv1.Infrastructure, machineSet *machinev1beta
 	case osconfigv1.GCPPlatformType:
 		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileGCPProviderSpec)
 	case osconfigv1.VSpherePlatformType:
-		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, reconcileVSphereProviderSpec)
+		return reconcilePlatform(machineSet, infra, configMap, arch, secretClient, withAdditionalTrustBundle(additionalTrustBundle, reconcileVSphereProviderSpec))
 	default:
 		klog.Infof("Skipping machineset %s, unsupported platform %s", machineSet.Name, infra.Status.PlatformStatus.Type)
 		return false, false, nil, "", nil
+	}
+}
+
+// withAdditionalTrustBundle adapts a vSphere provider spec reconcile function that downloads boot images to the
+// signature expected by reconcilePlatform, binding the CA certificates that the download must trust in addition
+// to the system roots.
+func withAdditionalTrustBundle(
+	additionalTrustBundle []byte,
+	reconcile func(*stream.Stream, string, *osconfigv1.Infrastructure, *machinev1beta1.VSphereMachineProviderSpec, string, clientset.Interface, []byte) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error),
+) func(*stream.Stream, string, *osconfigv1.Infrastructure, *machinev1beta1.VSphereMachineProviderSpec, string, clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
+	return func(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, machineSetName string, kubeClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
+		return reconcile(streamData, arch, infra, providerSpec, machineSetName, kubeClient, additionalTrustBundle)
 	}
 }
 
@@ -227,14 +241,20 @@ func reconcileAWSProviderSpec(streamData *stream.Stream, arch string, _ *osconfi
 	return true, false, newProviderSpec, rhcosVersion, nil
 }
 
+// createVSphereVMTemplate finds or creates the RHCOS template VM, downloading the OVA when needed. It is a variable
+// only so that tests can stand in for the steps that need a live vCenter.
+var createVSphereVMTemplate = createNewVMTemplate
+
 // reconcileVSphereProviderSpec reconciles the vSphere provider spec by finding or creating the RHCOS template VM.
+// When the RHCOS OVA must be downloaded, the download trusts the system roots plus any CA certificates in
+// additionalTrustBundle.
 // Returns:
 //   - patchRequired: true when the MachineSet's providerSpec.Template must be updated to the resolved template name
 //   - reconcileSkipped: true when the workspace does not match any failure domain and cannot be managed automatically; see reconcilePlatform
 //   - newProviderSpec: updated copy of providerSpec; nil when patchRequired=false or reconcileSkipped=true
 //   - rhcosVersion: always empty for vSphere (template version is managed via VM properties, not surfaced here)
 //   - err: non-nil for vSphere API, credential, or ignition errors that should degrade the CO
-func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, kubeClient clientset.Interface) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
+func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra *osconfigv1.Infrastructure, providerSpec *machinev1beta1.VSphereMachineProviderSpec, _ string, kubeClient clientset.Interface, additionalTrustBundle []byte) (bool, bool, *machinev1beta1.VSphereMachineProviderSpec, string, error) {
 
 	if infra.Spec.PlatformSpec.VSphere == nil {
 		klog.Warningf("Reconcile skipped: VSphere field is nil in PlatformSpec %v", infra.Spec.PlatformSpec)
@@ -258,7 +278,7 @@ func reconcileVSphereProviderSpec(streamData *stream.Stream, arch string, infra 
 		return false, false, nil, "", fmt.Errorf("failed to fetch vSphere credentials during machineset sync: %w", err)
 	}
 
-	newBootImg, patchRequired, reconcileSkipped, err := createNewVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release)
+	newBootImg, patchRequired, reconcileSkipped, err := createVSphereVMTemplate(streamData, providerSpec, infra, credsSc, kubeClient, arch, artifacts.Release, additionalTrustBundle)
 	if err != nil {
 		return false, false, nil, "", err
 	}
