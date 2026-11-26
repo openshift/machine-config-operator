@@ -1,0 +1,36 @@
+name: cgroup2-no-hugetlb-accounting.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Turn off memory_hugetlb_accounting on the cgroup v2 mount
+  Documentation=https://github.com/kubernetes/kubernetes/issues/144131
+  DefaultDependencies=no
+  Conflicts=shutdown.target
+  After=systemd-remount-fs.service
+  Before=sysinit.target shutdown.target crio.service kubelet.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  # With memory_hugetlb_accounting, hugepages also count against memory.max,
+  # which the kubelet sets from the memory limit alone. systemd 259 and later
+  # set the option when the kernel supports it. Does nothing when it is not set.
+  # A cgroup v2 remount replaces all of the mount's options and flags, so the
+  # ones to keep (nosuid, nodev and noexec included) are read from the current
+  # mount and passed again.
+  ExecStart=/bin/bash -c 'set -eu; \
+    opts=$$(findmnt -n -o OPTIONS -t cgroup2 /sys/fs/cgroup); \
+    case ",$$opts," in \
+      *,memory_hugetlb_accounting,*) ;; \
+      *) echo "memory_hugetlb_accounting is not set, nothing to do"; exit 0 ;; \
+    esac; \
+    keep=$$(echo "$$opts" | tr , "\n" | grep -vxE "seclabel|memory_hugetlb_accounting" | paste -sd, -); \
+    mount -o "remount,$$keep" cgroup2 /sys/fs/cgroup; \
+    now=$$(findmnt -n -o OPTIONS -t cgroup2 /sys/fs/cgroup); \
+    case ",$$now," in \
+      *,memory_hugetlb_accounting,*) echo "memory_hugetlb_accounting is still set: $$now"; exit 1 ;; \
+    esac; \
+    echo "cgroup v2 mount options were $$opts, are now $$now"'
+
+  [Install]
+  WantedBy=sysinit.target
