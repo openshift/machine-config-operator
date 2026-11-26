@@ -1,6 +1,7 @@
 package template
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,8 @@ import (
 	"github.com/openshift/api/features"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -42,8 +45,123 @@ var (
 	noResyncPeriodFunc = func() time.Duration { return 0 }
 )
 
+type featureGateHandlerStub struct{ enabled bool }
+
+func (featureGateHandlerStub) Connect(context.Context) error             { return nil }
+func (s featureGateHandlerStub) Enabled(configv1.FeatureGateName) bool   { return s.enabled }
+func (featureGateHandlerStub) Exists(configv1.FeatureGateName) bool      { return true }
+func (featureGateHandlerStub) KnownFeatures() []configv1.FeatureGateName { return nil }
+
+func TestGetClusterPullSecretFeatureGateDisabledUsesBaseline(t *testing.T) {
+	cfg := newControllerConfig("test")
+	baseline := newPullSecret(cfg.Spec.PullSecret.Name, []byte(`{"auths":{"baseline":{}}}`))
+	merged := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.GlobalPullSecretMergedName, Namespace: ctrlcommon.OpenshiftConfigNamespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"merged":{}}}`)},
+	}
+	ctrl := &Controller{kubeClient: k8sfake.NewSimpleClientset(baseline, merged), fgHandler: featureGateHandlerStub{}}
+
+	data, err := ctrl.getClusterPullSecret(cfg)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"auths":{"baseline":{}}}`, string(data))
+}
+
+func TestGetClusterPullSecretFeatureGateEnabledUsesMergedSecret(t *testing.T) {
+	cfg := newControllerConfig("test")
+	baseline := newPullSecret(cfg.Spec.PullSecret.Name, []byte(`{"auths":{"baseline":{}}}`))
+	merged := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.GlobalPullSecretMergedName, Namespace: ctrlcommon.OpenshiftConfigNamespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"merged":{}}}`)},
+	}
+	ctrl := &Controller{kubeClient: k8sfake.NewSimpleClientset(baseline, merged), fgHandler: featureGateHandlerStub{enabled: true}}
+
+	data, err := ctrl.getClusterPullSecret(cfg)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"auths":{"merged":{}}}`, string(data))
+}
+
+func TestGetClusterPullSecretMergedMissingFallsBackToBaseline(t *testing.T) {
+	cfg := newControllerConfig("test")
+	baseline := newPullSecret(cfg.Spec.PullSecret.Name, []byte(`{"auths":{"baseline":{}}}`))
+	ctrl := &Controller{kubeClient: k8sfake.NewSimpleClientset(baseline), fgHandler: featureGateHandlerStub{enabled: true}}
+
+	data, err := ctrl.getClusterPullSecret(cfg)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"auths":{"baseline":{}}}`, string(data))
+}
+
+func TestGetClusterPullSecretRejectsMissingMergedData(t *testing.T) {
+	cfg := newControllerConfig("test")
+	baseline := newPullSecret(cfg.Spec.PullSecret.Name, []byte(`{"auths":{"baseline":{}}}`))
+	merged := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.GlobalPullSecretMergedName, Namespace: ctrlcommon.OpenshiftConfigNamespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+	}
+	ctrl := &Controller{kubeClient: k8sfake.NewSimpleClientset(baseline, merged), fgHandler: featureGateHandlerStub{enabled: true}}
+
+	_, err := ctrl.getClusterPullSecret(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), corev1.DockerConfigJsonKey)
+}
+
+func TestGetClusterPullSecretRejectsMalformedMergedSecret(t *testing.T) {
+	cfg := newControllerConfig("test")
+	baseline := newPullSecret(cfg.Spec.PullSecret.Name, []byte(`{"auths":{"baseline":{}}}`))
+	merged := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.GlobalPullSecretMergedName, Namespace: ctrlcommon.OpenshiftConfigNamespace},
+		Type:       corev1.SecretTypeOpaque,
+	}
+	ctrl := &Controller{kubeClient: k8sfake.NewSimpleClientset(baseline, merged), fgHandler: featureGateHandlerStub{enabled: true}}
+
+	_, err := ctrl.getClusterPullSecret(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected secret type")
+}
+
+func mergedSecretForTemplateTest() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ctrlcommon.GlobalPullSecretMergedName, Namespace: ctrlcommon.OpenshiftConfigNamespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+	}
+}
+
+func TestTemplateControllerWatchesPullSecretMergedChanges(t *testing.T) {
+	f := newFixture(t)
+	f.featureGateEnabled = true
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	f.ccLister = append(f.ccLister, cc)
+	f.objects = append(f.objects, cc)
+	ctrl := f.newController()
+
+	drainQueue := func() {
+		for ctrl.queue.Len() > 0 {
+			key, _ := ctrl.queue.Get()
+			ctrl.queue.Done(key)
+		}
+	}
+
+	ctrl.filterSecret(mergedSecretForTemplateTest())
+	assert.Equal(t, 1, ctrl.queue.Len())
+	drainQueue()
+
+	ctrl.updateSecret(mergedSecretForTemplateTest(), func() *corev1.Secret {
+		updated := mergedSecretForTemplateTest()
+		updated.Data = map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"updated":{}}}`)}
+		return updated
+	}())
+	assert.Equal(t, 1, ctrl.queue.Len())
+	drainQueue()
+
+	ctrl.deleteSecret(mergedSecretForTemplateTest())
+	assert.Equal(t, 1, ctrl.queue.Len())
+}
+
 type fixture struct {
 	t *testing.T
+
+	featureGateEnabled bool
 
 	client          *fake.Clientset
 	kubeclient      *k8sfake.Clientset
@@ -132,8 +250,7 @@ func (f *fixture) newController() *Controller {
 		cinformer.Core().V1().Secrets(), // iriSecretsInformer: reuse same factory in tests; not exercised here
 		iriInformers.Machineconfiguration().V1().InternalReleaseImages(),
 		apiserverinformer.Config().V1().APIServers(),
-		f.kubeclient, f.client,
-		ctrlcommon.NewFeatureGatesHardcodedHandler(nil, nil))
+		f.kubeclient, f.client, featureGateHandlerStub{enabled: f.featureGateEnabled})
 
 	c.tlsGroupPreferencesEnabled = c.fgHandler.Enabled(features.FeatureGateTLSGroupPreferences)
 	c.ccListerSynced = alwaysReady
