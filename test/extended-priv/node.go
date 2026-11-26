@@ -2,6 +2,7 @@ package extended
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -35,6 +36,22 @@ type NodeList struct {
 type SpaceUsage struct {
 	Used  int64
 	Avail int64
+}
+
+// NodeBlockDevice describes a block device and its dependent devices.
+type NodeBlockDevice struct {
+	Name       string            `json:"name"`
+	Type       string            `json:"type"`
+	PartLabel  string            `json:"partlabel"`
+	MajorMinor string            `json:"maj:min"`
+	Children   []NodeBlockDevice `json:"children"`
+}
+
+// NodeMount describes a mounted filesystem in the node's mount namespace.
+type NodeMount struct {
+	Target     string `json:"target"`
+	Source     string `json:"source"`
+	MajorMinor string `json:"maj:min"`
 }
 
 // NewNode construct a new node struct
@@ -131,6 +148,117 @@ func (n *Node) DebugNodeWithChrootStd(cmd ...string) (string, string, error) {
 	}
 
 	return stdout, stderr, err
+}
+
+// RunHostCommand executes a command in the node's mount namespace and returns its stdout.
+func (n *Node) RunHostCommand(cmd ...string) (string, error) {
+	hostCommand := append([]string{"nsenter", "--target", "1", "--mount", "--root", "--"}, cmd...)
+	stdout, stderr, err := n.DebugNodeWithChrootStd(hostCommand...)
+	if err != nil {
+		return "", fmt.Errorf("running %q on node %s: %w; stderr: %s", cmd, n, err, stderr)
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
+// ResolveHostPath resolves an existing path in the node's filesystem.
+func (n *Node) ResolveHostPath(hostPath string) (string, error) {
+	resolved, err := n.RunHostCommand("readlink", "-e", hostPath)
+	if err != nil {
+		return "", err
+	}
+	if resolved == "" || !filepath.IsAbs(resolved) {
+		return "", fmt.Errorf("cannot resolve %s on node %s", hostPath, n)
+	}
+	return resolved, nil
+}
+
+// GetBlockDevices returns the node's block-device dependency tree.
+func (n *Node) GetBlockDevices() ([]NodeBlockDevice, error) {
+	output, err := n.RunHostCommand("lsblk", "--json", "--paths", "--output", "NAME,TYPE,PARTLABEL,MAJ:MIN")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		BlockDevices []NodeBlockDevice `json:"blockdevices"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "blockdevices").IsArray() {
+		return nil, fmt.Errorf("invalid block-device output on node %s: %s", n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding block devices on node %s: %w", n, err)
+	}
+	return result.BlockDevices, nil
+}
+
+// GetMounts returns the node's mounted filesystems and their device numbers.
+func (n *Node) GetMounts() ([]NodeMount, error) {
+	output, err := n.RunHostCommand("findmnt", "--json", "--list", "--output", "TARGET,SOURCE,MAJ:MIN")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Filesystems []NodeMount `json:"filesystems"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "filesystems").IsArray() {
+		return nil, fmt.Errorf("invalid mount output on node %s: %s", n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding mounts on node %s: %w", n, err)
+	}
+	return result.Filesystems, nil
+}
+
+// MountForPath finds the most specific mount containing a path.
+func MountForPath(mounts []NodeMount, target string) (NodeMount, error) {
+	var selected NodeMount
+	ambiguous := false
+	for _, mount := range mounts {
+		mountPath := path.Clean(mount.Target)
+		if mountPath != "/" && target != mountPath && !strings.HasPrefix(target, mountPath+"/") {
+			continue
+		}
+		if len(mountPath) > len(selected.Target) {
+			selected = mount
+			selected.Target = mountPath
+			ambiguous = false
+		} else if mountPath == selected.Target && mount.MajorMinor != selected.MajorMinor {
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return NodeMount{}, fmt.Errorf("multiple mounts cover %s", target)
+	}
+	if selected.Target == "" || selected.MajorMinor == "" {
+		return NodeMount{}, fmt.Errorf("cannot determine the block device backing %s", target)
+	}
+	return selected, nil
+}
+
+// GetDeviceSignatures reports the filesystem or partition signatures on a device.
+func (n *Node) GetDeviceSignatures(device string) ([]string, error) {
+	output, err := n.RunHostCommand("wipefs", "--json", "--output", "TYPE", device)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Signatures []struct {
+			Type string `json:"type"`
+		} `json:"signatures"`
+	}
+	if !gjson.Valid(output) || !gjson.Get(output, "signatures").IsArray() {
+		return nil, fmt.Errorf("invalid signatures for %s on node %s: %s", device, n, output)
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("decoding signatures for %s on node %s: %w", device, n, err)
+	}
+	var signatures []string
+	for _, signature := range result.Signatures {
+		if signature.Type == "" {
+			return nil, fmt.Errorf("unknown signature on %s on node %s", device, n)
+		}
+		signatures = append(signatures, signature.Type)
+	}
+	return signatures, nil
 }
 
 // DebugNodeWithOptions launch debug container with options e.g. --image
