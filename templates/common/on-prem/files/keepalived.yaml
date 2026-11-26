@@ -88,11 +88,34 @@ contents:
           #/bin/bash
           sigterm_handler()
           {
-            if pid=$(pgrep -o keepalived); then
-              kill -s SIGTERM "$pid"
-              # Give keepalived time to shut down
-              while pgrep -o keepalived; do sleep 1; done
-            fi
+            # PID 1 must not exit while the VRRP child is resigning:
+            # exiting tears down the container's PID namespace. A failed
+            # pgrep during host shutdown is not proof the daemon is gone.
+            trap '' TERM
+            set +x
+            local stat pid comm state ppid parent_comm live sent=false
+            while :; do
+              live=false
+              for stat in /proc/[0-9]*/stat; do
+                read -r pid comm state ppid _ 2>/dev/null < "$stat" || continue
+                [[ "$comm" == '(keepalived)' && "$state" != Z && "$state" != X ]] || continue
+                live=true
+                if ! "$sent"; then
+                  # Signal the parent, including when started by the socket
+                  # handler. It coordinates shutdown of its VRRP process.
+                  if read -r parent_comm 2>/dev/null < "/proc/$ppid/comm" && [[ "$parent_comm" == keepalived ]]; then
+                    continue
+                  fi
+                  if kill -TERM "$pid"; then
+                    sent=true
+                    echo "Waiting for keepalived to finish shutting down" >&2
+                  fi
+                fi
+              done
+              "$live" || return 0
+              # A stop signal can interrupt the sleep. Always recheck.
+              sleep 0.2 || :
+            done
           }
 
           reload_keepalived()
@@ -145,7 +168,8 @@ contents:
              exit 0
           fi
 
-          trap sigterm_handler SIGTERM
+          trap sigterm_handler EXIT
+          trap 'exit 0' TERM
           if [ -s "/etc/keepalived/keepalived.conf" ]; then
               /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
           fi
