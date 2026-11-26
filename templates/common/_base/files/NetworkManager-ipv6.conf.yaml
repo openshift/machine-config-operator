@@ -5,3 +5,4 @@ contents:
     [connection]
     ipv6.dhcp-duid=ll
     ipv6.dhcp-iaid=mac
+    ipv6.addr-gen-mode=0
