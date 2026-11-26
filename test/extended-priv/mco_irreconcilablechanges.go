@@ -89,34 +89,16 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 			removeHostLabel      func() error
 			testNode             *Node
 			scaleAttempted       bool
+			probeNode            *Node
+			workerNodes          []*Node
 		)
-		if platform == BaremetalPlatform {
-			if !IsCapabilityEnabled(oc, "MachineAPI") {
-				g.Skip("MachineAPI capability is disabled; bare-metal workers cannot be scaled")
-			}
-			var err error
-			machineset, err = GetValidManagedMachineResource(oc)
-			if errors.Is(err, ErrNoValidManagedMachineResource) {
-				g.Skip("No ready MachineSet with replicas > 0 was found; cannot select a bare-metal test host")
-			}
-			o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a MachineSet for the bare-metal test host")
-			bareMetalHost, err = FindAvailableBareMetalHost(oc, machineset, func(host *BareMetalHost) error {
-				var diskErr error
-				bareMetalDisks, diskErr = host.VerifiedTestDisks()
-				return diskErr
-			})
-			o.Expect(err).To(o.Succeed(), "Error checking bare-metal test hosts")
-			if bareMetalHost == nil {
-				g.Skip("No healthy, free CI spare worker has verified non-root test disks and a matching host selector")
-			}
+		machineset, bareMetalHost, bareMetalDisks = selectIrreconcilableScaleUpResources(oc, platform)
+		if bareMetalHost != nil {
 			defer SafeCleanup(func() {
 				if removeHostLabel != nil {
 					o.Expect(removeHostLabel()).To(o.Succeed(), "Error removing test label from host %s", bareMetalHost)
 				}
 			})
-		} else {
-			SkipTestIfWorkersCannotBeScaled(oc)
-			machineset = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
 		}
 		mcp := NewMachineConfigPool(oc, MachineConfigPoolWorker)
 		initialNodeCount := len(mcp.GetNodesOrFail())
@@ -134,18 +116,12 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 2: Create duplicate machineset with custom disks")
-		newMSName := machineset.GetName() + "-ms-ic-t2"
-		newMS, err := machineset.Duplicate(newMSName)
-		o.Expect(err).NotTo(o.HaveOccurred())
+		newMS := duplicateIrreconcilableScaleUpMachineSet(machineset)
 		defer SafeCleanup(func() {
 			scaleDownAndDeleteTestMachineSet(newMS, mcp, initialNodeCount, bareMetalHost, bareMetalDisks, scaleAttempted, testNode)
 		})
 		if bareMetalHost != nil {
-			hostLabel, removeHostLabel, err = bareMetalHost.Pin(newMS)
-			if errors.Is(err, ErrBareMetalHostUnavailable) {
-				g.Skip(fmt.Sprintf("Cannot select host: %s", err))
-			}
-			o.Expect(err).To(o.Succeed(), "Error selecting host %s", bareMetalHost)
+			hostLabel, removeHostLabel = pinBareMetalHostToMachineSet(bareMetalHost, newMS)
 		}
 
 		err = platformBasedDisksPatch(platform, newMS)
@@ -158,93 +134,37 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		if bareMetalHost != nil {
 			disks = bareMetalDisks
 		}
-		var probeNode *Node
 		if platform == AWSPlatform {
 			exutil.By("Step 2.5: Scale up probe node to discover disk paths")
-			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
-
-			probeNodes := newMS.GetNodesOrFail()
-			o.Expect(probeNodes).To(o.HaveLen(1))
-			probeNode = probeNodes[0]
-			logger.Infof("Probe node is: %s", probeNode.GetName())
-
-			discoveredDisks := discoverNVMeByPathDisks(probeNode)
-			o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
-			disks = discoveredDisks
-		}
-
-		mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
-		if bareMetalHost != nil {
-			o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
+			probeNode, disks = scaleUpProbeNodeToDiscoverDiskPaths(newMS)
 		}
 
 		exutil.By("Step 3: Apply extra-disks-with-files MachineConfig")
-		err = mc.Create(
-			"-p", "NAME="+mcName,
-			"-p", "POOL="+MachineConfigPoolWorker,
-			"-p", "DEVICE1="+disks[0],
-			"-p", "DEVICE2="+disks[1],
-			"-p", "FILE_PATH=/etc/temp_config.conf",
-			"-p", "FILE_CONTENT=THIS_IS_A_TEST_FILE_CONF",
-		)
-		o.Expect(err).NotTo(o.HaveOccurred(), "MachineConfig %s creation failed; check its status if the API result is uncertain", mcName)
+		mc := applyExtraDisksMachineConfig(oc, mcName, disks, bareMetalHost)
 		defer SafeCleanup(func() {
 			if mc.Exists() {
-				err := mc.Delete()
-				o.Expect(err).NotTo(o.HaveOccurred())
+				o.Expect(mc.Delete()).NotTo(o.HaveOccurred())
 			}
 		})
-		logger.Infof("MC %s created successfully", mcName)
 
 		err = mcp.WaitForUpdatedStatus()
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		exutil.By("Step 4: Verify existing nodes report storage irreconcilable changes")
-		workerNodes := mcp.GetSortedNodesOrFail()
-
-		for _, node := range workerNodes {
-			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.ContainSubstring("spec.config.storage.disks"),
-				"Node %s should have irreconcilable changes for storage.disks", node.GetName())
-			logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
-		}
-		logger.Infof("All worker nodes report irreconcilable storage changes!\n")
+		workerNodes = mcp.GetSortedNodesOrFail()
+		verifyNodesReportStorageIrreconcilableChanges(workerNodes)
 
 		exutil.By("Step 5: Scale up test node with MC applied via Ignition")
 		if bareMetalHost != nil {
-			available, availErr := bareMetalHost.IsAvailable()
-			o.Expect(availErr).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
-			o.Expect(available).To(o.BeTrue(), "Host %s is no longer available", bareMetalHost)
-			o.Expect(bareMetalHost.HealthCheck()).To(o.Succeed(), "Host %s is no longer healthy", bareMetalHost)
-			verifiedDisks, disksErr := bareMetalHost.VerifiedTestDisks()
-			o.Expect(disksErr).To(o.Succeed(), "Error re-verifying the test disks of host %s", bareMetalHost)
-			o.Expect(verifiedDisks).To(o.Equal(bareMetalDisks), "Host %s no longer has the verified test disks", bareMetalHost)
-			matches, pinnedErr := bareMetalHost.Pinned(newMS, hostLabel)
-			o.Expect(pinnedErr).To(o.Succeed(), "Error rechecking the host selector of %s", bareMetalHost)
-			o.Expect(matches).To(o.BeTrue(), "Host %s no longer matches the test MachineSet selector", bareMetalHost)
+			recheckBareMetalHostForScaleUp(bareMetalHost, newMS, hostLabel, bareMetalDisks)
 		}
 		if platform == AWSPlatform {
-			o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
-			o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
-
-			allNodes := newMS.GetNodesOrFail()
-			o.Expect(allNodes).To(o.HaveLen(2))
-			for _, n := range allNodes {
-				if n.GetName() != probeNode.GetName() {
-					testNode = n
-				}
-			}
-			o.Expect(testNode).NotTo(o.BeNil(), "Could not identify test node among scaled-up nodes")
+			testNode = scaleUpAWSTestNode(newMS, probeNode)
 		} else {
 			if bareMetalHost != nil {
 				scaleAttempted = true
 			}
-			o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
-			o.Expect(newMS.WaitUntilReady("20m")).To(o.Succeed())
-
-			testNodes := newMS.GetNodesOrFail()
-			o.Expect(testNodes).To(o.HaveLen(1))
-			testNode = testNodes[0]
+			testNode = scaleUpSingleTestNode(newMS)
 		}
 		logger.Infof("Test node is: %s", testNode.GetName())
 		if bareMetalHost != nil {
@@ -268,12 +188,7 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 		mc.DeleteWithWait()
 
 		exutil.By("Step 9: Verify existing nodes have irreconcilable changes cleared")
-		for _, node := range workerNodes {
-			o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(),
-				"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
-			logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
-		}
-		logger.Infof("All existing worker nodes have cleared irreconcilable changes!\n")
+		verifyNodesClearedIrreconcilableChanges(workerNodes)
 
 		exutil.By("Step 10: Verify test node now reports irreconcilable changes")
 		o.Eventually(testNode.GetIrreconcilableChanges, "5m", "10s").Should(o.SatisfyAll(
@@ -603,4 +518,166 @@ func scaleDownAndDeleteTestMachineSet(newMS ManagedMachineResource, mcp *Machine
 	} else if bareMetalHost != nil && scaleAttempted {
 		o.Expect(machineSetExists).To(o.BeTrue(), "Cannot verify test disk cleanup: the test MachineSet is inaccessible")
 	}
+}
+
+// selectIrreconcilableScaleUpResources picks the MachineSet to duplicate and,
+// on bare metal, the spare host to run the scale-up test on. It skips the test
+// when no scalable MachineSet or usable spare host is available.
+func selectIrreconcilableScaleUpResources(oc *exutil.CLI, platform string) (ManagedMachineResource, *BareMetalHost, []string) {
+	var (
+		machineset     ManagedMachineResource
+		bareMetalHost  *BareMetalHost
+		bareMetalDisks []string
+	)
+	if platform == BaremetalPlatform {
+		if !IsCapabilityEnabled(oc, "MachineAPI") {
+			g.Skip("MachineAPI capability is disabled; bare-metal workers cannot be scaled")
+		}
+		var err error
+		machineset, err = GetValidManagedMachineResource(oc)
+		if errors.Is(err, ErrNoValidManagedMachineResource) {
+			g.Skip("No ready MachineSet with replicas > 0 was found; cannot select a bare-metal test host")
+		}
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error getting a MachineSet for the bare-metal test host")
+		bareMetalHost, err = FindAvailableBareMetalHost(oc, machineset, func(host *BareMetalHost) error {
+			var diskErr error
+			bareMetalDisks, diskErr = host.VerifiedTestDisks()
+			return diskErr
+		})
+		o.Expect(err).To(o.Succeed(), "Error checking bare-metal test hosts")
+		if bareMetalHost == nil {
+			g.Skip("No healthy, free CI spare worker has verified non-root test disks and a matching host selector")
+		}
+	} else {
+		SkipTestIfWorkersCannotBeScaled(oc)
+		machineset = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc.AsAdmin()))
+	}
+	return machineset, bareMetalHost, bareMetalDisks
+}
+
+// duplicateIrreconcilableScaleUpMachineSet duplicates the selected MachineSet
+// for the scale-up test.
+func duplicateIrreconcilableScaleUpMachineSet(machineset ManagedMachineResource) ManagedMachineResource {
+	newMSName := machineset.GetName() + "-ms-ic-t2"
+	newMS, err := machineset.Duplicate(newMSName)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return newMS
+}
+
+// pinBareMetalHostToMachineSet pins the bare-metal test host to the duplicated
+// MachineSet so the scale-up lands on it. It skips the test when no host can
+// be selected.
+func pinBareMetalHostToMachineSet(bareMetalHost *BareMetalHost, newMS ManagedMachineResource) (string, func() error) {
+	hostLabel, removeHostLabel, err := bareMetalHost.Pin(newMS)
+	if errors.Is(err, ErrBareMetalHostUnavailable) {
+		g.Skip(fmt.Sprintf("Cannot select host: %s", err))
+	}
+	o.Expect(err).To(o.Succeed(), "Error selecting host %s", bareMetalHost)
+	return hostLabel, removeHostLabel
+}
+
+// scaleUpProbeNodeToDiscoverDiskPaths scales up a probe node and returns it
+// together with the stable /dev/disk/by-path/ entries of its non-boot NVMe
+// disks, so the MachineConfig can reference disks Ignition can reliably find.
+func scaleUpProbeNodeToDiscoverDiskPaths(newMS ManagedMachineResource) (*Node, []string) {
+	o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+	o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+
+	probeNodes := newMS.GetNodesOrFail()
+	o.Expect(probeNodes).To(o.HaveLen(1))
+	probeNode := probeNodes[0]
+	logger.Infof("Probe node is: %s", probeNode.GetName())
+
+	discoveredDisks := discoverNVMeByPathDisks(probeNode)
+	o.Expect(discoveredDisks).To(o.HaveLen(2), "Expected exactly 2 non-boot NVMe disks on probe node %s", probeNode.GetName())
+	return probeNode, discoveredDisks
+}
+
+// applyExtraDisksMachineConfig creates the extra-disks-with-files MachineConfig
+// using the resolved disk devices. On bare metal it refuses to replace an
+// already existing MachineConfig.
+func applyExtraDisksMachineConfig(oc *exutil.CLI, mcName string, disks []string, bareMetalHost *BareMetalHost) *MachineConfig {
+	mc := NewMachineConfig(oc, mcName, MachineConfigPoolWorker).SetMCOTemplate("extra-disks-with-files.yaml")
+	if bareMetalHost != nil {
+		o.Expect(mc.Exists()).To(o.BeFalse(), "Refusing to replace existing MachineConfig %s", mc)
+	}
+
+	err := mc.Create(
+		"-p", "NAME="+mcName,
+		"-p", "POOL="+MachineConfigPoolWorker,
+		"-p", "DEVICE1="+disks[0],
+		"-p", "DEVICE2="+disks[1],
+		"-p", "FILE_PATH=/etc/temp_config.conf",
+		"-p", "FILE_CONTENT=THIS_IS_A_TEST_FILE_CONF",
+	)
+	o.Expect(err).NotTo(o.HaveOccurred(), "MachineConfig %s creation failed; check its status if the API result is uncertain", mcName)
+	logger.Infof("MC %s created successfully", mcName)
+	return mc
+}
+
+// verifyNodesReportStorageIrreconcilableChanges checks that all given nodes
+// report storage disks irreconcilable changes.
+func verifyNodesReportStorageIrreconcilableChanges(nodes []*Node) {
+	for _, node := range nodes {
+		o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.ContainSubstring("spec.config.storage.disks"),
+			"Node %s should have irreconcilable changes for storage.disks", node.GetName())
+		logger.Infof("Node %s has irreconcilable changes as expected", node.GetName())
+	}
+	logger.Infof("All worker nodes report irreconcilable storage changes!\n")
+}
+
+// recheckBareMetalHostForScaleUp re-verifies, right before the scale-up, that
+// the bare-metal test host is still available and healthy, still has the
+// verified test disks and still matches the test MachineSet selector.
+func recheckBareMetalHostForScaleUp(bareMetalHost *BareMetalHost, newMS ManagedMachineResource, hostLabel string, bareMetalDisks []string) {
+	available, availErr := bareMetalHost.IsAvailable()
+	o.Expect(availErr).To(o.Succeed(), "Error rechecking host %s", bareMetalHost)
+	o.Expect(available).To(o.BeTrue(), "Host %s is no longer available", bareMetalHost)
+	o.Expect(bareMetalHost.HealthCheck()).To(o.Succeed(), "Host %s is no longer healthy", bareMetalHost)
+	verifiedDisks, disksErr := bareMetalHost.VerifiedTestDisks()
+	o.Expect(disksErr).To(o.Succeed(), "Error re-verifying the test disks of host %s", bareMetalHost)
+	o.Expect(verifiedDisks).To(o.Equal(bareMetalDisks), "Host %s no longer has the verified test disks", bareMetalHost)
+	matches, pinnedErr := bareMetalHost.Pinned(newMS, hostLabel)
+	o.Expect(pinnedErr).To(o.Succeed(), "Error rechecking the host selector of %s", bareMetalHost)
+	o.Expect(matches).To(o.BeTrue(), "Host %s no longer matches the test MachineSet selector", bareMetalHost)
+}
+
+// scaleUpAWSTestNode scales the test MachineSet to two replicas and returns
+// the newly created node, i.e. the one that is not the probe node.
+func scaleUpAWSTestNode(newMS ManagedMachineResource, probeNode *Node) *Node {
+	o.Expect(newMS.ScaleTo(2)).To(o.Succeed())
+	o.Expect(newMS.WaitUntilReady("10m")).To(o.Succeed())
+
+	allNodes := newMS.GetNodesOrFail()
+	o.Expect(allNodes).To(o.HaveLen(2))
+	var testNode *Node
+	for _, n := range allNodes {
+		if n.GetName() != probeNode.GetName() {
+			testNode = n
+		}
+	}
+	o.Expect(testNode).NotTo(o.BeNil(), "Could not identify test node among scaled-up nodes")
+	return testNode
+}
+
+// scaleUpSingleTestNode scales the test MachineSet to one replica and returns
+// the newly created node.
+func scaleUpSingleTestNode(newMS ManagedMachineResource) *Node {
+	o.Expect(newMS.ScaleTo(1)).To(o.Succeed())
+	o.Expect(newMS.WaitUntilReady("20m")).To(o.Succeed())
+
+	testNodes := newMS.GetNodesOrFail()
+	o.Expect(testNodes).To(o.HaveLen(1))
+	return testNodes[0]
+}
+
+// verifyNodesClearedIrreconcilableChanges checks that all given nodes have
+// cleared their irreconcilable changes after the MC removal.
+func verifyNodesClearedIrreconcilableChanges(nodes []*Node) {
+	for _, node := range nodes {
+		o.Eventually(node.GetIrreconcilableChanges, "5m", "10s").Should(o.BeEmpty(),
+			"Node %s should have cleared irreconcilable changes after MC removal", node.GetName())
+		logger.Infof("Node %s has cleared irreconcilable changes as expected", node.GetName())
+	}
+	logger.Infof("All existing worker nodes have cleared irreconcilable changes!\n")
 }
