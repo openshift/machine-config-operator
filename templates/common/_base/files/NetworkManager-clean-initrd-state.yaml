@@ -17,6 +17,21 @@ contents:
       exit
     fi
 
+    # On a network root (e.g. iSCSI) the root disk is reached through a NIC
+    # activated by dracut. Flushing that NIC's addresses cuts off the root disk,
+    # so on such systems never touch devices that we cannot tell apart from it.
+    netroot=false
+    for arg in $(cat /proc/cmdline); do
+      case "$arg" in
+        # dracut reads these as booleans, so false values mean a local root
+        rd.iscsi.firmware=0|rd.iscsi.firmware=no|rd.iscsi.firmware=off|rd.iscsi.ibft=0|rd.iscsi.ibft=no|rd.iscsi.ibft=off)
+          ;;
+        netroot=*|rd.iscsi.firmware|rd.iscsi.firmware=*|rd.iscsi.ibft|rd.iscsi.ibft=*|root=/dev/nfs|root=iscsi:*|root=nfs:*|root=nfs4:*|root=nbd:*)
+          netroot=true
+          ;;
+      esac
+    done
+
     # Some deployments require an active network early in the boot process. To
     # achieve this, dracut runs specific NetworkManager modules. This results in
     # NetworkManager keyfiles being generated (either default or from ip kernel
@@ -95,6 +110,20 @@ contents:
       # check that it is not specific for the device, otherwise ignore
       profile_ifname=$(sed -nr '/^\[connection\]/,/^\[/{/^interface-name\s*=/{s/[^=]+\s*=\s*//;P}}' "$profile")
       if [ -n "$profile_ifname" ]; then
+        continue
+      fi
+
+      # likewise if it is bound to the device by MAC address, as generated from
+      # ip=<mac>:... kernel arguments or from iBFT, otherwise ignore
+      profile_mac=$(sed -nr '/^\[(ethernet|802-3-ethernet)\]/,/^\[/{/^mac-address\s*=/{s/[^=]+\s*=\s*//;P}}' "$profile")
+      if [ -n "$profile_mac" ]; then
+        continue
+      fi
+
+      # an unbound profile on a network root may be carrying the root disk and
+      # we cannot tell which device it is, ignore
+      if [ "$netroot" = true ]; then
+        logger -t nm-clean-initrd-state "$ifname activated with unbound generated profile on a network root, not cleaning"
         continue
       fi
 
