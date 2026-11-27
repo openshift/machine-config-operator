@@ -45,8 +45,13 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	)
 
 	g.JustBeforeEach(func() {
-		// Skip if no MAPI MachineSets are available (e.g. compute machine management migrated to CAPI)
-		exutil.SkipIfNoMAPIMachineSets(oc.AsAdmin())
+		// Skips on clusters with no scalable worker machinesets (e.g. single-node clusters,
+		// where the installer leaves the worker MachineSets at 0 replicas, and clusters where
+		// compute machine management has been migrated to CAPI)
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), MAPI)
+		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
+		// for the duration of the test
+		relabelRhel10MachineSetsAsRhel9(oc)
 		machineConfiguration = GetMachineConfiguration(oc.AsAdmin())
 		PreChecks(oc)
 
@@ -62,90 +67,137 @@ var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive
 	})
 
 	g.It("[PolarionID:89828][OTP] MCO updates marketplace boot images to the correct product line", g.Label("Platform:aws"), func() {
-		var (
-			testMS = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc))
-
-			region = getCurrentRegionOrFail(oc.AsAdmin())
-		)
-
-		exutil.By("Saving original MachineSet state before label change")
-		originalAMI := testMS.GetCoreOsBootImageOrFail()
-		originalStream, getLabelErr := testMS.GetOSStreamLabel()
-
-		defer func() {
-			// Controller ignores rhel-10 so it won't overwrite the restored AMI.
-			// Restore label first to stop any in-progress rhel-9 reconcile, then restore AMI.
-			exutil.By("Restoring MachineSet stream label to rhel-10")
-			if getLabelErr != nil {
-				o.Expect(testMS.RemoveOSStreamLabel()).To(o.Succeed())
-			} else {
-				o.Expect(testMS.AddOSStreamLabel(originalStream)).To(o.Succeed())
-			}
-			logger.Infof("OK!\n")
-
-			exutil.By("Restoring original MachineSet AMI")
-			o.Expect(testMS.SetCoreOsBootImage(originalAMI)).To(o.Succeed())
-			logger.Infof("OK!\n")
-		}()
-		logger.Infof("OK!\n")
-
-		exutil.By("Setting MachineSet stream label to rhel-9 to activate marketplace AMI testing")
-		o.Expect(testMS.AddOSStreamLabel(OSImageStreamRHEL9)).To(o.Succeed(),
-			"error setting osstream label on MachineSet %s", testMS)
-		logger.Infof("OK!\n")
-
-		exutil.By("Reading stream version token from coreos-bootimages ConfigMap")
-		versionToken, err := getMarketplaceVersionToken(oc.AsAdmin())
-		o.Expect(err).NotTo(o.HaveOccurred(), "error reading marketplace version token")
-		logger.Infof("Target version token: %s\n", versionToken)
-
-		exutil.By("Building AWS EC2 client from cluster credentials")
-		awsSecret := NewSecret(oc.AsAdmin(), MachineAPINamespace, "aws-cloud-credentials")
-		awsCredentialsData, err := awsSecret.GetDecodedDataMap()
-		o.Expect(err).NotTo(o.HaveOccurred(), "error reading aws-cloud-credentials secret")
-		ec2Client, err := exutil.NewEC2Client(region, awsCredentialsData)
-		o.Expect(err).NotTo(o.HaveOccurred(), "error creating AWS EC2 client")
-
-		for _, product := range allMarketplaceProducts {
-			exutil.By(fmt.Sprintf("Testing product line: %s (%s)", product.name, product.id))
-
-			testAMI, skipReason, err := exutil.SelectMarketplaceTestAMI(context.Background(), ec2Client, product.id, versionToken)
-			o.Expect(err).NotTo(o.HaveOccurred(), "error querying EC2 for product %s", product.name)
-			if skipReason != "" {
-				logger.Infof("Skipping product %s: %s\n", product.name, skipReason)
-				continue
-			}
-
-			patchedAMIID := aws.ToString(testAMI.ImageId)
-			logger.Infof("Patching MachineSet to second-newest AMI %s for product %s\n", patchedAMIID, product.name)
-
-			exutil.By(fmt.Sprintf("Patching MachineSet to AMI %s", patchedAMIID))
-			o.Expect(testMS.SetCoreOsBootImage(patchedAMIID)).To(o.Succeed(),
-				"error patching MachineSet %s to AMI %s", testMS, patchedAMIID)
-			logger.Infof("OK!\n")
-
-			exutil.By("Waiting for MCO to reconcile to a newer marketplace AMI")
-			o.Eventually(testMS.GetCoreOsBootImage, "3m", "20s").ShouldNot(o.Equal(patchedAMIID),
-				"MCO did not update MachineSet %s away from patched AMI %s", testMS, patchedAMIID)
-			logger.Infof("OK!\n")
-
-			exutil.By("Asserting the updated AMI is marketplace-owned with the same product ID")
-			newAMIID, getErr := testMS.GetCoreOsBootImage()
-			o.Expect(getErr).NotTo(o.HaveOccurred(), "error getting updated AMI from MachineSet %s", testMS)
-
-			updatedImg, descErr := exutil.DescribeMarketplaceImage(context.Background(), ec2Client, newAMIID)
-			o.Expect(descErr).NotTo(o.HaveOccurred(), "error describing updated AMI %s", newAMIID)
-
-			o.Expect(aws.ToString(updatedImg.OwnerId)).To(o.Equal(exutil.AWSMarketplaceOwnerAccountID),
-				"updated AMI %s should be owned by aws-marketplace (%s)", newAMIID, exutil.AWSMarketplaceOwnerAccountID)
-			o.Expect(aws.ToString(updatedImg.Name)).To(o.ContainSubstring(product.id),
-				"updated AMI %s name should contain product ID %s", newAMIID, product.id)
-
-			logger.Infof("Product %s OK: MachineSet updated to %s (name: %s)\n",
-				product.name, newAMIID, aws.ToString(updatedImg.Name))
-		}
+		testMarketplaceBootImagesProductLine(oc, MAPI)
 	})
 })
+
+// CAPI counterpart of the MAPI marketplace suite above. The common logic lives in
+// testMarketplaceBootImagesProductLine.
+var _ = g.Describe("[sig-mco][Suite:openshift/machine-config-operator/disruptive][Serial][Disruptive][OCPFeatureGate:ManagedBootImagesAWSCAPI] MCO CAPI AWS Marketplace Boot Image Updates", g.Label("Platform:aws"), func() {
+	defer g.GinkgoRecover()
+
+	var (
+		oc = exutil.NewCLI("mco-capi-marketplace-bootimages", exutil.KubeConfigPath())
+	)
+
+	g.JustBeforeEach(func() {
+		// CAPI boot image updates are only supported on AWS
+		skipTestIfSupportedPlatformNotMatched(oc, AWSPlatform)
+		SkipIfNoFeatureGate(oc.AsAdmin(), "ManagedBootImagesAWSCAPI")
+		SkipTestIfWorkersCannotBeScaled(oc.AsAdmin(), CAPI)
+		// Registered before any other cleanup so that, cleanups being LIFO, it runs last
+		g.DeferCleanup(func() { DeleteCAPIManagedTemplates(oc) })
+		// The tests only manage rhel-9 machinesets, so relabel any rhel-10 ones as rhel-9
+		// for the duration of the test
+		relabelRhel10MachineSetsAsRhel9(oc)
+		PreChecks(oc)
+
+		exutil.By("Disabling skew to avoid collisions")
+		machineConfiguration := GetMachineConfiguration(oc.AsAdmin())
+		initialSpec := machineConfiguration.GetSpecOrFail()
+
+		// Registered before DisableSkew so the spec is restored even if disabling skew fails
+		g.DeferCleanup(func() {
+			exutil.By("Restoring initial MachineConfiguration spec")
+			o.Expect(machineConfiguration.SetSpec(initialSpec)).To(o.Succeed())
+			logger.Infof("OK!\n")
+		})
+		DisableSkew(machineConfiguration)
+		logger.Infof("OK!\n")
+	})
+
+	g.It("[PolarionID:00][OTP] MCO updates marketplace boot images to the correct product line", func() {
+		testMarketplaceBootImagesProductLine(oc, CAPI)
+	})
+})
+
+// testMarketplaceBootImagesProductLine hosts the common logic of the
+// "MCO updates marketplace boot images to the correct product line" test case.
+// It runs against the machine management API selected by apiType.
+func testMarketplaceBootImagesProductLine(oc *exutil.CLI, apiType MachineAPIType) {
+	var (
+		testMS = OrFail[ManagedMachineResource](GetValidManagedMachineResource(oc, apiType))
+
+		region = getCurrentRegionOrFail(oc.AsAdmin())
+	)
+
+	exutil.By("Saving original MachineSet state before label change")
+	originalAMI := testMS.GetCoreOsBootImageOrFail()
+	originalStream, getLabelErr := testMS.GetOSStreamLabel()
+
+	defer func() {
+		// Controller ignores rhel-10 so it won't overwrite the restored AMI.
+		// Restore label first to stop any in-progress rhel-9 reconcile, then restore AMI.
+		exutil.By("Restoring MachineSet stream label to rhel-10")
+		if getLabelErr != nil {
+			o.Expect(testMS.RemoveOSStreamLabel()).To(o.Succeed())
+		} else {
+			o.Expect(testMS.AddOSStreamLabel(originalStream)).To(o.Succeed())
+		}
+		logger.Infof("OK!\n")
+
+		exutil.By("Restoring original MachineSet AMI")
+		o.Expect(testMS.SetCoreOsBootImage(originalAMI)).To(o.Succeed())
+		logger.Infof("OK!\n")
+	}()
+	logger.Infof("OK!\n")
+
+	exutil.By("Setting MachineSet stream label to rhel-9 to activate marketplace AMI testing")
+	o.Expect(testMS.AddOSStreamLabel(OSImageStreamRHEL9)).To(o.Succeed(),
+		"error setting osstream label on MachineSet %s", testMS)
+	logger.Infof("OK!\n")
+
+	exutil.By("Reading stream version token from coreos-bootimages ConfigMap")
+	versionToken, err := getMarketplaceVersionToken(oc.AsAdmin())
+	o.Expect(err).NotTo(o.HaveOccurred(), "error reading marketplace version token")
+	logger.Infof("Target version token: %s\n", versionToken)
+
+	exutil.By("Building AWS EC2 client from cluster credentials")
+	awsSecret := NewSecret(oc.AsAdmin(), MachineAPINamespace, "aws-cloud-credentials")
+	awsCredentialsData, err := awsSecret.GetDecodedDataMap()
+	o.Expect(err).NotTo(o.HaveOccurred(), "error reading aws-cloud-credentials secret")
+	ec2Client, err := exutil.NewEC2Client(region, awsCredentialsData)
+	o.Expect(err).NotTo(o.HaveOccurred(), "error creating AWS EC2 client")
+
+	for _, product := range allMarketplaceProducts {
+		exutil.By(fmt.Sprintf("Testing product line: %s (%s)", product.name, product.id))
+
+		testAMI, skipReason, err := exutil.SelectMarketplaceTestAMI(context.Background(), ec2Client, product.id, versionToken)
+		o.Expect(err).NotTo(o.HaveOccurred(), "error querying EC2 for product %s", product.name)
+		if skipReason != "" {
+			logger.Infof("Skipping product %s: %s\n", product.name, skipReason)
+			continue
+		}
+
+		patchedAMIID := aws.ToString(testAMI.ImageId)
+		logger.Infof("Patching MachineSet to second-newest AMI %s for product %s\n", patchedAMIID, product.name)
+
+		exutil.By(fmt.Sprintf("Patching MachineSet to AMI %s", patchedAMIID))
+		o.Expect(testMS.SetCoreOsBootImage(patchedAMIID)).To(o.Succeed(),
+			"error patching MachineSet %s to AMI %s", testMS, patchedAMIID)
+		logger.Infof("OK!\n")
+
+		exutil.By("Waiting for MCO to reconcile to a newer marketplace AMI")
+		o.Eventually(testMS.GetCoreOsBootImage, "3m", "20s").ShouldNot(o.Equal(patchedAMIID),
+			"MCO did not update MachineSet %s away from patched AMI %s", testMS, patchedAMIID)
+		logger.Infof("OK!\n")
+
+		exutil.By("Asserting the updated AMI is marketplace-owned with the same product ID")
+		newAMIID, getErr := testMS.GetCoreOsBootImage()
+		o.Expect(getErr).NotTo(o.HaveOccurred(), "error getting updated AMI from MachineSet %s", testMS)
+
+		updatedImg, descErr := exutil.DescribeMarketplaceImage(context.Background(), ec2Client, newAMIID)
+		o.Expect(descErr).NotTo(o.HaveOccurred(), "error describing updated AMI %s", newAMIID)
+
+		o.Expect(aws.ToString(updatedImg.OwnerId)).To(o.Equal(exutil.AWSMarketplaceOwnerAccountID),
+			"updated AMI %s should be owned by aws-marketplace (%s)", newAMIID, exutil.AWSMarketplaceOwnerAccountID)
+		o.Expect(aws.ToString(updatedImg.Name)).To(o.ContainSubstring(product.id),
+			"updated AMI %s name should contain product ID %s", newAMIID, product.id)
+
+		logger.Infof("Product %s OK: MachineSet updated to %s (name: %s)\n",
+			product.name, newAMIID, aws.ToString(updatedImg.Name))
+	}
+}
 
 // getMarketplaceVersionToken reads the RHCOS release string from the coreos-bootimages
 // ConfigMap and returns the N.M version token (e.g. "9.6"). The release string is the same
