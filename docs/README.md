@@ -31,9 +31,9 @@ As of release 4.12, you can try out [OCP CoreOS Layering](/docs/UsingLayering.md
 This one git repository generates 4 components in a cluster; the `machine-config-operator`
 pod manages the remaining 3 sub-components.  Here are links to design docs:
 
- - [machine-config-server](/docs/MachineConfigServer.md)
- - [machine-config-controller](/docs/MachineConfigController.md)
- - [machine-config-daemon](/docs/MachineConfigDaemon.md)
+- [machine-config-server](/docs/MachineConfigServer.md)
+- [machine-config-controller](/docs/MachineConfigController.md)
+- [machine-config-daemon](/docs/MachineConfigDaemon.md)
 
 # Interacting with the MCO
 

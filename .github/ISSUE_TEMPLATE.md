@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 <!--
 Before reporting an issue, check our backlog of
 [open issues](https://github.com/openshift/machine-config-operator/issues)
@@ -51,7 +52,7 @@ Briefly describe the problem you are having in a few paragraphs.
 
 **Output of `oc adm release info --commits | grep machine-config-operator`:**
 
-```
+```text
 (paste your output here)
 ```
 

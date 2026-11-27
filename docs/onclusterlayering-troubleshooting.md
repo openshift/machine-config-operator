@@ -12,7 +12,14 @@ This could be a sign that the Machine Config Operator (MCO) is not in a good sta
 
 ### Investigating and recovering from a build failure
 
-In this scenario, a MachineOSBuild might report that an image build failed due to some reason. Whenever the build process starts, numerous ephemeral objects such as ConfigMaps and Secrets are created within the MCO namespace that are consumed by the build process. Whenever the build is successful, these objects are automatically deleted since they are no longer useful. However, in the event of a build failure, these objects are left in place to aid in the debugging process. We can leverage these objects to better understand what happened and why. These objects are created with the label `machineconfiguration.openshift.io/on-cluster-layering` which can be combined with a label selector for easy querying /cleanup.
+In this scenario, a MachineOSBuild might report that an image build failed due to some reason. Whenever the
+build process starts, numerous ephemeral objects such as ConfigMaps and Secrets are created within the MCO
+namespace that are consumed by the build process. Whenever the build is successful, these objects are
+automatically deleted since they are no longer useful. However, in the event of a build failure, these objects
+are left in place to aid in the debugging process. We can leverage these objects to better understand what
+happened and why. These objects are created with the label
+`machineconfiguration.openshift.io/on-cluster-layering` which can be combined with a label selector for easy
+querying /cleanup.
 
 #### Investigation
 
@@ -22,7 +29,15 @@ First, let's look at the build pod logs:
 $ oc logs pod/build-rendered-layered-677832916cb97f2524889bdf362d6a6f -n openshift-machine-config-operator -c image-build
 ...
 time="2024-08-21T14:57:40Z" level=debug msg="setting uid"
-time="2024-08-21T14:57:40Z" level=debug msg="Running &exec.Cmd{Path:\"/bin/sh\", Args:[]string{\"/bin/sh\", \"-c\", \"unknown-command\"}, Env:[]string{\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", \"HOSTNAME=efdc03708593\", \"HOME=/root\"}, Dir:\"/\", Stdin:(*os.File)(0xc000060038), Stdout:(*os.File)(0xc000060040), Stderr:(*os.File)(0xc000060048), ExtraFiles:[]*os.File(nil), SysProcAttr:(*syscall.SysProcAttr)(0xc000163810), Process:(*os.Process)(nil), ProcessState:(*os.ProcessState)(nil), ctx:context.Context(nil), Err:error(nil), Cancel:(func() error)(nil), WaitDelay:0, childIOFiles:[]io.Closer(nil), parentIOPipes:[]io.Closer(nil), goroutine:[]func() error(nil), goroutineErr:(<-chan error)(nil), ctxResult:(<-chan exec.ctxResult)(nil), createdByStack:[]uint8(nil), lookPathErr:error(nil)} (PATH = \"\")"
+time="2024-08-21T14:57:40Z" level=debug msg="Running &exec.Cmd{Path:\"/bin/sh\", Args:[]string{\"/bin/sh\",
+\"-c\", \"unknown-command\"},
+Env:[]string{\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", \"HOSTNAME=efdc03708593\",
+\"HOME=/root\"}, Dir:\"/\", Stdin:(*os.File)(0xc000060038), Stdout:(*os.File)(0xc000060040),
+Stderr:(*os.File)(0xc000060048), ExtraFiles:[]*os.File(nil), SysProcAttr:(*syscall.SysProcAttr)(0xc000163810),
+Process:(*os.Process)(nil), ProcessState:(*os.ProcessState)(nil), ctx:context.Context(nil), Err:error(nil),
+Cancel:(func() error)(nil), WaitDelay:0, childIOFiles:[]io.Closer(nil), parentIOPipes:[]io.Closer(nil),
+goroutine:[]func() error(nil), goroutineErr:(<-chan error)(nil), ctxResult:(<-chan exec.ctxResult)(nil),
+createdByStack:[]uint8(nil), lookPathErr:error(nil)} (PATH = \"\")"
 /bin/sh: line 1: unknown-command: command not found
 ```
 
@@ -153,7 +168,11 @@ This is a known oversight that we have not yet implemented.
 
 ### Legacy-style secrets get out of sync
 
-If you are using the internal image registry or an ImageStream and you are using the default `builder-dockercfg-` push / pull secret, this secret is periodically rotated every hour. Because we convert the secret from a legacy-style representation to a more modern representation, this secret can occasionally get out of sync. We are working to improve this situation by only reading the secret and doing the conversion right when it is used. However, it is still possible that the secret could get out-of-sync.
+If you are using the internal image registry or an ImageStream and you are using the default
+`builder-dockercfg-` push / pull secret, this secret is periodically rotated every hour. Because we convert
+the secret from a legacy-style representation to a more modern representation, this secret can occasionally
+get out of sync. We are working to improve this situation by only reading the secret and doing the conversion
+right when it is used. However, it is still possible that the secret could get out-of-sync.
 
 Therefore, it is highly recommended that you create a longer-lasting pull secret by using the following script (assumes you have KUBECONFIG set and the current context is the desired cluster):
 

@@ -29,7 +29,12 @@
 
 ### 2.1 Purpose
 
-Every RHCOS node that joins an OpenShift cluster reboots at firstboot to pivot from the boot image to the payload node image. This feature makes it possible, as an explicit opt-in behind the `TechPreviewNoUpgrade` feature gate (`SkipFirstbootPivot`), for joining nodes to live-overlay the container runtime stack (CRI-O, kubelet/hyperkube) from the payload node image instead of rebooting. The full node image deployment is staged and activates at the next upgrade or admin-initiated reboot. The cluster administrator explicitly accepts that the node's kernel and non-overlaid user space remain at the boot image version until that reboot.
+Every RHCOS node that joins an OpenShift cluster reboots at firstboot to pivot from the boot image to the
+payload node image. This feature makes it possible, as an explicit opt-in behind the `TechPreviewNoUpgrade`
+feature gate (`SkipFirstbootPivot`), for joining nodes to live-overlay the container runtime stack (CRI-O,
+kubelet/hyperkube) from the payload node image instead of rebooting. The full node image deployment is staged
+and activates at the next upgrade or admin-initiated reboot. The cluster administrator explicitly accepts that
+the node's kernel and non-overlaid user space remain at the boot image version until that reboot.
 
 ### 2.2 Scope
 

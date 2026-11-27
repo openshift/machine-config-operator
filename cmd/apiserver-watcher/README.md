@@ -7,7 +7,7 @@ Because default OpenShift installations are "self-driving", i.e. the control
 plane is hosted as part of the cluster, we rely on hairpin extensively.
 
 
-```
+```text
  +---------------+
  |               |          +-----------------+
  |  +---------+  |          |                 |
@@ -46,7 +46,7 @@ See `templates/master/00-master/gcp/files/opt-libexec-openshift-gcp-routes-sh.ya
 Azure L3LB does do DNAT, which presents a different problem: we can never reply
 to hairpinned traffic. The problem looks something like this:
 
-```
+```text
 TCP SYN master-1 -> vip outgoing
 (load balance happens)
 TCP SYN master1 -> master1 incoming

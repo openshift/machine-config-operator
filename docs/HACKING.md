@@ -1,6 +1,6 @@
-⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
-
 # Hacking on the MCO
+
+⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
 These instructions have been tested inside a Fedora 31 toolbox (podman) container (on a Fedora Silverblue 31 host).
 It should also work to run these commands directly on a host system. You will need build dependencies such as a `go` compiler,
@@ -18,7 +18,7 @@ These instructions will be kept up to date generally against the leading edge of
 
 While you're still in the mode of testing builds, use `make`:
 
-```
+```bash
 $ make machine-config-daemon
 ```
 
@@ -217,7 +217,7 @@ In those situations, you will need to:
 
 To build an image that contains all MCO components (mcc/mcd/mco/mcs/setup-etcd-env) run:
 
-```
+```bash
 make image
 ```
 
@@ -230,7 +230,7 @@ You can also use the script [hack/push-image.sh](hack/push-image.sh) to push the
 generated in `make image` to the container registry of your choice. For example, after logging
 in via the command-line:
 
-```
+```bash
 REPO={docker.io/username} ./hack/push-image.sh
 ```
 
@@ -254,7 +254,7 @@ to upload to `quay.io:443/user/origin-release`.
 
 Now that your have your custom image, to build a custom release payload, run:
 
-```
+```bash
 oc adm release new \
     -a ~/.kube/pull-secret.txt \
     --from-release \
@@ -270,9 +270,9 @@ Make sure you're using a relatively new `oc` binary from `openshift/oc`. The ima
 remote resources (nodes), therefore using a local registry might not work.
 
 If you run into authentication problem, please check these paths:
- * `${XDG_RUNTIME_DIR}/containers/auth.json`
- * `$HOME/.config/containers/auth.json`
- * `$HOME/.docker/config.json`
+* `${XDG_RUNTIME_DIR}/containers/auth.json`
+* `$HOME/.config/containers/auth.json`
+* `$HOME/.docker/config.json`
 
 Please check `quay.io/<your-user>/origin-release` webpage to make sure it is
 public accessible.
@@ -280,13 +280,13 @@ public accessible.
 When the command above finishes, your custom release payload is going to be available
 at the location you specified via the `--to-image` flag for the installer to be consumed. E.g.:
 
-```
+```bash
 oc adm upgrade --force --to-image quay.io/<your_user>/origin-release:v{version number}
 ```
 
 To watch the upgrade you can do:
 
-```
+```bash
 watch oc get clusterversion
 ```
 
@@ -299,7 +299,7 @@ the secret to pull it in the `install-config.yaml` configuration (`pullSecret` s
 In order to use your new custom release payload to install a new cluster, simply run the creation process with
 the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 
-```
+```bash
 OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version number} bin/openshift-install create cluster --log-level=debug
 ```
 
@@ -310,14 +310,14 @@ an alternative workflow:
 
 Do this once:
 
-```
+```bash
 $ ./hack/cluster-push-prep.sh
 ```
 
 Note this will scale down the CVO and hence disable upgrades.
 
 Then, to directly push your images, run:
-```
+```bash
 $ ./hack/cluster-push.sh
 ```
 
@@ -393,7 +393,11 @@ rpm-ostree usroverlay
 6) In certain cases, changes might be needed to the service file (/etc/systemd/system/kubelet.service)
    depending on the version of kubelet you are running. As an example, changing kubelet binary from
    v1.18.3 to v1.13.0-alpha, it was necessary to remove `--node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID}`
-   because as per upstream kubelet binary node Labels must begin with an allowed prefix (kubelet.kubernetes.io, node.kubernetes.io) or be in the specifically allowed set (beta.kubernetes.io/arch, beta.kubernetes.io/instance-type, beta.kubernetes.io/os, failure-domain.beta.kubernetes.io/region, failure-domain.beta.kubernetes.io/zone, kubernetes.io/arch, kubernetes.io/hostname, kubernetes.io/os, node.kubernetes.io/instance-type, topology.kubernetes.io/region, topology.kubernetes.io/zone).
+   because as per upstream kubelet binary node Labels must begin with an allowed prefix (kubelet.kubernetes.io,
+   node.kubernetes.io) or be in the specifically allowed set (beta.kubernetes.io/arch, beta.kubernetes.io/instance-type,
+   beta.kubernetes.io/os, failure-domain.beta.kubernetes.io/region, failure-domain.beta.kubernetes.io/zone,
+   kubernetes.io/arch, kubernetes.io/hostname, kubernetes.io/os, node.kubernetes.io/instance-type,
+   topology.kubernetes.io/region, topology.kubernetes.io/zone).
 7) ``$ systemctl daemon-reload``
 8) ``$ systemctl restart kubelet``
 9) ``$ oc get nodes`` to see the updated kubelet version

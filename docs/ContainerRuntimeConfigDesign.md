@@ -26,7 +26,7 @@ Extend the Machine Config Operator to include a ContainerRuntimeConfig CRD and C
 
 ## CRD
 
-```
+```yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -47,7 +47,7 @@ spec:
 
 ## SPEC
 
-```
+```go
 MachineConfigPoolSelector *metav1.LabelSelector
 Runtime:
  Name  string
@@ -62,7 +62,10 @@ It's important to note that, since the fields of the ContainerRuntimeConfig are 
 
 ### Troubleshooting Validation Issues
 
-If the specified field values of the ContainerRuntimeConfig cannot be converted to their intended types, validation errors related may be visible on the ContainerRuntimeConfig CR. This is because such errors occur outside the coverage of the controller responsible for ContainerRuntimeConfig. In such case, users may need to look into the logs of the `machine-config-controller` container to get more information.
+If the specified field values of the ContainerRuntimeConfig cannot be converted to their intended types, validation errors
+related may be visible on the ContainerRuntimeConfig CR. This is because such errors occur outside the coverage of the
+controller responsible for ContainerRuntimeConfig. In such case, users may need to look into the logs of the
+`machine-config-controller` container to get more information.
 
 e.g.
 
@@ -76,7 +79,7 @@ E0330 08:03:50.810155       1 reflector.go:138] github.com/openshift/client-go/m
 
 This is what an example `ctrcfg` CR looks like. Note: you must make sure to add a label under `matchLabels` in the ContainerRuntimeConfig CR:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: ContainerRuntimeConfig
 metadata:
@@ -93,7 +96,7 @@ Save your `ctrcfg` locally, for example as highpids.yaml
 The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
 MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label yourself as follows:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: ContainerRuntimeConfig
 metadata:
@@ -108,13 +111,13 @@ spec:
 
 To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-crio: high-pid-limit` under labels in the MachineConfigPool config:
 
-```
+```bash
 oc edit machineconfigpool worker
 ```
 
 Snippet of the MachineConfigPool config with the matching label added:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -129,20 +132,20 @@ metadata:
 Now apply the `ctrcfg` that you created:
 
 
-```
+```bash
 oc create -f highpids.yaml
 ```
 
 Check that it was created:
 
-```
+```bash
 $ oc get ctrcfg
 NAME             AGE
 set-pids-limit   50s
 ```
 
 Check to ensure that a new 99-worker-containerruntime-managed is created and that a new rendered worker is created:
-```
+```bash
 $ oc get machineconfigs
 NAME                                  GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
 ...
@@ -153,7 +156,7 @@ rendered-worker-45678XYZ              fc45f8b73b2fc61e567f2111181d3e802f2565d7  
 ```
 The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking
 that the latest rendered-worker machine-config has been rolled out to the pools successfully:
-```
+```bash
 $ oc get mcp
 NAME     CONFIG                     UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
 ...

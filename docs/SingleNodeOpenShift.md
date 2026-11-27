@@ -8,7 +8,12 @@ There are several key differences in how the Machine Config Daemon handles non-H
 
 ### Topology
 
-MCO reads the `controlPlaneTopology` value set in the [infrastructure cluster object](https://github.com/openshift/api/blob/master/config/v1/0000_10_config-operator_01_infrastructure.crd.yaml#L182) and copies that value into the `ControllerConfig` object. Later, the Node controller reads the `controlPlaneTopology` value from `ControllerConfig` and adds an annotation (`machineconfiguration.openshift.io/controlPlaneTopology`) to all Node objects to describe the `controlPlaneTopology` of the cluster.
+MCO reads the `controlPlaneTopology` value set in the [infrastructure cluster
+object](https://github.com/openshift/api/blob/master/config/v1/0000_10_config-operator_01_infrastructure.crd.yaml#L182)
+and copies that value into the `ControllerConfig` object. Later, the Node controller reads the
+`controlPlaneTopology` value from `ControllerConfig` and adds an annotation
+(`machineconfiguration.openshift.io/controlPlaneTopology`) to all Node objects to describe the
+`controlPlaneTopology` of the cluster.
 
 A non-HA/single node cluster is annotated with `SingleReplica`. In the absence of this annotation, the Machine Config Daemon defaults to `HighlyAvailable`. This primarily affects the node drain behavior as discussed below.
 
@@ -31,7 +36,12 @@ All functionalities provided by the [MachineConfig API](./MachineConfiguration.m
 With 4.9, Single Node OpenShift upgrades-in-place is supported with the exception of [post reboot cluster safety](#Post-reboot-cluster-safety) issue.
 
 ## Post reboot cluster safety
-Any configuration applied using MCO on node including upgrades requires node reboot with the exception of [rebootless updates](./MachineConfigDaemon.md#rebootless-updates). MCO doesn't provide guarantee for post-reboot cluster safety. This implies that MCO will try its best to keep feature parity and behavior on SNO similar to regular OCP cluster. But due to the nature of SNO (single control plane node), when control plane node reboots during update/upgrade, node may not come up or join cluster due to multiple reasons that is not related to MCO, such as:
+Any configuration applied using MCO on node including upgrades requires node reboot with the exception of
+[rebootless updates](./MachineConfigDaemon.md#rebootless-updates). MCO doesn't provide guarantee for
+post-reboot cluster safety. This implies that MCO will try its best to keep feature parity and behavior on SNO
+similar to regular OCP cluster. But due to the nature of SNO (single control plane node), when control plane
+node reboots during update/upgrade, node may not come up or join cluster due to multiple reasons that is not
+related to MCO, such as:
 
 - Bug in one of the package that was updated
 - Faulty config applied on node by user

@@ -2,7 +2,7 @@
 
 This is a small utility that will wait for a given MachineConfigPool to complete its rollout.
 
-## Usage:
+## Usage
 
 One can specify which MachineConfigPool(s) to watch in a given cluster:
 

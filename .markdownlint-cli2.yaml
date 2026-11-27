@@ -1,0 +1,65 @@
+# See https://github.com/DavidAnson/markdownlint#optionsconfig
+# and https://github.com/DavidAnson/markdownlint-cli2
+
+config:
+  # frontmatter metadata seems to trigger this
+  single-title: false
+
+  # hard tabs are used when pasting go example code into files
+  no-hard-tabs: false
+
+  # we commonly paste bare urls in the middle of paragraphs
+  no-bare-urls: false
+
+  # really, this is a rule?
+  commands-show-output: false
+
+  # We like to use really long lines
+  line-length:
+    line_length: 400
+    # Code examples embed long JSON/log lines (certs, machine configs, controller
+    # logs) that cannot be wrapped without breaking them.
+    code_blocks: false
+
+  # Sometimes we repeat headings, and it's easier to just turn those
+  # into emphasis
+  no-emphasis-as-heading: false
+
+  # We only publish HTML, so allow all HTML inline.
+  no-inline-html: false
+
+  # We tend to use `*` instead of `-` for list bullets but we aren't
+  # consistent, even within a single file.
+  ul-style: false
+
+  # We have at least one document that breaks up a numbered list
+  # with headings.
+  ol-prefix: false
+
+  # Vertical whitespace helps the reader, so we should turn these on
+  # again when someone has time to fix our existing files.
+  blanks-around-fences: false
+  blanks-around-headings: false
+  blanks-around-lists: false
+  single-trailing-newline: false
+  no-multiple-blanks: false
+
+  # Trailing spaces don't cause any known issues and are often introduced when
+  # updating text to conform to max line length restrictions.
+  no-trailing-spaces: false
+
+  # Rules present in newer markdownlint versions that fail across almost all
+  # existing documents
+  emphasis-style: false
+  strong-style: false
+  no-space-in-emphasis: false
+
+  # Design docs legitimately repeat "### Verification" under different parent
+  # sections; only flag duplicates that are actual siblings.
+  no-duplicate-heading:
+    siblings_only: true
+
+  # Prompt/command files (Claude skills, agents, slash commands) carry their
+  # title in frontmatter (name/description), not in an H1.
+  first-line-heading:
+    front_matter_title: "^\\s*(name|title|description)\\s*[:=]"

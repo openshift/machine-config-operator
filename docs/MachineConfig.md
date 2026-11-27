@@ -21,7 +21,10 @@ Also during upgrades the MachineConfigDaemon running on these machines will use 
 
 Users will not be allowed to change the MachineConfig object defined by openshift. Although, users will create new MachineConfig objects for their customization. Therefore the MachineConfig object used by the in-cluster Ignition server and daemon running on the machines has to be a merged version.
 
-The MachineConfig object used by in-cluster Ignition server and daemon running on the machine should be a static definition of all the resources. Users might create MachineConfig objects that have links to remote Ignition configs, but at merge time, a snapshot of the remote Ignition config should be used to create the merged MachineConfig. The same is valid for remote files, at merge time the files are fetched and the contents are verified and replaced in-place the final merged MachineConfig.
+The MachineConfig object used by in-cluster Ignition server and daemon running on the machine should be a static definition of all
+the resources. Users might create MachineConfig objects that have links to remote Ignition configs, but at merge time, a snapshot of
+the remote Ignition config should be used to create the merged MachineConfig. The same is valid for remote files, at merge time the
+files are fetched and the contents are verified and replaced in-place the final merged MachineConfig.
 
 ## Detailed Design
 
@@ -59,7 +62,7 @@ type MachineConfigSpec struct {
 
 The actual custom resource manifest then could look like this if you are applying it to cluster on version >= 4.7:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -78,7 +81,7 @@ spec:
 
 and like this if you are applying it to a cluster on version < 4.6:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -119,7 +122,7 @@ As of OpenShift 4.3, you can set this field for either "day 1" (install time) or
 once a cluster has been created. See [installer docs](https://github.com/openshift/installer/blob/master/docs/user/customization.md#nodes-with-custom-kernel-arguments) on how to set them as install-time MachineConfig objects. For "day 2" operation you can also add them as a similar machineconfig, incurring a reboot.
 
 Example MachineConfig to change kernel log level:
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -143,7 +146,7 @@ Until we have the enhancement implemented it can be done manually by updating th
 **Example:**
 
 Suppose we have a 4.2 cluster created on AWS and have applied karg `foo` to the cluster with the following MachineConfig:
-```
+```bash
 $ cat worker-karg.yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -156,26 +159,33 @@ spec:
     - foo
 ```
 The first step is to upgrade the cluster to OCP 4.3 or later version. Once the cluster has been successfully upgraded, list the available machinesets:
-```
+```bash
 $ oc get machineset -n openshift-machine-api
 NAME                                          DESIRED   CURRENT   READY   AVAILABLE   AGE
 ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1b   2         2         2       2           79m
 ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c   1         1         1       1           79m
 ```
 
-In our example, let's edit the bootimage in machineset ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c with corresponding 4.3 bootimage. For 4.4, a list of bootimages for different platforms and regions are available [here](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json), checkout the respective OCP release branch in the repo for the corresponding release. Since the cluster was created in AWS in the us-east-1 region, we will update the ami id to [ami-0543fbfb4749f3c3b](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json#L43) with the following command:
+In our example, let's edit the bootimage in machineset ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c with corresponding 4.3 bootimage.
+For 4.4, a list of bootimages for different platforms and regions are available [here](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json),
+checkout the respective OCP release branch in the repo for the corresponding release. Since the cluster was created in AWS in the
+us-east-1 region, we will update the ami id to [ami-0543fbfb4749f3c3b](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json#L43)
+with the following command:
 
-```
+```bash
 $ oc edit machineset ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c -n openshift-machine-api
  ```
 Similarly, we can update the bootimage for the rest of the machinesets too.
 Once the bootimage has been updated, create a node by scaling up machineset replicas.
-```
+```bash
 $ oc scale --replicas=2 machineset ci-ln-9jk9j3b-d5d6b-kw7lr-worker-us-east-1c -n openshift-machine-api
 ```
 
 #### nosmt
-When a machine boots with `nosmt` Kernel Argument, it disables multi-threading on that host and the system will only utilize physical CPU cores. While applying `nosmt` on any node in the cluster, ensure that enough CPU resources are available to schedule all pods, otherwise it can lead to a degraded cluster. For example: a basic 3 master and 3 worker node cluster having 2 physical CPU cores on each node should be fine.
+When a machine boots with `nosmt` Kernel Argument, it disables multi-threading on that host and the system will only utilize physical
+CPU cores. While applying `nosmt` on any node in the cluster, ensure that enough CPU resources are available to schedule all pods,
+otherwise it can lead to a degraded cluster. For example: a basic 3 master and 3 worker node cluster having 2 physical CPU cores on
+each node should be fine.
 
 ### KernelType
 
@@ -188,7 +198,7 @@ To set kernelType field during cluster install, see the [installer guide](https:
 For day 2, create a MachineConfig and apply to the cluster using `oc create -f`
 
 Example MachineConfig to switch to RT kernel on worker nodes:
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -215,7 +225,7 @@ RHCOS is a minimal OCP focused OS which provides capabilities common across all 
 Extensions can be installed by creating a MachineConfig object. Extensions can be enabled as both day1 and day2. Check [installer guide](https://github.com/openshift/installer/blob/master/docs/user/customization.md#Enabling-RHCOS-Extensions) to enable extensions during cluster install.
 
 Example MachineConfig to install usbguard on an existing cluster on worker nodes:
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:

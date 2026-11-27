@@ -7,7 +7,7 @@ That results in the pull secret being laid down *on every node*, therefore nodes
 
 The pull secret has an expiration, and when it expires you need to change it as follows:
 
-```
+```bash
 oc edit secrets pull-secret -n openshift-config
 ```
 

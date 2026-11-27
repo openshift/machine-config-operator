@@ -1,3 +1,5 @@
+# MCO End-to-End Tests
+
 This folder contains e2e tests for the MCO Operator.
 
 TODO: Add an overview.
@@ -23,7 +25,7 @@ Run with a code change: `/payload-job-with-prs periodic-ci-openshift-machine-con
 
 4. Run the tests:
 
-```
+```bash
 ./openshift-tests run openshift/machine-config-operator/disruptive \
   --shard-count 2 \
   --shard-id 1 \

@@ -32,7 +32,7 @@ Extend the Machine Config Operator to include a KubetletConfig CRD and KubeletCo
 
 ## CRD
 
-```
+```yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -52,7 +52,7 @@ spec:
 
 ## SPEC
 
-```
+```go
 MachineConfigPoolSelector *metav1.LabelSelector
 Runtime:
   Name  string
@@ -70,7 +70,7 @@ valid values of these fields. Invalid values of the kubelet configuration fields
 ## Example - Setting the Kubelet Log Level
 This is what an example `kubelet config` CR looks like. Note: you must make sure to add a label under `matchLabels` in the KubeletConfig CR:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
@@ -92,7 +92,7 @@ Save your `kubeletconfig` locally, for example as maxpods.yaml
 The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
 MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label yourself as follows:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
@@ -108,13 +108,13 @@ spec:
 
 To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-kubelet: small-pods` under labels in the machineConfigPool config:
 
-```
+```bash
 oc edit machineconfigpool worker
 ```
 
 Snippet of the machineConfigPool config with the matching label added:
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -127,14 +127,14 @@ metadata:
 ```
 Now apply the `kubeletconfig` that you created:
 
-```
+```bash
 $ oc apply -f maxpods.yaml
 kubeletconfig.machineconfiguration.openshift.io/set-max-pods created
 ```
 
 Double check that it was created:
 
-```
+```bash
 $ oc get kubeletconfig
 NAME           AGE
 set-max-pods   6s
@@ -142,7 +142,7 @@ set-max-pods   6s
 
 Check to ensure that a new 99-worker-XXX-kubelet is created and that a new rendered worker is created:
 
-```
+```bash
 $ oc get machineconfigs
 NAME                                 GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
 ...
@@ -155,7 +155,7 @@ rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   
 The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking
 that the latest rendered-worker machine-config has been rolled out to the pools successfully:
 
-```
+```bash
 $ oc get mcp
 NAME     CONFIG                     UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
 ...
@@ -166,7 +166,7 @@ worker   rendered-worker-45678XYZ   True      False      False      3           
 ## Example - Setting the optimal system reserved
 You can also use `KubeletConfig` to set the optimal system reserved values for memory and cpu.
 
-```
+```yaml
 apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:

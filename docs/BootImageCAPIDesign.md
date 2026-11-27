@@ -9,7 +9,10 @@ The boot image controller (`pkg/controller/bootimage`) reconciles boot images fo
 
 The controller struct carries `capiMachineSetStats` and `capiMachineDeploymentStats` stat fields, and the progressing/degraded conditions include CAPI message slots. The `syncCAPIMachineSets` and `syncCAPIMachineDeployments` callsites in `syncAll` are wired.
 
-The `MachineAPIMigration` feature gate (Tech Preview) enables migration of MAPI MachineSets to CAPI authority. Once migrated, a MAPI MachineSet carries `status.authoritativeAPI: ClusterAPI`, and writes should target the CAPI copy instead. The `ClusterAPIMachineManagement` feature gate guarantees the CAPI CRDs exist (required for informer setup). The `ManagedBootImagesAWSCAPI` feature gate controls the per-platform AWS reconcile path.
+The `MachineAPIMigration` feature gate (Tech Preview) enables migration of MAPI MachineSets to CAPI authority.
+Once migrated, a MAPI MachineSet carries `status.authoritativeAPI: ClusterAPI`, and writes should target the
+CAPI copy instead. The `ClusterAPIMachineManagement` feature gate guarantees the CAPI CRDs exist (required for
+informer setup). The `ManagedBootImagesAWSCAPI` feature gate controls the per-platform AWS reconcile path.
 
 ---
 
@@ -44,7 +47,11 @@ These are used directly in `capi_helpers.go` — no local shim constants.
 
 **3. Extend the `Automatic` skew enforcement restriction to CAPI resources:**
 
-The existing API validation enforces that `BootImageSkewEnforcement` can only be set to `Automatic` mode when the MAPI MachineSet selection is `opv1.All`. This validation must be extended to cover CAPI MachineSets and MachineDeployments: `Automatic` mode should require `opv1.All` selection for all enrolled resource types. Until this lands, the controller-side `skippedCount == 0` gate is correct for MAPI but may be reached for CAPI resources without the `All` guarantee.
+The existing API validation enforces that `BootImageSkewEnforcement` can only be set to `Automatic` mode when
+the MAPI MachineSet selection is `opv1.All`. This validation must be extended to cover CAPI MachineSets and
+MachineDeployments: `Automatic` mode should require `opv1.All` selection for all enrolled resource types.
+Until this lands, the controller-side `skippedCount == 0` gate is correct for MAPI but may be reached for CAPI
+resources without the `All` guarantee.
 
 This lets a cluster admin enroll CAPI resources in `MachineConfiguration` using:
 ```yaml
@@ -65,7 +72,7 @@ machineManagers:
 
 CAPI does not embed provider specs inside `MachineSets` or `MachineDeployments`. Instead each resource holds an `infrastructureRef` pointing to a provider-specific template (e.g., `AWSMachineTemplate`, `AzureMachineTemplate`):
 
-```
+```text
 MachineDeployment
   spec.template.spec.infrastructureRef → AWSMachineTemplate (contains AMI ID)
 
@@ -131,7 +138,11 @@ The cluster platform is only known once the infra lister cache is warm. `Run()` 
 
 **Phase A**: Call `initCAPIInformers()` — creates the `DynamicSharedInformerFactory` for `openshift-cluster-api`, registers MachineSet and MachineDeployment informers with event handlers. Start the factory and wait for caches to sync. If sync fails, return early — CAPI is disabled but MAPI/CPMS workers proceed.
 
-**Phase B**: Call `wireCAPITemplateInformer()` — registers the `awsmachinetemplates` informer. Start the factory again and wait with a bounded timeout (`capiInfraTemplateCacheSyncTimeout`) so an unavailable GVR doesn't block MAPI/CPMS workers indefinitely. If sync times out, all three CAPI listers (MachineSet, MachineDeployment, infra template) are nil'd out so the nil guards in the sync functions skip CAPI reconciliation entirely.
+**Phase B**: Call `wireCAPITemplateInformer()` — registers the `awsmachinetemplates` informer. Start the
+factory again and wait with a bounded timeout (`capiInfraTemplateCacheSyncTimeout`) so an unavailable GVR
+doesn't block MAPI/CPMS workers indefinitely. If sync times out, all three CAPI listers (MachineSet,
+MachineDeployment, infra template) are nil'd out so the nil guards in the sync functions skip CAPI
+reconciliation entirely.
 
 Non-AWS clusters skip `initCAPISetup` entirely — no CAPI factory, no informers, no watches.
 
@@ -164,7 +175,11 @@ These follow the same structure as `syncMAPIMachineSets`:
 Per-resource sync logic:
 
 1. **MachineDeployment owner skip**: If the MachineSet is owned by a MachineDeployment, skip (`patchSkipped=false`) — the boot image is managed via the parent.
-2. **MAPI authoritativeAPI check** (gated on `FeatureGateMachineAPIMigration`): When migration is active, look up the MAPI MachineSet with the same name. If it exists and `authoritativeAPI != ClusterAPI`, defer to the MAPI path (`patchSkipped=false`). Only proceed if MAPI is fully handed off or absent. On pure-CAPI clusters where `MachineAPIMigration` is not enabled, this check is skipped entirely — there are no MAPI counterparts.
+2. **MAPI authoritativeAPI check** (gated on `FeatureGateMachineAPIMigration`): When migration is active, look
+   up the MAPI MachineSet with the same name. If it exists and `authoritativeAPI != ClusterAPI`, defer to the
+   MAPI path (`patchSkipped=false`). Only proceed if MAPI is fully handed off or absent. On pure-CAPI clusters
+   where `MachineAPIMigration` is not enabled, this check is skipped entirely — there are no MAPI
+   counterparts.
 3. **Stream label check**: Skip non-default OS streams.
 4. **Windows check**: Skip MachineSets with the Windows OS label.
 5. **Arch detection**: `getArchFromCAPIMachineSet` — reads arch annotation; defaults to control plane arch on single-arch clusters; errors on multi-arch clusters with no annotation.
@@ -221,7 +236,13 @@ case noErrors:
 
 ### Enrollment selection mode
 
-The API currently enforces that skew enforcement can only be set to `Automatic` mode when the MAPI MachineSet selection is `opv1.All`. This invariant does not yet extend to CAPI MachineSets or MachineDeployments — that is a required API change tracked above. Once extended, `updateClusterBootImage()` (which already bails early if `BootImageSkewEnforcementStatus.Mode != Automatic`) will carry the full guarantee across all three resource types, and the controller will not need to re-check selection modes — `skippedCount == 0` is the correct and sufficient condition. The enforcement check for the additional resources will be guarded by `ClusterAPIMachineManagement` feature gate. 
+The API currently enforces that skew enforcement can only be set to `Automatic` mode when the MAPI MachineSet
+selection is `opv1.All`. This invariant does not yet extend to CAPI MachineSets or MachineDeployments — that
+is a required API change tracked above. Once extended, `updateClusterBootImage()` (which already bails early
+if `BootImageSkewEnforcementStatus.Mode != Automatic`) will carry the full guarantee across all three resource
+types, and the controller will not need to re-check selection modes — `skippedCount == 0` is the correct and
+sufficient condition. The enforcement check for the additional resources will be guarded by
+`ClusterAPIMachineManagement` feature gate.
 
 ### Placement: `syncAll`, not `syncMAPIMachineSets`
 
@@ -248,13 +269,23 @@ Azure skips images with `SecurityType` set (Confidential/Trusted Launch VMs) and
 
 ## MachineDeployment vs MachineSet Enrollment
 
-**Key distinction**: CAPI `MachineDeployments` own `MachineSets`, which in turn own individual `Machines`. The `infrastructureRef` the MCO needs to patch lives on the `MachineDeployment` (for the template used in future rollouts), not on the owned `MachineSets` (those are already-created copies). Patching a MachineDeployment-owned MachineSet directly would be immediately overwritten by the MachineDeployment controller.
+**Key distinction**: CAPI `MachineDeployments` own `MachineSets`, which in turn own individual `Machines`. The
+`infrastructureRef` the MCO needs to patch lives on the `MachineDeployment` (for the template used in future
+rollouts), not on the owned `MachineSets` (those are already-created copies). Patching a
+MachineDeployment-owned MachineSet directly would be immediately overwritten by the MachineDeployment
+controller.
 
-**Owner references are guaranteed**: The CAPI MachineDeployment controller always sets an owner reference on every MachineSet it creates. The upstream source comment is explicit: *"By setting the ownerRef on creation we signal to the MachineSet controller that this is not a stand-alone MachineSet."* The MCO uses this owner reference to detect and skip MachineDeployment-owned MachineSets in `syncCAPIMachineSet`.
+**Owner references are guaranteed**: The CAPI MachineDeployment controller always sets an owner reference on
+every MachineSet it creates. The upstream source comment is explicit: *"By setting the ownerRef on creation we
+signal to the MachineSet controller that this is not a stand-alone MachineSet."* The MCO uses this owner
+reference to detect and skip MachineDeployment-owned MachineSets in `syncCAPIMachineSet`.
 
 **Skew semantics**: A MachineSet skipped because it is owned by a MachineDeployment returns `patchSkipped=false`. It is not counted toward `skippedCount` and does not trigger a skew alert — the boot image is managed correctly through the parent MachineDeployment, not ignored.
 
-**Current OpenShift reality**: As of May 2026, `cluster-capi-operator` converts MAPI MachineSets to CAPI `MachineSets` only — there are no `MachineDeployment` controllers or conversion paths in the operator. The MCO `syncCAPIMachineDeployments` path is therefore forward-looking and will not reconcile anything on a current cluster. It is implemented now to keep the architecture symmetric and avoid a follow-up wiring change.
+**Current OpenShift reality**: As of May 2026, `cluster-capi-operator` converts MAPI MachineSets to CAPI
+`MachineSets` only — there are no `MachineDeployment` controllers or conversion paths in the operator. The MCO
+`syncCAPIMachineDeployments` path is therefore forward-looking and will not reconcile anything on a current
+cluster. It is implemented now to keep the architecture symmetric and avoid a follow-up wiring change.
 
 Additionally, CAPI MachineSets in OpenShift carry the `Cluster` object as a non-controller owner reference (for garbage collection), not a MachineDeployment reference. The MachineDeployment owner check in `syncCAPIMachineSet` will never match in the current OpenShift CAPI setup.
 
@@ -264,7 +295,10 @@ CAPI's `ClusterClass` allows a `Cluster` object to own and continuously reconcil
 - MachineDeployments are **not** given an owner reference to the Cluster — they are identified by the label `topology.cluster.x-k8s.io/owned` instead.
 - The topology controller continuously reconciles the MachineDeployment's template reference back to what the ClusterClass specifies — so any boot image patch the MCO applies could be reverted.
 
-**OpenShift does not currently use ClusterClass/topology mode** (confirmed from `cluster-capi-operator` source — no topology controller exists). If it is introduced in a future release, the MCO will need to detect topology-owned MachineDeployments via the label and decide whether to skip them (delegating to a ClusterClass-aware mechanism) or whether MCO patches can coexist with the topology controller.
+**OpenShift does not currently use ClusterClass/topology mode** (confirmed from `cluster-capi-operator` source
+— no topology controller exists). If it is introduced in a future release, the MCO will need to detect
+topology-owned MachineDeployments via the label and decide whether to skip them (delegating to a
+ClusterClass-aware mechanism) or whether MCO patches can coexist with the topology controller.
 
 ---
 
@@ -274,7 +308,7 @@ The boot image controller uses a three-layer feature gate scheme:
 
 | Layer | Feature gate | Scope | What it controls in the boot image controller |
 |---|---|---|---|
-| **Infrastructure** | `ClusterAPIMachineManagement` | Tech Preview | Gates `initCAPISetup()` in `Run()` and CAPI sync dispatch in `syncAll()`. Guarantees the CAPI CRDs exist on the cluster. Without this gate, dynamic informers would fail to list/watch non-existent CRDs and block the entire controller via `WaitForCacheSync`. Inside `initCAPISetup`, the platform type and `ManagedBootImagesAWSCAPI` are checked separately before any CAPI informer is created. |
+| **Infrastructure** | `ClusterAPIMachineManagement` | Tech Preview | Gates `initCAPISetup()` in `Run()` and CAPI sync dispatch in `syncAll()`. Guarantees the CAPI CRDs exist. Without it, dynamic informers would fail on non-existent CRDs and block the controller via `WaitForCacheSync`. The platform type and `ManagedBootImagesAWSCAPI` are checked separately inside `initCAPISetup`. |
 | **Per-platform reconcile** | `ManagedBootImagesAWSCAPI` | Tech Preview | Gates the AWS case inside `checkCAPIMachineSet()`. Each platform will get its own gate as CAPI support is added. Platforms without an enabled gate no-op silently. |
 | **MAPI/CAPI handoff** | `MachineAPIMigration` | Tech Preview | Gates the MAPI counterpart check in `syncCAPIMachineSet()` (defer to MAPI path if `authoritativeAPI != ClusterAPI`) and the migrated-set skip in `syncMAPIMachineSet()`. Only relevant during migration; on pure-CAPI clusters this check is skipped entirely. |
 

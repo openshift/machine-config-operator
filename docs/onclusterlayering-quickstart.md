@@ -64,7 +64,11 @@ A `MachineOSBuild` instance represents a specific build associated with a Machin
 
 ## Getting Started
 
-For the sake of this walk-through, we will create a MachineConfigPool called `layered` and we will associate a MachineOSConfig (also named `layered`) with this MachineConfigPool. Both the MachineConfigPool and the MachineOSConfig can be named anything one desires; however for the sake of this walk-through, we will use the name `layered`. We will also be using an ImageStream as our image registry although you are free to use an external image registry, if desired.
+For the sake of this walk-through, we will create a MachineConfigPool called `layered` and we will associate a
+MachineOSConfig (also named `layered`) with this MachineConfigPool. Both the MachineConfigPool and the
+MachineOSConfig can be named anything one desires; however for the sake of this walk-through, we will use the
+name `layered`. We will also be using an ImageStream as our image registry although you are free to use an
+external image registry, if desired.
 
 ### Initial Setup
 

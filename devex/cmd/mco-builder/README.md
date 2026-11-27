@@ -22,7 +22,11 @@ the image out.
 There are three build modes available within the `mco-builder` binary. They are:
 
 1. `normal` - Uses the Dockerfile contained within the MCO repository root to build. Using this mode will allow you to reflect the exact state that is in your current MCO repository. However, this mode is the slowest since it performs a complete build within the build context.
-2. `fast` - This mode uses a hacked Dockerfile and Makefile in order to build the binaries outside of the container build context and then copy them into the container. Additionally, this mode uses a different final base image which may not always be up-to-date. However, this mode allows one to have the fastest possible local builds by leveraging Golang's incremental build capability as well as container image caching.
+2. `fast` - This mode uses a hacked Dockerfile and Makefile in order to build the binaries outside of the
+   container build context and then copy them into the container. Additionally, this mode uses a different
+   final base image which may not always be up-to-date. However, this mode allows one to have the fastest
+   possible local builds by leveraging Golang's incremental build capability as well as container image
+   caching.
 3. `cluster` - This mode uses also uses a hacked Dockerfile. However, this is optimized for the case where one wishes to leverage their OpenShift cluster to perform their builds instead of their local machine (see: Local vs. Cluster).
 
 ## Supported Local Image Builders
