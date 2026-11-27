@@ -63,9 +63,9 @@ RUN rpm-ostree install libreswan && \
 ```
 
 > WARNING: take note of the removal of the redhat.repo file. Its presence is a side-effect of the entitled build. If you leave it there, rpm-ostree will try to use it later and fail because the certificates that enable its use will no longer be present after the build.
-
+>
 > NOTE: For now, the standard `rpm-ostree` rules apply, so if you install packages that do things like [install into /opt/](https://github.com/coreos/rpm-ostree/issues/233)  you might not be completely successful.
-
+>
 > NOTE: `MachineConfig` takes precedence over config files included in a derived image. Conflicts will not break anything, but right now `MachineConfig` always wins and will just overwrite the change.
 
 #### "I Just Want To See It Work"
@@ -128,7 +128,11 @@ worker   rendered-worker-02182a0cdb7f8379a63e05cd77371cd5   False     True      
 
 ### 6. You are now responsible for keeping that image up to date
 
-If you upgrade your cluster while `OSImageURL` is overridden, the MCO will prefer the "overridden" `OSImageURL` image over any image supplied with the upgrade payload, and the base OS will *not* be upgraded as part of the upgrade *for any pool where you have overridden `OSImageURL`*. Should you choose to upgrade your cluster, you will need to rebuild and apply a new custom layered image following the upgrade for any pool where you are using layering.
+If you upgrade your cluster while `OSImageURL` is overridden, the MCO will prefer the "overridden"
+`OSImageURL` image over any image supplied with the upgrade payload, and the base OS will *not* be upgraded as
+part of the upgrade *for any pool where you have overridden `OSImageURL`*. Should you choose to upgrade your
+cluster, you will need to rebuild and apply a new custom layered image following the upgrade for any pool
+where you are using layering.
 
 > WARNING: once you apply a custom image, you are effectively "taking the wheel" when it comes to managing the OS image during upgrades. You are responsible for making sure that custom layered image gets updated!
 

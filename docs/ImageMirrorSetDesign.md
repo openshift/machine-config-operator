@@ -1,6 +1,11 @@
 # Summary
 
-Users need a way to set up mirror configuration. Users can set mirror configurations using ImageContentSourcePolicy via MCO currently, but if they want to use mirror when pulling image with tag instead of digest in the pull spec, they need to follow this [solution](https://access.redhat.com/solutions/4817401) to update the registries configuration via MCO. We can hopefully help customers by documenting CRDs with the `ImageDigestMirrorSet` and `ImageTagMirrorSet` tuneables and have the MCO use these tuneables when rendering the registries.conf files to Ignition/disk.
+Users need a way to set up mirror configuration. Users can set mirror configurations using
+ImageContentSourcePolicy via MCO currently, but if they want to use mirror when pulling image with tag instead
+of digest in the pull spec, they need to follow this [solution](https://access.redhat.com/solutions/4817401)
+to update the registries configuration via MCO. We can hopefully help customers by documenting CRDs with the
+`ImageDigestMirrorSet` and `ImageTagMirrorSet` tuneables and have the MCO use these tuneables when rendering
+the registries.conf files to Ignition/disk.
 
 ## Goals
 
@@ -80,13 +85,13 @@ Save your `ImageDigestMirrorSet` locally, for example as digest-mirror.yaml
 Apply the `ImageDigestMirrorSet` that you created:
 
 
-```
+```bash
 oc create -f digest-mirror.yaml
 ```
 
 Check that it was created:
 
-```
+```bash
 $ oc get imagedigestmirrorset
 NAME             AGE
 digest-mirror   50s
@@ -94,7 +99,7 @@ digest-mirror   50s
 
 You can verify the `digest-mirror` is rolled out to each node by checking /etc/containers/registries.conf on the node.
 
-```
+```bash
 $ oc debug nodes/ovirt17-4qmd6-worker-xnxgp
 Starting pod/ovirt17-4qmd6-worker-xnxgp-debug ...
 To use host binaries, run `chroot /host`
@@ -134,7 +139,7 @@ spec:
 ```
 Apply the `ImageTagMirrorSet` and verify the registries.conf use the above steps. Note that the `pull-from-mirror` is `tag-only`. 
 
-```
+```ini
 [[registry]]
   prefix = ""
   location = "registry.redhat.io/openshift4"

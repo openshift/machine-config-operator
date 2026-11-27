@@ -88,8 +88,8 @@ in the new configuration.
 
 Related issues:
 
- - https://github.com/openshift/machine-config-operator/issues/1619
- - https://github.com/openshift/machine-config-operator/pull/2035
+- https://github.com/openshift/machine-config-operator/issues/1619
+- https://github.com/openshift/machine-config-operator/pull/2035
 
 All this to say, it's quite hard to change storage layout with the MCO today,
 but this is a bug.

@@ -27,7 +27,7 @@ ip-10-0-152-59.us-west-1.compute.internal    Ready     worker         37m   v1.1
 
 When we create infra nodes, we apply them to existing worker nodes first. If you want to use the node as a purely infra node, you can remove the worker pool as follows:
 
-```
+```bash
 oc label node ip-10-0-130-218.us-west-1.compute.internal node-role.kubernetes.io/worker-
 ```
 

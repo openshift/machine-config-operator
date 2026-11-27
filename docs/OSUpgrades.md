@@ -166,7 +166,7 @@ container for example.
 
 From there, probably the simplest thing is to use `oc image extract`
 to unpack the container image.  Something like this:
-```
+```bash
 $ mkdir rhel-coreos
 $ oc image extract quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:6973e9353f29e678cad79fe768c22cfd6697d8aa30d2aeaa78cceea989925ded --path /:rhel-coreos
 $ find rhel-coreos/ -name '*.commit'

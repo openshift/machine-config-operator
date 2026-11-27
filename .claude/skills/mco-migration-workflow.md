@@ -51,12 +51,12 @@ g.Describe("[sig-mco][Suite:openshift/machine-config-operator/longduration][Seri
 ## Test Name Transformation (g.It blocks)
 
 Source pattern:
-```
+```text
 Author:USERNAME-QUALIFIER1-...-NNNNN-[PRIORITY][TAGS] Description [TRAILING_TAGS]
 ```
 
 Destination pattern:
-```
+```text
 [PolarionID:NNNNN][OTP] Description
 ```
 

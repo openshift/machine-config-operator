@@ -16,7 +16,10 @@ Node Disruption Policy allows the user to define to what actions to take for min
 
 ## How it works right now
 
-The current cluster policies are always listed in NodeDisruptionPolicyStatus in a `MachineConfiguration`(not to be confused with `MachineConfig`) CR, called "cluster". All configurations should be applied to the `spec.nodeDisruptionPolicy` field of this CR. The operator will merge the user defined policies and the cluster defaults and then display them in the `status.nodeDisruptionPolicyStatus` field.
+The current cluster policies are always listed in NodeDisruptionPolicyStatus in a `MachineConfiguration`(not
+to be confused with `MachineConfig`) CR, called "cluster". All configurations should be applied to the
+`spec.nodeDisruptionPolicy` field of this CR. The operator will merge the user defined policies and the
+cluster defaults and then display them in the `status.nodeDisruptionPolicyStatus` field.
 
 **Note: All configuration must be done to the CR named "cluster". Any `MachineConfiguration` object made with another name will be rejected via a ValidatingAdmissionPolicy. This will be the single point of control for all Node Disruption Policies.**
 
@@ -79,7 +82,7 @@ status:
 
 ```
 Say, for instance the user applied the following MachineConfiguration:
-```
+```yaml
 apiVersion: operator.openshift.io/v1
 kind: MachineConfiguration
 metadata:
@@ -93,7 +96,7 @@ spec:
           - type: None
 ```
 Now, the Status will be updated to reflect the merged policy:
-```
+```console
 $ oc get MachineConfiguration/cluster -o yaml
 apiVersion: operator.openshift.io/v1
 kind: MachineConfiguration
@@ -179,4 +182,8 @@ The following actions are supported:
 - If there is a conflict between a user defined policy and the cluster default, the user defined policy will override the cluster default.
 - If any of the changes result in a reboot action, all other policies will be ignored.
 - There is no dedup of the final actions list. It is possible an action may be repeated if multiple policies are in effect for MachineConfig change.
-- It is important to remember that the cluster node disruption policy (as defined by the status of `MachineConfiguration/cluster`) applies to the difference between currentConfig and desiredConfig. If a file/service is added, updated or removed by a new MachineConfig change, then the node disruption policy for that respective file/service will be in effect. If no policy is defined for this change, it will result in a Reboot action.
+- It is important to remember that the cluster node disruption policy (as defined by the status of
+  `MachineConfiguration/cluster`) applies to the difference between currentConfig and desiredConfig. If a
+  file/service is added, updated or removed by a new MachineConfig change, then the node disruption policy for
+  that respective file/service will be in effect. If no policy is defined for this change, it will result in a
+  Reboot action.

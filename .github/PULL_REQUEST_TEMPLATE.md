@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 <!--
 If this is a bug fix, make sure your description includes "Fixes: #xxxx", or
 "Closes: #xxxx"

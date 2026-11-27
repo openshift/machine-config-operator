@@ -1,3 +1,5 @@
+# ClusterImagePolicy and ImagePolicy Design
+
 ## Summary
 ClusterImagePolicy and ImagePolicy CRD are managed by ContainerRuntimeConfig controller. These CRD allows setting up configurations for CRI-O to verify the container images signed using [Sigstore](https://www.sigstore.dev/) tools.
 
