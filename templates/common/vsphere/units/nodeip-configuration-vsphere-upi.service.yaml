@@ -46,6 +46,9 @@ contents: |
     {{if or (eq .IPFamilies "DualStack") (eq .IPFamilies "DualStackIPv6Primary") -}}
     --dual-stack \
     {{end -}}
+    {{if eq .IPFamilies "IPv6" -}}
+    --single-stack \
+    {{end -}}
     --retry-on-failure \
     ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
     do \
