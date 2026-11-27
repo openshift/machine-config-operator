@@ -262,11 +262,13 @@ func parseAcceptHeader(input string) ([]acceptHeaderValue, error) {
 }
 
 // detectSpecVersionFromAcceptHeaderUseragent returns a supported Ignition config spec version for a given Accept header.
-// For non-Ignition Accept headers it defaults to config spec v2.2.0
+// For non-Ignition Accept headers, and Ignition Accept headers without a version,
+// it defaults to the latest supported config spec version.
 func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, error) {
-	// for now, serve v2 if we receive a request without an Ignition accept header.
-	// This happens if the user pings the endpoint directly (e.g. with curl)
-	// and we don't want to break existing behaviour.
+	// serve the latest supported spec if we receive a request without a versioned
+	// Ignition accept header. This happens if the user pings the endpoint directly
+	// (e.g. with curl). Ignition clients always send a versioned accept header, so
+	// they are not affected by this default.
 	// For Ignition v0.x, the accept header looks like:
 	// "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1".
 	// For v2.x, it looks like:
@@ -275,8 +277,8 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 	v22Version := semver.New("2.2.0")
 	headers, err := parseAcceptHeader(acceptHeader)
 	if err != nil {
-		// no valid accept headers detected at all, serve default
-		return v22Version, nil
+		// no valid accept headers detected at all, serve the latest supported spec
+		return &ign3types.MaxVersion, nil
 	}
 
 	for _, header := range headers {
@@ -307,9 +309,9 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 		return &version, nil
 	}
 
-	// default to serving spec v2.2 for all non-Ignition headers
+	// default to serving the latest supported spec for all non-Ignition headers
 	// as well as Ignition headers without a version specified.
-	return v22Version, nil
+	return &ign3types.MaxVersion, nil
 }
 
 // ServeHTTP handles /healthz requests.
