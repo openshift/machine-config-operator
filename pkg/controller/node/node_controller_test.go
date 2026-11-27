@@ -40,6 +40,7 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -2658,5 +2659,86 @@ func TestArbiterPoolBlockedWhenMasterPausedWithUnavailableNode(t *testing.T) {
 			assert.NotEqual(t, arbiterNode.Name, patchAction.GetName(),
 				"Arbiter node must not be patched while a master node is unavailable and master pool is paused")
 		}
+	}
+}
+
+func TestDeleteNodeClearsNodeMetrics(t *testing.T) {
+	tests := []struct {
+		name      string
+		labels    map[string]string
+		tombstone bool
+	}{
+		{
+			// master wins over the custom pool and mcc_pool_alert is set to 1.
+			name:   "master with custom role",
+			labels: map[string]string{"node-role/master": "", "node-role/infra": ""},
+		},
+		{
+			name:   "worker",
+			labels: map[string]string{"node-role/worker": ""},
+		},
+		{
+			name:      "worker from tombstone",
+			labels:    map[string]string{"node-role/worker": ""},
+			tombstone: true,
+		},
+		{
+			name: "no matching pool",
+		},
+		{
+			// Two custom pools make the pool lookup fail.
+			name:   "pool lookup error",
+			labels: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
+		},
+	}
+
+	for idx, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			nodeName := fmt.Sprintf("delete-metrics-node-%d", idx)
+			otherNode := nodeName + "-other"
+			f := newFixture(t)
+			node := newNode(nodeName, machineConfigV0, machineConfigV0)
+			node.Labels = test.labels
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, machineConfigV0),
+				helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), machineConfigV0),
+			}
+			// Only in the lister: an informer add event would set mcc_pool_alert again in the background.
+			f.nodeLister = append(f.nodeLister, node)
+			f.mcpLister = append(f.mcpLister, pools...)
+			for _, pool := range pools {
+				f.objects = append(f.objects, pool)
+			}
+			c := f.newController()
+
+			// Series the controller writes for the node, plus ones left over
+			// from earlier pool states, and series for a node that stays.
+			_, _ = c.getPoolsForNode(node)
+			require.NoError(t, c.syncMetrics())
+			for _, name := range []string{nodeName, otherNode} {
+				ctrlcommon.MCCPoolAlert.WithLabelValues(name).Set(1)
+				ctrlcommon.MCCDrainErr.WithLabelValues(name).Set(1)
+				ctrlcommon.MCCState.WithLabelValues(name, "worker", "Updated", "").SetToCurrentTime()
+				ctrlcommon.MCCState.WithLabelValues(name, "worker", "Degraded", "drain failed").SetToCurrentTime()
+			}
+
+			var obj interface{} = node
+			if test.tombstone {
+				obj = cache.DeletedFinalStateUnknown{Key: nodeName, Obj: node}
+			}
+			c.deleteNode(obj)
+
+			// Deleting again reports whether a series was still there.
+			assert.False(t, ctrlcommon.MCCPoolAlert.DeleteLabelValues(nodeName), "mcc_pool_alert kept for deleted node")
+			assert.False(t, ctrlcommon.MCCDrainErr.DeleteLabelValues(nodeName), "mcc_drain_err kept for deleted node")
+			assert.Zero(t, ctrlcommon.MCCState.DeletePartialMatch(prometheus.Labels{"node": nodeName}), "mco_state kept for deleted node")
+
+			assert.True(t, ctrlcommon.MCCPoolAlert.DeleteLabelValues(otherNode), "mcc_pool_alert removed for another node")
+			assert.True(t, ctrlcommon.MCCDrainErr.DeleteLabelValues(otherNode), "mcc_drain_err removed for another node")
+			assert.Equal(t, 2, ctrlcommon.MCCState.DeletePartialMatch(prometheus.Labels{"node": otherNode}), "mco_state removed for another node")
+		})
 	}
 }
