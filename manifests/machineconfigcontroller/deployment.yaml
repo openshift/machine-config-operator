@@ -24,11 +24,6 @@ spec:
         - "--resourcelock-namespace={{.TargetNamespace}}"
         - "--v={{.LogLevel}}"
         - "--payload-version={{.ReleaseVersion}}"
-        - "--tls-cipher-suites={{join .TLSCipherSuites ","}}"
-        - "--tls-min-version={{.TLSMinVersion}}"
-        {{- if .TLSGroups }}
-        - "--tls-curve-preferences={{join .TLSGroups ","}}"
-        {{- end }}
         - "--streams-cache=/var/cache/mcc"
         resources:
           requests:
