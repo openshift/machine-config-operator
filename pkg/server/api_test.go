@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -212,7 +213,7 @@ func TestAcceptHeaders(t *testing.T) {
 					QValue:      float32ToPtr(1.0),
 				},
 			},
-			versionOut: v2_2,
+			versionOut: v3_6,
 		},
 		{
 			name:  "Text",
@@ -225,13 +226,13 @@ func TestAcceptHeaders(t *testing.T) {
 					QValue:      float32ToPtr(1.0),
 				},
 			},
-			versionOut: v2_2,
+			versionOut: v3_6,
 		},
 		{
 			name:       "Invalid",
 			input:      "an-invalid-accept-header",
 			headerVals: nil,
-			versionOut: v2_2,
+			versionOut: v3_6,
 		},
 		{
 			name:  "IgnV3_unsupported_newer_minor_falls_back_to_max",
@@ -471,6 +472,31 @@ func TestAPIHandler(t *testing.T) {
 				checkContentType(t, response, "application/json")
 				checkContentLength(t, response, expectedContentLength)
 				checkBodyLength(t, response, expectedContentLength)
+			},
+		},
+		{
+			// simulates an unversioned client (e.g. curl without an Accept header):
+			// the response must default to the latest supported spec
+			name:    "get config path that exists with no accept header",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				body, err := io.ReadAll(response.Body)
+				require.NoError(t, err)
+				assert.Equal(t, expectedContentLength, len(body))
+				var servedConfig struct {
+					Ignition struct {
+						Version string `json:"version"`
+					} `json:"ignition"`
+				}
+				require.NoError(t, json.Unmarshal(body, &servedConfig))
+				assert.Equal(t, "3.6.0", servedConfig.Ignition.Version)
 			},
 		},
 	}
