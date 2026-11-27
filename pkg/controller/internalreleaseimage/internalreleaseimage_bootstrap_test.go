@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunInternalReleaseImageBootstrap(t *testing.T) {
-	configs, err := RunInternalReleaseImageBootstrap(iriCertSecret().obj, iriRegistryCredentialsSecret().obj, cconfig().withDNS("example.com").obj, nil)
+	configs, err := RunInternalReleaseImageBootstrap(iriCertSecret().obj, iriAuthSecret().obj, cconfig().withDNS("example.com").obj, nil)
 	assert.NoError(t, err)
 	assert.Len(t, configs, 2)
 	verifyInternalReleaseMasterMachineConfig(t, configs[0])
@@ -20,7 +20,7 @@ func TestRunInternalReleaseImageBootstrap_WithTLSProfile(t *testing.T) {
 	modernProfile := &configv1.TLSSecurityProfile{
 		Type: configv1.TLSProfileModernType,
 	}
-	configs, err := RunInternalReleaseImageBootstrap(iriCertSecret().obj, iriRegistryCredentialsSecret().obj, cconfig().obj, modernProfile)
+	configs, err := RunInternalReleaseImageBootstrap(iriCertSecret().obj, iriAuthSecret().obj, cconfig().obj, modernProfile)
 	assert.NoError(t, err)
 	assert.Len(t, configs, 2)
 

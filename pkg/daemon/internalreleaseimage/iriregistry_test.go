@@ -136,11 +136,15 @@ func TestGetOCPReleasePullSpec(t *testing.T) {
 				defer fakeRegistry.Close()
 			}
 
-			r := newIRIRegistry("master-0", &http.Client{
+			// The auth token is supplied directly: with an empty override
+			// newIRIRegistry reads it from the kubelet auth file, which does
+			// not exist under test. The fake registry does not check it.
+			r, err := newIRIRegistry("master-0", &http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 				},
-			}, "")
+			}, "dGVzdDp0ZXN0")
+			require.NoError(t, err)
 
 			pullSpec, err := r.GetOCPReleasePullSpec(tc.releaseTag)
 			if tc.expectErr {
